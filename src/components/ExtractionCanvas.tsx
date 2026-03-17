@@ -248,10 +248,26 @@ export const ExtractionCanvas = ({ imageUrl, onComplete }: ExtractionCanvasProps
               const canvas = document.createElement('canvas');
               const ctx = canvas.getContext('2d');
               if (ctx) {
-                const sx = img.width * x;
-                const sy = img.height * y;
-                const sw = img.width * width;
-                const sh = img.height * height;
+                // 原坐标计算
+                const originalSx = img.width * x;
+                const originalSy = img.height * y;
+                const originalSw = img.width * width;
+                const originalSh = img.height * height;
+                
+                // 给切片增加安全外扩边距 (Padding)
+                // 比如宽度加两边各 1.5%，高度加两边各 1.5%
+                const paddingX = img.width * 0.015;
+                const paddingY = img.height * 0.015;
+                
+                // 确保扩展后不超出原图物理边界
+                const sx = Math.max(0, originalSx - paddingX);
+                const sy = Math.max(0, originalSy - paddingY);
+                // 算新的边界坐标再求宽，不能用 originalSw + ...
+                const ex = Math.min(img.width, originalSx + originalSw + paddingX);
+                const ey = Math.min(img.height, originalSy + originalSh + paddingY);
+                
+                const sw = ex - sx;
+                const sh = ey - sy;
                 
                 canvas.width = sw;
                 canvas.height = sh;

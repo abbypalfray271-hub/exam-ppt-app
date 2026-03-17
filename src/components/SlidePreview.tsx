@@ -6,7 +6,9 @@ import { cn } from '@/lib/utils';
 import { 
   Trash2, 
   BookOpen,
-  ZoomIn
+  ZoomIn,
+  Maximize2,
+  X 
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -145,7 +147,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   };
   // =========================
 
-  // 假设同一组题目的素材是一致的，取第一个即可
+  // ======= 题干放大弹窗状态 =======
+  const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
+
+  // 假设同一组題目的素材是一致的，取第一个即可
   const firstQ = questions[0];
   const hasMaterial = firstQ.material && firstQ.material.trim().length > 0;
   const hasMaterialImage = !!firstQ.materialImage;
@@ -197,60 +202,66 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         </div>
       </div>
 
-      {/* 右侧 62%：题目聚合区 */}
-      <div className="w-[62%] h-full flex flex-col p-[2%] gap-[2%] overflow-y-auto custom-scrollbar bg-white">
+      {/* 右侧 62%：题目聚合区 (精简折叠模式) */}
+      <div className="w-[62%] h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white">
         {questions.map((q, qIdx) => (
-          <div key={q.id} className="flex flex-col gap-2 shrink-0">
-            {/* 题号与标题 */}
-            <div className="flex items-center gap-[2%] shrink-0 pb-1 border-b border-gray-50 mt-2 first:mt-0">
-              <div className="bg-[#1e293b] text-white px-2 py-0.5 rounded-md shadow-sm">
-                <span className="text-[0.6em] font-black italic tracking-tighter">Q{qIdx + 1}</span>
+          <div key={q.id} className="flex flex-col shrink-0">
+            {/* 题干按钮 (点击展开看大图 + OCR文字) */}
+            <button
+              onClick={() => {
+                if (q.contentImage) setExpandedQuestion(q);
+              }}
+              className={cn(
+                "w-full text-left flex items-start gap-[3%] p-[3%] rounded-xl transition-all duration-200 border",
+                q.contentImage 
+                  ? "border-gray-100 hover:border-brand-primary/30 hover:bg-brand-primary/5 hover:shadow-md cursor-pointer group" 
+                  : "border-transparent cursor-default"
+              )}
+            >
+              <div className="bg-[#1e293b] text-white px-2.5 py-1 rounded-md shadow-sm shrink-0 mt-0.5">
+                <span className="text-[0.65em] font-black italic tracking-tighter">Q{qIdx + 1}</span>
               </div>
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden flex flex-col gap-1">
                 {editable ? (
                   <input
-                    className="w-full text-[0.8em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-gray-50 focus:bg-blue-50/50 rounded px-1 transition-colors truncate"
+                    className="w-full text-[0.8em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-white focus:bg-white rounded px-1 -ml-1 transition-colors truncate"
                     value={q.title}
                     onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
+                    onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击输入框时触发弹窗
                   />
                 ) : (
-                  <h3 className="text-[0.8em] font-black text-[#1e293b] truncate">
-                    {q.title || `题目`}
+                  <h3 className="text-[0.8em] font-black text-[#1e293b] leading-snug line-clamp-2">
+                    {q.title || (q.content ? q.content.slice(0, 30) + '...' : `点击查看第 ${qIdx + 1} 题详情`)}
                   </h3>
                 )}
+                
+                {q.contentImage && (
+                  <div className="flex items-center gap-1.5 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold">查看原题切片</span>
+                  </div>
+                )}
               </div>
-            </div>
+            </button>
 
-            {/* 题目展示内容 (优先展示原卷图片切片) */}
-            <div className="relative group">
-              {q.contentImage ? (
-                <div className="w-full rounded-xl border border-gray-100 overflow-hidden bg-gray-50/50 p-1 relative flex items-center justify-center">
-                  <img src={q.contentImage} alt="题目切片" className="w-full h-auto object-contain mix-blend-multiply" />
-                  {editable && (
-                    <button
-                      onClick={() => updateQuestion(q.id, { contentImage: undefined })}
-                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="bg-white rounded-lg p-2 border border-gray-50">
-                  {editable ? (
-                    <textarea
-                      className="w-full text-[0.75em] font-bold text-[#334155] leading-[2] bg-transparent border-none outline-none resize-none focus:ring-0 min-h-[4em]"
-                      value={q.content}
-                      onChange={(e) => updateQuestion(q.id, { content: e.target.value })}
-                    />
-                  ) : (
-                    <p className="text-[0.75em] font-bold text-[#334155] leading-[2] whitespace-pre-wrap">
-                      {q.content}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* 如果没有图片，兜底展示文字逻辑 (不再默认展示 textarea，除非处于 editable) */}
+            {!q.contentImage && editable && (
+              <div className="bg-gray-50 rounded-lg p-2 border border-gray-100 mt-2 ml-10">
+                <textarea
+                  className="w-full text-[0.75em] font-medium text-[#475569] leading-[1.8] bg-transparent border-none outline-none resize-none focus:ring-0 min-h-[3em]"
+                  value={q.content}
+                  onChange={(e) => updateQuestion(q.id, { content: e.target.value })}
+                  placeholder="请输入或等待提取题目内容..."
+                />
+              </div>
+            )}
+            {!q.contentImage && !editable && q.content && (
+               <div className="ml-10 mt-1 pl-3 border-l-2 border-gray-200">
+                  <p className="text-[0.7em] text-gray-500 leading-relaxed max-h-20 overflow-hidden line-clamp-3">
+                    {q.content}
+                  </p>
+               </div>
+            )}
           </div>
         ))}
       </div>
@@ -283,6 +294,84 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               {/* 向下的小箭头 */}
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b-2 border-r-2 border-brand-primary/30 rotate-45 transform origin-center" />
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 题目原图看大图弹窗 (Modal - 上图下文) */}
+      <AnimatePresence>
+        {expandedQuestion && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-black/60 backdrop-blur-sm"
+            onClick={() => setExpandedQuestion(null)} // 点击遮罩层关闭
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative max-w-5xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击内容区关闭
+            >
+              {/* 弹窗头部栏 */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                <div className="flex items-center gap-2">
+                  <Maximize2 className="w-5 h-5 text-brand-primary" />
+                  <h3 className="text-lg font-black text-gray-800 tracking-tight">
+                    原题详情：{expandedQuestion.title || `Q${questions.findIndex(q => q.id === expandedQuestion.id) + 1}`}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setExpandedQuestion(null)}
+                  className="p-2 bg-gray-200 text-gray-600 rounded-full hover:bg-red-500 hover:text-white transition-all active:scale-95"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {/* 图文混合展示区 (可滚动) */}
+              <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
+                 {/* 上部分：高清题目原图 */}
+                 {expandedQuestion.contentImage && (
+                   <div className="w-full flex justify-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                     <img 
+                       src={expandedQuestion.contentImage} 
+                       alt="高清题目切片" 
+                       className="max-w-full h-auto object-contain mix-blend-multiply" 
+                     />
+                   </div>
+                 )}
+                 
+                 {/* 下部分：OCR 文字编辑区作兜底 */}
+                 <div className="w-full flex flex-col gap-2">
+                   <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold ml-1">
+                     <BookOpen className="w-4 h-4" />
+                     <span>文本内容 (识别结果 / 兜底显示)</span>
+                   </div>
+                   <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                     {editable ? (
+                       <textarea
+                         className="w-full text-sm font-medium text-[#475569] leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0 min-h-[5em] custom-scrollbar"
+                         value={expandedQuestion.content}
+                         onChange={(e) => {
+                           // 实时更新 Zustand 和本地弹窗状态
+                           updateQuestion(expandedQuestion.id, { content: e.target.value });
+                           setExpandedQuestion({ ...expandedQuestion, content: e.target.value });
+                         }}
+                         placeholder="可以在此修正 OCR 提取错误..."
+                       />
+                     ) : (
+                       <p className="text-sm font-medium text-[#475569] leading-relaxed whitespace-pre-wrap">
+                         {expandedQuestion.content || '暂无文本内容'}
+                       </p>
+                     )}
+                   </div>
+                 </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
