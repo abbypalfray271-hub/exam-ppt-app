@@ -209,11 +209,11 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           </span>
         </div>
         
-        <div className="flex-1 overflow-hidden flex flex-col gap-2">
+        <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
           {hasMaterialImage ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 overflow-hidden rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative group border border-gray-100 cursor-zoom-in"
+              className="flex-1 rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative group border border-gray-100 cursor-zoom-in"
             >
               <img src={firstQ.materialImage} alt="素材原图" className="w-full h-full object-contain mix-blend-multiply" />
               {editable && (
@@ -231,7 +231,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           ) : firstQ.image ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 overflow-hidden rounded-xl flex items-center bg-white shadow-inner p-1 border border-gray-100 cursor-zoom-in"
+              className="flex-1 rounded-xl flex items-start bg-white shadow-inner p-1 border border-gray-100 cursor-zoom-in"
             >
               <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
             </div>
@@ -279,24 +279,23 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   </div>
                   {editable ? (
                     <input
-                      className="flex-1 text-[1.05em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-white focus:bg-white rounded px-1 -ml-1 transition-colors truncate"
+                      className="w-12 shrink-0 text-[1.05em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-white focus:bg-white rounded px-1 transition-colors"
                       value={q.title}
                       onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <h3 className="flex-1 text-[1.1em] font-black text-[#1e293b] leading-tight line-clamp-1">
-                      {q.title || (q.content ? q.content.slice(0, 40) : `题目详情`)}
+                    <h3 className="shrink-0 text-[1.1em] font-black text-[#1e293b] leading-tight whitespace-nowrap">
+                      {q.title || '题目'}
                     </h3>
                   )}
+                  {/* 内容摘要紧跟标题，同一行 */}
+                  {q.content && (
+                    <p className="flex-1 text-[0.85em] text-gray-600 font-bold truncate">
+                      {q.content.replace(/\n/g, ' ')}
+                    </p>
+                  )}
                 </div>
-                
-                {/* 如果标题只有编号，则下方紧跟内容摘要，但字号也要适度放大 */}
-                {q.content && (
-                  <p className="text-[0.85em] text-gray-600 font-bold line-clamp-1 mt-1 pl-1 border-l-2 border-brand-primary/20">
-                    {q.content.replace(/\n/g, ' ')}
-                  </p>
-                )}
                 
                 {q.contentImage && (
                   <div className="flex items-center justify-between mt-1.5">
@@ -545,7 +544,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   }}
                 >
                   <img 
-                    src={(examPages && examPages.length > 0) ? examPages[materialPageIndex] : (firstQ.materialImage || firstQ.image)} 
+                    src={firstQ.materialImage || firstQ.image || ((examPages && examPages.length > 0) ? examPages[materialPageIndex] : '')} 
                     alt="全屏原文切片" 
                     className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-white block select-none pointer-events-none"
                     draggable={false}
