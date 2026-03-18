@@ -8,6 +8,7 @@ import {
   BookOpen,
   ZoomIn,
   Maximize2,
+  Minimize2,
   X,
   Play,
   ChevronLeft,
@@ -154,6 +155,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   // ======= 题干放大弹窗状态 =======
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
+  const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
 
   // 假设同一组題目的素材是一致的，取第一个即可
   const firstQ = questions[0];
@@ -319,21 +321,42 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-black/60 backdrop-blur-sm"
-            onClick={() => setExpandedQuestion(null)} // 点击遮罩层关闭
+            className={cn(
+              "fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-all duration-300",
+              isDetailFullScreen ? "p-0" : "p-8"
+            )}
+            onClick={() => {
+              setExpandedQuestion(null);
+              setIsDetailFullScreen(false);
+            }} // 点击遮罩层关闭
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="relative max-w-5xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              className={cn(
+                "relative bg-white shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ease-in-out",
+                isDetailFullScreen 
+                  ? "w-screen h-screen rounded-none" 
+                  : "max-w-5xl w-full max-h-[90vh] rounded-2xl"
+              )}
               onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击内容区关闭
             >
               {/* 弹窗头部栏 */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-                <div className="flex items-center gap-2">
-                  <Maximize2 className="w-5 h-5 text-brand-primary" />
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setIsDetailFullScreen(!isDetailFullScreen)}
+                    className="p-2 hover:bg-brand-primary/10 rounded-lg transition-colors group"
+                    title={isDetailFullScreen ? "还原窗口" : "全屏显示"}
+                  >
+                    {isDetailFullScreen ? (
+                      <Minimize2 className="w-5 h-5 text-brand-primary group-hover:scale-110 transition-transform" />
+                    ) : (
+                      <Maximize2 className="w-5 h-5 text-brand-primary group-hover:scale-110 transition-transform" />
+                    )}
+                  </button>
                   <h3 className="text-lg font-black text-gray-800 tracking-tight">
                     题目详情：{expandedQuestion.title || `Q${questions.findIndex(q => q.id === expandedQuestion.id) + 1}`}
                   </h3>
@@ -359,7 +382,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                    <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                      {editable ? (
                        <textarea
-                         className="w-full text-sm font-medium text-[#475569] leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0 min-h-[5em] custom-scrollbar"
+                         className="w-full text-sm font-medium text-[#475569] leading-relaxed bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[10em] custom-scrollbar"
                          value={expandedQuestion.content}
                          onChange={(e) => {
                            // 实时更新 Zustand 和本地弹窗状态
