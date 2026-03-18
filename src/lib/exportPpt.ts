@@ -40,12 +40,12 @@ export async function exportToPpt(questions: Question[], projectName: string) {
     
     // 左侧：素材区
     slide.addShape(pptx.ShapeType.rect, { 
-      x: 0, y: 0, w: '38%', h: '100%', 
+      x: 0, y: 0, w: '55%', h: '100%', 
       fill: { color: 'F8FAFC' },
       line: { color: 'E2E8F0', width: 0.5 }
     });
     
-    slide.addText('📖 素材原文', { 
+    slide.addText('📖 原文切片(整个切片)', { 
       x: 0.25, y: 0.2, w: 3.2, h: 0.4, 
       fontSize: 12, color: '64748b', bold: true 
     });
@@ -53,12 +53,18 @@ export async function exportToPpt(questions: Question[], projectName: string) {
     if (firstQ.materialImage) {
       slide.addImage({
         data: firstQ.materialImage,
-        x: 0.25, y: 0.7, w: 3.3, h: 6.5,
-        sizing: { type: 'contain', w: 3.3, h: 6.5 }
+        x: 0.2, y: 0.7, w: 5.1, h: 6.5,
+        sizing: { type: 'contain', w: 5.1, h: 6.5 }
+      });
+    } else if (firstQ.image) {
+      slide.addImage({
+        data: firstQ.image,
+        x: 0.2, y: 0.7, w: 5.1, h: 6.5,
+        sizing: { type: 'contain', w: 5.1, h: 6.5 }
       });
     } else if (firstQ.material) {
       slide.addText(firstQ.material, {
-        x: 0.25, y: 0.7, w: 3.3, h: 6.5,
+        x: 0.2, y: 0.7, w: 5.1, h: 6.5,
         fontSize: 11, color: '334155', valign: 'top', lineSpacing: 22
       });
     }
@@ -66,8 +72,8 @@ export async function exportToPpt(questions: Question[], projectName: string) {
     // 右侧：多题目聚合区
     // 动态计算每个题目块的高度和位置
     const qCount = group.length;
-    const rightMargin = 4.1;
-    const rightWidth = 5.6;
+    const rightMargin = 5.8;
+    const rightWidth = 3.9;
     const totalContentHeight = 6.4;
     const startY = 0.8;
     const qHeight = totalContentHeight / qCount;
@@ -77,19 +83,11 @@ export async function exportToPpt(questions: Question[], projectName: string) {
       
       // 这里的布局简单化：在一个小区域内显示题号和图片
       // 100% 还原图片切片是最关键的
-      if (q.contentImage) {
-        slide.addImage({
-          data: q.contentImage,
-          x: rightMargin, y: currentY, w: rightWidth, h: qHeight - 0.2,
-          sizing: { type: 'contain', w: rightWidth, h: qHeight - 0.2 }
-        });
-      } else {
-        // 兜底文字
-        slide.addText(`Q: ${q.content}`, {
-          x: rightMargin, y: currentY, w: rightWidth, h: qHeight - 0.2,
-          fontSize: 12, color: '334155', valign: 'top'
-        });
-      }
+      // 导出模式：直接展示文字
+      slide.addText(`Q: ${q.content}`, {
+        x: rightMargin, y: currentY, w: rightWidth, h: qHeight - 0.2,
+        fontSize: 12, color: '334155', valign: 'top'
+      });
       
       // 区块分割线 (除最后一个外)
       if (idx < qCount - 1) {

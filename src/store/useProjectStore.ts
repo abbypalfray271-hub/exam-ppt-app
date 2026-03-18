@@ -30,6 +30,8 @@ interface ProjectState {
   questions: Question[];
   currentMode: 'quick' | 'deep';
   isProcessing: boolean;
+  isPresenting: boolean;      // -- 新增：全屏演示状态 --
+  currentSlideIndex: number;  // -- 新增：当前播放页码 --
   
   // Actions
   setProjectName: (name: string) => void;
@@ -42,6 +44,8 @@ interface ProjectState {
   updateQuestion: (id: string, updates: Partial<Question>) => void;
   setMode: (mode: 'quick' | 'deep') => void;
   setProcessing: (processing: boolean) => void;
+  setPresenting: (presenting: boolean) => void;    // -- 新增：进入/退出全屏 --
+  setCurrentSlideIndex: (index: number) => void; // -- 新增：切页 --
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -50,6 +54,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   questions: [],
   currentMode: 'quick',
   isProcessing: false,
+  isPresenting: false,
+  currentSlideIndex: 0,
   
   setProjectName: (name) => set({ projectName: name }),
   setExamImage: (url) => set({ examImageUrl: url }),
@@ -63,4 +69,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
   })),
   setMode: (mode) => set({ currentMode: mode }),
   setProcessing: (processing) => set({ isProcessing: processing }),
+  setPresenting: (presenting) => set({ isPresenting: presenting }),
+  setCurrentSlideIndex: (index) => set({ currentSlideIndex: index }),
 }));

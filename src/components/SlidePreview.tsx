@@ -8,7 +8,11 @@ import {
   BookOpen,
   ZoomIn,
   Maximize2,
-  X 
+  X,
+  Play,
+  ChevronLeft,
+  ChevronRight,
+  Monitor
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -149,6 +153,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
 
   // ======= 题干放大弹窗状态 =======
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
+  const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
 
   // 假设同一组題目的素材是一致的，取第一个即可
   const firstQ = questions[0];
@@ -157,27 +162,40 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
 
   return (
     <div className="w-full h-full bg-white flex">
-      {/* 左侧 38%：素材区 */}
-      <div className="w-[38%] h-full bg-[#f8fafc] flex flex-col p-[2.5%] border-r border-gray-100">
+      {/* 左侧 55%：素材区 */}
+      <div className="w-[55%] h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100">
         <div className="flex items-center gap-2 mb-[3%]">
           <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b]" />
           <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase">
-            素材原文
+            原文切片(整个切片)
           </span>
         </div>
         
         <div className="flex-1 overflow-hidden flex flex-col gap-2">
           {hasMaterialImage ? (
-            <div className="flex-1 overflow-hidden rounded-xl flex items-center justify-center bg-white shadow-inner p-[3%] relative group border border-gray-100">
+            <div 
+              onClick={() => setIsMaterialExpanded(true)}
+              className="flex-1 overflow-hidden rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative group border border-gray-100 cursor-zoom-in"
+            >
               <img src={firstQ.materialImage} alt="素材原图" className="w-full h-full object-contain mix-blend-multiply" />
               {editable && (
                 <button
-                  onClick={() => updateQuestion(firstQ.id, { materialImage: undefined })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateQuestion(firstQ.id, { materialImage: undefined });
+                  }}
                   className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
               )}
+            </div>
+          ) : firstQ.image ? (
+            <div 
+              onClick={() => setIsMaterialExpanded(true)}
+              className="flex-1 overflow-hidden rounded-xl flex items-center bg-white shadow-inner p-1 border border-gray-100 cursor-zoom-in"
+            >
+              <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
             </div>
           ) : hasMaterial ? (
             <div 
@@ -189,10 +207,6 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 {firstQ.material}
               </p>
             </div>
-          ) : firstQ.image ? (
-            <div className="flex-1 overflow-hidden rounded-xl flex items-center bg-white shadow-inner p-[3%] border border-gray-100">
-              <img src={firstQ.image} alt="背景图" className="w-full h-auto object-contain mix-blend-multiply" />
-            </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center bg-[#f1f5f9]/50 rounded-xl border-2 border-dashed border-gray-200">
               <BookOpen className="w-8 h-8 text-gray-200 mb-2" />
@@ -202,8 +216,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         </div>
       </div>
 
-      {/* 右侧 62%：题目聚合区 (精简折叠模式) */}
-      <div className="w-[62%] h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white">
+      {/* 右侧 45%：题目聚合区 (精简折叠模式) */}
+      <div className="w-[45%] h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white">
         {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0">
             {/* 题干按钮 (点击展开看大图 + OCR文字) */}
@@ -238,7 +252,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 {q.contentImage && (
                   <div className="flex items-center gap-1.5 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity mt-1">
                     <Maximize2 className="w-3.5 h-3.5" />
-                    <span className="text-[10px] font-bold">查看原题切片</span>
+                    <span className="text-[10px] font-bold">查看题目详情</span>
                   </div>
                 )}
               </div>
@@ -321,7 +335,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 <div className="flex items-center gap-2">
                   <Maximize2 className="w-5 h-5 text-brand-primary" />
                   <h3 className="text-lg font-black text-gray-800 tracking-tight">
-                    原题详情：{expandedQuestion.title || `Q${questions.findIndex(q => q.id === expandedQuestion.id) + 1}`}
+                    题目详情：{expandedQuestion.title || `Q${questions.findIndex(q => q.id === expandedQuestion.id) + 1}`}
                   </h3>
                 </div>
                 <button
@@ -334,16 +348,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               
               {/* 图文混合展示区 (可滚动) */}
               <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
-                 {/* 上部分：高清题目原图 */}
-                 {expandedQuestion.contentImage && (
-                   <div className="w-full flex justify-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                     <img 
-                       src={expandedQuestion.contentImage} 
-                       alt="高清题目切片" 
-                       className="max-w-full h-auto object-contain mix-blend-multiply" 
-                     />
-                   </div>
-                 )}
+
                  
                  {/* 下部分：OCR 文字编辑区作兜底 */}
                  <div className="w-full flex flex-col gap-2">
@@ -370,6 +375,42 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                      )}
                    </div>
                  </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 原文素材全屏放大弹窗 */}
+      <AnimatePresence>
+        {isMaterialExpanded && (firstQ.materialImage || firstQ.image) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setIsMaterialExpanded(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-[95vw] max-h-[95vh] flex flex-col items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setIsMaterialExpanded(false)}
+                className="absolute -top-12 right-0 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors mb-4"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <img 
+                src={firstQ.materialImage || firstQ.image} 
+                alt="全屏原文切片" 
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-white"
+              />
+              <div className="mt-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
+                <p className="text-white text-sm font-bold tracking-widest uppercase">原文切片预览</p>
               </div>
             </motion.div>
           </motion.div>

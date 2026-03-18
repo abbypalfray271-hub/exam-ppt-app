@@ -69,13 +69,7 @@ export const Editor = () => {
     return `Q题`;
   };
 
-  /** 定位到包含特定题目 ID 的幻灯片 */
-  const navigateToQuestion = (qId: string) => {
-    const slideIdx = slides.findIndex(s => s.type === 'unified' && s.questions.some(q => q.id === qId));
-    if (slideIdx !== -1) {
-      setCurrentSlideIdx(slideIdx);
-    }
-  };
+
 
   return (
     <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-gray-50/50 p-4 gap-3">
@@ -190,51 +184,7 @@ export const Editor = () => {
       {/* 右侧：题目快速索引 + 导出 */}
       {/* ============================== */}
       <div className="w-56 shrink-0 flex flex-col gap-3">
-        <div className="glass-panel flex-1 rounded-2xl border border-white overflow-hidden flex flex-col">
-          <div className="px-3 py-3 border-b bg-white/50">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-              题目索引 · {questions.length}
-            </h3>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-hide">
-            {questions.map((q, idx) => {
-              const isCurrent = currentSlide.type === 'unified' && currentSlide.questions.some(item => item.id === q.id);
-              
-              return (
-                <button
-                  key={q.id}
-                  onClick={() => navigateToQuestion(q.id)}
-                  className={cn(
-                    "w-full text-left p-3 rounded-xl transition-all duration-200 border group",
-                    isCurrent
-                      ? "bg-brand-primary border-brand-primary text-white shadow-md shadow-brand-primary/20"
-                      : "bg-white border-transparent hover:bg-gray-50 shadow-sm"
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={cn(
-                      "text-[9px] font-black uppercase tracking-tight px-1.5 py-0.5 rounded",
-                      isCurrent ? "bg-white/20" : "bg-gray-100 text-gray-500"
-                    )}>
-                      {q.title || `Q${idx + 1}`}
-                    </span>
-                    <ChevronRight className={cn(
-                      "w-3 h-3 transition-transform",
-                      isCurrent ? "text-white" : "text-gray-400"
-                    )} />
-                  </div>
-                  <p className={cn(
-                    "text-xs font-bold line-clamp-1",
-                    isCurrent ? "text-white" : "text-gray-800"
-                  )}>
-                    {q.content?.slice(0, 20) || '无内容预览'}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        
+        <div className="flex-1" />
         {/* 导出按钮 */}
         <button
           onClick={() => exportToPpt(questions, projectName)}
