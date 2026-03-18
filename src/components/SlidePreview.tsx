@@ -284,9 +284,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const hasMaterialImage = !!firstQ?.materialImage;
 
   return (
-    <div ref={slideContainerRef} className="w-full h-full bg-white flex min-w-0">
-      {/* 左侧素材区：宽度可拖拽调整，加入 min-w-0 防止长图片撑爆 flex 布局 */}
-      <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100 min-w-0" style={{ width: `${materialRatio}%` }}>
+    <div ref={slideContainerRef} className="w-full h-full bg-white grid overflow-hidden" style={{ gridTemplateColumns: `${materialRatio}% auto minmax(0, 1fr)` }}>
+      {/* 左侧素材区：宽度强制受 Grid 控制，就算内置图片一万像素，也休想挤破屏幕边界！ */}
+      <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100 min-w-0 overflow-hidden relative">
         <div 
           onClick={() => {
             if (hasMaterialImage || firstQ?.image || examPages?.length > 0) {
@@ -303,11 +303,11 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           </span>
         </div>
         
-        <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar min-h-0 min-w-0">
           {hasMaterialImage ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group"
+              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0 overflow-hidden"
             >
               <div className="relative inline-flex max-w-full max-h-full">
                 <img src={firstQ.materialImage} alt="素材原图" className="w-[auto] h-[auto] max-w-full max-h-full object-contain mix-blend-multiply" />
@@ -328,7 +328,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           ) : firstQ.image ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group"
+              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0 overflow-hidden"
             >
               <div className="relative inline-flex max-w-full max-h-full">
                 <img src={firstQ.image} alt="原文切片" className="w-[auto] h-[auto] max-w-full max-h-full object-contain mix-blend-multiply" />
@@ -338,7 +338,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           ) : hasMaterial ? (
             <div 
               ref={materialRef}
-              className="flex-1 overflow-y-auto rounded-xl bg-white shadow-inner p-[5%] custom-scrollbar border border-gray-100 relative"
+              className="flex-1 overflow-y-auto rounded-xl bg-white shadow-inner p-[5%] custom-scrollbar border border-gray-100 relative min-h-0 min-w-0"
               onMouseUp={handleTextSelection}
             >
               <p className="text-[0.6em] text-gray-700 leading-[2.2] whitespace-pre-wrap font-medium selection:bg-brand-primary/20 selection:text-brand-primary cursor-text">
@@ -357,8 +357,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       {/* 素材区 ↔ 题目区 可拖拽分隔条 */}
       <ResizableHandle onDrag={handleMaterialResize} />
 
-      {/* 右侧题目聚合区：宽度自动适应，加入 min-w-0 */}
-      <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white min-w-0" style={{ width: `${100 - materialRatio}%` }}>
+      {/* 右侧题目聚合区：自动占满后续 Grid */}
+      <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white min-w-0 overflow-x-hidden relative">
         {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0">
             {/* 题干卡片 (点击展开看大图 + OCR文字) - 使用 div + role 避免 button 嵌套 */}
