@@ -24,13 +24,19 @@ interface PageOffset {
   naturalHeight: number;
 }
 
+export interface NormalizedRect {
+  pageIdx: number;
+  box: [number, number, number, number];
+}
+
 interface ExtractionCanvasProps {
   pages: string[];
   initialPageIndex?: number;
+  initialNormalizedRects?: NormalizedRect[];
   onComplete: () => void;
 }
 
-export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete }: ExtractionCanvasProps) => {
+export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalizedRects, onComplete }: ExtractionCanvasProps) => {
   // === Refs ===
   const containerRef = useRef<HTMLDivElement>(null);     // 包裹所有页面的坐标系根容器
   const scrollRef = useRef<HTMLDivElement>(null);        // 外层可滚动容器
@@ -58,6 +64,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete }: Ex
   // 镜像 drawingRect 的 ref，用于 handleMouseUp 中读取最新值，避免嵌套 setState 导致重复 key
   const drawingRectRef = useRef<Partial<Rect> | null>(null);
 
+
+
   // === 首次挂载：滚动到 initialPageIndex ===
   useEffect(() => {
     if (initialPageIndex > 0 && imagesLoaded >= pages.length) {
@@ -83,6 +91,30 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete }: Ex
       };
     });
   }, []);
+
+  // === 注入初始 NormalizedRects ===
+  const [hasInitializedRects, setHasInitializedRects] = useState(false);
+  
+  useEffect(() => {
+    if (initialNormalizedRects && initialNormalizedRects.length > 0 && !hasInitializedRects && imagesLoaded >= pages.length) {
+      const offsets = getPageOffsets();
+      if (offsets.length === pages.length) {
+        const newRects: Rect[] = initialNormalizedRects.map(nr => {
+          const offset = offsets[nr.pageIdx];
+          const [ymin, xmin, ymax, xmax] = nr.box;
+          return {
+            id: crypto.randomUUID(),
+            y: offset.top + (ymin / 10000) * offset.height,
+            x: (xmin / 10000) * offset.imgWidth,
+            height: ((ymax - ymin) / 10000) * offset.height,
+            width: ((xmax - xmin) / 10000) * offset.imgWidth
+          };
+        });
+        setRects(newRects);
+        setHasInitializedRects(true);
+      }
+    }
+  }, [initialNormalizedRects, imagesLoaded, pages.length, getPageOffsets, hasInitializedRects]);
 
   // === 滚动监听：高亮当前可见页的缩略图 ===
   useEffect(() => {

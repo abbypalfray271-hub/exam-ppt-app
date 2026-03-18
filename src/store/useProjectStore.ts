@@ -8,6 +8,7 @@ export interface Question {
   material?: string;      // 关联素材文本
   title: string;
   content: string;
+  answer?: string;
   analysis?: string;
   steps?: string[];
   summary?: string;

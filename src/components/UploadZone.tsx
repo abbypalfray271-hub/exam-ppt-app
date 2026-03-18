@@ -8,10 +8,44 @@ import {
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExtractionCanvas } from './ExtractionCanvas';
+import { ExtractionCanvas, NormalizedRect } from './ExtractionCanvas';
 import { pdfToImages, wordToText, compressImage, cropImageByBox } from '@/lib/documentProcessor';
 import { parseFullDocumentAction } from '@/app/actions/ai';
 import { importProjectJSON } from '@/lib/projectIO';
+
+function mergeBoxes(boxes: [number, number, number, number][]): [number, number, number, number][] {
+  let changed = true;
+  let currentBoxes = [...boxes];
+  while (changed) {
+    changed = false;
+    let nextBoxes: [number, number, number, number][] = [];
+    while (currentBoxes.length > 0) {
+      let b1 = currentBoxes.pop()!;
+      let merged = false;
+      for (let i = 0; i < nextBoxes.length; i++) {
+        let b2 = nextBoxes[i];
+        const overlapY = Math.max(0, Math.min(b1[2], b2[2]) - Math.max(b1[0], b2[0]));
+        const overlapX = Math.max(0, Math.min(b1[3], b2[3]) - Math.max(b1[1], b2[1]));
+        if (overlapY > 0 && overlapX > 0) {
+          nextBoxes[i] = [
+            Math.min(b1[0], b2[0]),
+            Math.min(b1[1], b2[1]),
+            Math.max(b1[2], b2[2]),
+            Math.max(b1[3], b2[3])
+          ];
+          merged = true;
+          changed = true;
+          break;
+        }
+      }
+      if (!merged) {
+        nextBoxes.push(b1);
+      }
+    }
+    currentBoxes = nextBoxes;
+  }
+  return currentBoxes;
+}
 
 export const UploadZone = () => {
   const { 
@@ -38,6 +72,7 @@ export const UploadZone = () => {
   const [fileType, setFileType] = useState<'image' | 'pdf' | 'word' | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parseProgress, setParseProgress] = useState<{current: number; total: number} | null>(null);
+  const [autoDetectedRects, setAutoDetectedRects] = useState<NormalizedRect[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
 
@@ -57,7 +92,7 @@ export const UploadZone = () => {
   const handleFullParse = async () => {
     setProcessing(true);
     // 不再清空已有题目，新解析结果会追加到现有题目后面
-    let allExtractedQuestions: Question[] = [];
+    let allNormalizedRects: NormalizedRect[] = [];
     
     try {
       if (fileType === 'pdf' || (fileType === 'image' && examPages.length > 0)) {
@@ -87,14 +122,31 @@ export const UploadZone = () => {
           setParseProgress({ current: completedBatches, total: batches.length });
           
           if (result.success && result.data) {
-            const newQuestions: Question[] = result.data.map((q: any, idx: number) => ({
-              ...q,
-              id: crypto.randomUUID(),
-              order: (batchIndex * PAGES_PER_BATCH * 10) + idx + 1, // 粗排保证批次顺序
-              type: q.type || 'essay',
-              pageIndex: batchIndex * PAGES_PER_BATCH // 记录该题来源自哪一页
-            }));
-            allExtractedQuestions.push(...newQuestions);
+            let batchBoxes: [number, number, number, number][] = [];
+            
+            result.data.forEach((q: any) => {
+              let box = q.content_box || q.contentBox;
+              if (box && box.length === 4) {
+                let [ymin, xmin, ymax, xmax] = box;
+                const mBox = q.material_box || q.materialBox;
+                if (mBox && mBox.length === 4) {
+                  ymin = Math.min(ymin, mBox[0]);
+                  xmin = Math.min(xmin, mBox[1]);
+                  ymax = Math.max(ymax, mBox[2]);
+                  xmax = Math.max(xmax, mBox[3]);
+                }
+                batchBoxes.push([ymin, xmin, ymax, xmax]);
+              }
+            });
+            
+            const mergedBoxes = mergeBoxes(batchBoxes);
+            
+            mergedBoxes.forEach(box => {
+              allNormalizedRects.push({
+                pageIdx: batchIndex * PAGES_PER_BATCH,
+                box
+              });
+            });
           } else {
             console.warn(`批次 ${batchIndex + 1} 解析失败:`, result.error);
           }
@@ -108,54 +160,12 @@ export const UploadZone = () => {
           );
         }
         
-        if (allExtractedQuestions.length > 0) {
-          // 按照 order 重新排序
-          allExtractedQuestions.sort((a, b) => a.order - b.order);
-
-          // === 强化去重策略 ===
-          // AI 跨页识别时可能返回同一题的略微不同版本。
-          // 策略：激进标准化（去除所有标点、空格、换行），同时按 title+content 双指纹拦截。
-          const uniqueQuestions: Question[] = [];
-          const seenFingerprints = new Set<string>();
-
-          const normalize = (text: string) => 
-            text.replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60); // 去除所有空白+标点，取前60字符
-
-          allExtractedQuestions.forEach(q => {
-            const titleFp = normalize(q.title || '');
-            const contentFp = normalize(q.content || '');
-            const fingerprint = `${titleFp}::${contentFp}`;
-            
-            if (!seenFingerprints.has(fingerprint)) {
-              seenFingerprints.add(fingerprint);
-              uniqueQuestions.push(q);
-            } else {
-              console.log('自动拦截重复题目:', q.title, '指纹:', fingerprint);
-            }
-          });
-
-          // 自动模式统一手动模式：直接后台裁剪，跳过审阅弹窗，直达 Editor!
+        if (allNormalizedRects.length > 0) {
           setParseProgress({ current: 100, total: 100 });
-          for (let i = 0; i < uniqueQuestions.length; i++) {
-            const q = uniqueQuestions[i];
-            const pageIdx = q.pageIndex || 0;
-            const base64Img = pages[pageIdx];
-            if (!base64Img) continue;
-
-            if (q.materialBox && q.materialBox.length === 4) {
-              q.materialImage = await cropImageByBox(base64Img, q.materialBox as [number,number,number,number]) || undefined;
-            }
-            if (q.contentBox && q.contentBox.length === 4) {
-              const [ymin, xmin, ymax, xmax] = q.contentBox;
-              if (ymax > ymin && xmax > xmin) {
-                q.contentImage = await cropImageByBox(base64Img, q.contentBox as [number,number,number,number]) || undefined;
-              }
-            }
-          }
-          addQuestions(uniqueQuestions);
-          setView('editor');
+          setAutoDetectedRects(allNormalizedRects);
+          setCanvasOpen(true);
         } else {
-          alert('未能识别到题目，请重试');
+          alert('未能识别到题目框，请确认图片中包含题目');
         }
       } else if (fileType === 'word' && examText) {
         setParseProgress({ current: 1, total: 1 });
@@ -404,7 +414,10 @@ export const UploadZone = () => {
               {fileType === 'image' || fileType === 'pdf' ? (
                 <button 
                   className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
-                  onClick={() => setCanvasOpen(true)}
+                  onClick={() => {
+                    setAutoDetectedRects([]);
+                    setCanvasOpen(true);
+                  }}
                 >
                   <Wand2 className="w-5 h-5" /> 框选提取题目
                 </button>
@@ -496,10 +509,17 @@ export const UploadZone = () => {
             <ExtractionCanvas 
               pages={pdfPages.length > 0 ? pdfPages : (examPages.length > 0 ? examPages : [preview!])} 
               initialPageIndex={currentPage}
-              onComplete={() => setCanvasOpen(false)}
+              initialNormalizedRects={autoDetectedRects}
+              onComplete={() => {
+                setCanvasOpen(false);
+                setAutoDetectedRects([]);
+              }}
             />
             <button 
-              onClick={() => setCanvasOpen(false)}
+              onClick={() => {
+                setCanvasOpen(false);
+                setAutoDetectedRects([]);
+              }}
               className="fixed top-2.5 right-60 z-[1000] p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <X className="w-5 h-5 text-gray-500" />

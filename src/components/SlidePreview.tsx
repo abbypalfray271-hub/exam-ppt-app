@@ -109,6 +109,31 @@ export const TitleSlide: React.FC<TitleSlideProps> = ({ editable = false }) => {
 // 统一模板幻灯片：左素材 + 右侧多题目区块 (极简分割版)
 // ============================================================
 
+const renderClozeText = (text: string, show: boolean) => {
+  if (!text) return null;
+  // 正则匹配 {{内容}}
+  const parts = text.split(/(\{\{.*?\}\})/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('{{') && part.endsWith('}}')) {
+      const answerText = part.slice(2, -2);
+      if (show) {
+        return (
+          <span key={index} className="inline-block text-brand-primary font-black border-b-[2px] border-brand-primary pb-[1px] px-1 mx-1 bg-brand-primary/10 rounded-sm">
+            {answerText}
+          </span>
+        );
+      } else {
+        return (
+          <span key={index} className="inline-block min-w-[3em] text-transparent border-b-[2px] border-gray-400 pb-[1px] px-1 mx-1 select-none">
+            {answerText}
+          </span>
+        );
+      }
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
 interface UnifiedSlideProps {
   questions: Question[];
   editable?: boolean;
@@ -180,6 +205,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
 
   // ======= 题干放大弹窗状态 =======
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [isEditingContent, setIsEditingContent] = useState(false); // 新增状态：控制是否处于富文本编辑状态
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
   const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
   
@@ -203,9 +230,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const hasMaterialImage = !!firstQ?.materialImage;
 
   return (
-    <div ref={slideContainerRef} className="w-full h-full bg-white flex">
-      {/* 左侧素材区：宽度可拖拽调整 */}
-      <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100" style={{ width: `${materialRatio}%` }}>
+    <div ref={slideContainerRef} className="w-full h-full bg-white flex min-w-0">
+      {/* 左侧素材区：宽度可拖拽调整，加入 min-w-0 防止长图片撑爆 flex 布局 */}
+      <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100 min-w-0" style={{ width: `${materialRatio}%` }}>
         <div 
           onClick={() => {
             if (hasMaterialImage || firstQ?.image || examPages?.length > 0) {
@@ -270,8 +297,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       {/* 素材区 ↔ 题目区 可拖拽分隔条 */}
       <ResizableHandle onDrag={handleMaterialResize} />
 
-      {/* 右侧题目聚合区：宽度自动适应 */}
-      <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white" style={{ width: `${100 - materialRatio}%` }}>
+      {/* 右侧题目聚合区：宽度自动适应，加入 min-w-0 */}
+      <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white min-w-0" style={{ width: `${100 - materialRatio}%` }}>
         {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0">
             {/* 题干卡片 (点击展开看大图 + OCR文字) - 使用 div + role 避免 button 嵌套 */}
@@ -279,7 +306,11 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               role="button"
               tabIndex={0}
               onClick={() => {
-                if (q.contentImage) setExpandedQuestion(q);
+                if (q.contentImage) {
+                  setExpandedQuestion(q);
+                  setShowAnswer(false);
+                  setIsEditingContent(false); // 每次打开弹窗默认显示特效模式
+                }
               }}
               className={cn(
                 "w-full text-left flex items-start gap-[3%] p-[3%] rounded-xl transition-all duration-200 border",
@@ -314,24 +345,32 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 </div>
                 
                 {q.contentImage && (
-                  <div className="flex items-center justify-between mt-1.5">
-                    <div className="flex items-center gap-1 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity px-1">
-                      <Maximize2 className="w-3.5 h-3.5" />
-                      <span className="text-[10px] font-black tracking-wider uppercase">Click to Zoom</span>
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {/* 补充被遗漏的题目切片图 */}
+                    <img 
+                      src={q.contentImage} 
+                      alt="题目内容" 
+                      className="w-full h-auto max-h-32 object-contain rounded-md bg-white mix-blend-darken shadow-sm border border-gray-100 pointer-events-none" 
+                    />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity px-1">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-black tracking-wider uppercase">点击全屏大图</span>
+                      </div>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('确定要删除这道题目吗？')) {
+                            removeQuestion(q.id);
+                          }
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                        title="删除题目"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm('确定要删除这道题目吗？')) {
-                          removeQuestion(q.id);
-                        }
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                      title="删除题目"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 )}
               </div>
@@ -418,7 +457,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   ? "w-screen h-screen rounded-none" 
                   : "max-w-5xl w-full max-h-[90vh] rounded-2xl"
               )}
-              onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击内容区关闭
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAnswer(prev => !prev);
+              }} // 点击弹窗内部空白区，触发答案显隐
             >
               {/* 弹窗头部栏 */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
@@ -435,7 +477,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     )}
                   </button>
                   <h3 className="text-lg font-black text-gray-800 tracking-tight flex-1 truncate pr-4">
-                    题目详情：{expandedQuestion.title} {expandedQuestion.content ? expandedQuestion.content.split('\n')[0] : ''}
+                    题目详情：{expandedQuestion.title}
                   </h3>
                 </div>
                 <button
@@ -449,33 +491,60 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               {/* 图文混合展示区 (可滚动) */}
               <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
                  {(() => {
-                   const lines = expandedQuestion.content ? expandedQuestion.content.split('\n') : [];
-                   const firstLine = lines[0] || '';
-                   const remainingContent = lines.slice(1).join('\n');
+                   const remainingContent = expandedQuestion.content || '';
 
                    return (
                      <div className="w-full flex flex-col gap-2">
-                       <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold ml-1">
-                         <BookOpen className="w-4 h-4" />
-                         <span>题目内容 (选项与正文)</span>
+                       <div className="flex items-center justify-between ml-1 text-gray-500 text-sm font-semibold">
+                         <div className="flex items-center gap-2">
+                           <BookOpen className="w-4 h-4" />
+                           <span>题目内容 (选项与正文)</span>
+                         </div>
+                         {editable && (
+                           <button
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setIsEditingContent(!isEditingContent);
+                             }}
+                             className={cn(
+                               "flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs transition-colors",
+                               isEditingContent 
+                                 ? "bg-brand-primary text-white border-brand-primary" 
+                                 : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-brand-primary"
+                             )}
+                           >
+                             <span>✏️</span>
+                             <span>{isEditingContent ? '完成编辑' : '编辑源码'}</span>
+                           </button>
+                         )}
                        </div>
-                       <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                         {editable ? (
+                       <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[12em]">
+                         {editable && isEditingContent ? (
                            <textarea
                              className="w-full text-xl font-bold text-[#1e293b] leading-loose bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[12em] custom-scrollbar"
                              value={remainingContent}
+                             onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点正文区时触发答案切换
                              onChange={(e) => {
-                               const newContent = firstLine + (firstLine ? '\n' : '') + e.target.value;
+                               const newContent = e.target.value;
                                updateQuestion(expandedQuestion.id, { content: newContent });
                                setExpandedQuestion({ ...expandedQuestion, content: newContent });
                              }}
-                             placeholder="可以在此补充或修正题目内容..."
+                             placeholder="可以在此补充或修正题目内容... 使用 {{文本}} 语法可以添加可隐现的答案特效"
+                             autoFocus
                            />
                          ) : (
-                           <p className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap">
-                             {remainingContent || '暂无更多内容'}
-                           </p>
+                           <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                             {renderClozeText(remainingContent, showAnswer)}
+                           </div>
                          )}
+                       </div>
+
+                       {/* 交互指引提示 */}
+                       <div className="text-center mt-6 mb-2 text-gray-400 text-[11px] font-black tracking-widest uppercase animate-pulse pointer-events-none">
+                         {isEditingContent
+                            ? "👆 在文本中加入类似 {{答案}} 即可创建下划线特效"
+                            : "👇 点击屏幕任意空白处即可显隐填空/解析"
+                         }
                        </div>
                      </div>
                    );
