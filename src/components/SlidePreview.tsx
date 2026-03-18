@@ -750,36 +750,11 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     />
                   )}
                  
-                 {/* 左右翻页按钮 (仅当有多个 examPages 时显示) */}
-                 {examPages && examPages.length > 1 && (
-                   <>
-                     <button
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         setMaterialPageIndex(prev => Math.max(0, prev - 1));
-                       }}
-                       disabled={materialPageIndex === 0}
-                       className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/20 hover:bg-black/50 text-white rounded-full backdrop-blur-md transition-all disabled:opacity-30 disabled:cursor-not-allowed group-hover:scale-110 active:scale-95 shadow-xl"
-                     >
-                       <ChevronLeft className="w-8 h-8" />
-                     </button>
-                     <button
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         setMaterialPageIndex(prev => Math.min(examPages.length - 1, prev + 1));
-                       }}
-                       disabled={materialPageIndex === examPages.length - 1}
-                       className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/20 hover:bg-black/50 text-white rounded-full backdrop-blur-md transition-all disabled:opacity-30 disabled:cursor-not-allowed group-hover:scale-110 active:scale-95 shadow-xl"
-                     >
-                       <ChevronRight className="w-8 h-8" />
-                     </button>
-                   </>
-                 )}
-               </div>
+                </div>
 
                <div className="mt-4 flex flex-wrap items-center justify-center gap-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
-                 <p className="text-white text-sm font-bold tracking-widest uppercase border-r border-white/20 pr-4">
-                   {examPages && examPages.length > 0 ? `原文第 ${materialPageIndex + 1} / ${examPages.length} 页` : '原文切片预览'}
+                 <p className="text-white text-sm font-bold tracking-widest uppercase">
+                   {examPages && examPages.length > 0 ? `原文素材预览` : '原文切片预览'}
                  </p>
                  
                  <button
