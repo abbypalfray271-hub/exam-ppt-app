@@ -32,6 +32,7 @@ interface ProjectState {
   isProcessing: boolean;
   isPresenting: boolean;      // -- 新增：全屏演示状态 --
   currentSlideIndex: number;  // -- 新增：当前播放页码 --
+  currentView: 'upload' | 'editor'; // -- 新增：当前视图 --
   
   // Actions
   setProjectName: (name: string) => void;
@@ -46,6 +47,7 @@ interface ProjectState {
   setProcessing: (processing: boolean) => void;
   setPresenting: (presenting: boolean) => void;    // -- 新增：进入/退出全屏 --
   setCurrentSlideIndex: (index: number) => void; // -- 新增：切页 --
+  setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -56,6 +58,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   isProcessing: false,
   isPresenting: false,
   currentSlideIndex: 0,
+  currentView: 'upload',
   
   setProjectName: (name) => set({ projectName: name }),
   setExamImage: (url) => set({ examImageUrl: url }),
@@ -71,4 +74,5 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setProcessing: (processing) => set({ isProcessing: processing }),
   setPresenting: (presenting) => set({ isPresenting: presenting }),
   setCurrentSlideIndex: (index) => set({ currentSlideIndex: index }),
+  setView: (view) => set({ currentView: view }),
 }));

@@ -22,7 +22,10 @@ export const UploadZone = () => {
     isProcessing, 
     setProcessing,
     examPages,
-    examText
+    examText,
+    setView,
+    examImageUrl,
+    currentMode
   } = useProjectStore();
   
   const [isDragActive, setIsDragActive] = useState(false);
@@ -36,6 +39,18 @@ export const UploadZone = () => {
   
   // 用于 AI 识别后的二次审阅/裁剪微调
   const [pendingReviewData, setPendingReviewData] = useState<{questions: Question[], pages: string[]} | null>(null);
+
+  // 初始化预览 (从 Store 恢复)
+  React.useEffect(() => {
+    if (examImageUrl && !preview) {
+      setPreview(examImageUrl);
+      setFileType('image');
+    } else if (examPages.length > 0 && !preview) {
+      setPreview(examPages[0]);
+      setFileType('pdf');
+      setPdfPages(examPages);
+    }
+  }, [examImageUrl, examPages, preview]);
 
   const handleFullParse = async () => {
     setProcessing(true);
@@ -109,6 +124,7 @@ export const UploadZone = () => {
             type: q.type || 'essay'
           }));
           setQuestions(questions);
+          setView('editor');
         }
       }
     } catch (error) {
@@ -450,6 +466,7 @@ export const UploadZone = () => {
             onConfirm={(updatedQuestions) => {
               setQuestions(updatedQuestions);
               setPendingReviewData(null);
+              setView('editor');
             }}
             onCancel={() => setPendingReviewData(null)}
           />

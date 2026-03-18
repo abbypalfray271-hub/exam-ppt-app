@@ -7,7 +7,7 @@ import { Presentation, Sparkles, Wand2 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 
 export default function Home() {
-  const { questions } = useProjectStore();
+  const { questions, currentView } = useProjectStore();
   const hasQuestions = questions.length > 0;
 
   return (
@@ -52,7 +52,7 @@ export default function Home() {
 
       <section className="relative z-10 pt-4 pb-20">
         <AnimatePresence mode="wait">
-          {!hasQuestions ? (
+          {currentView === 'upload' ? (
             <motion.div
               key="landing"
               initial={{ opacity: 0 }}

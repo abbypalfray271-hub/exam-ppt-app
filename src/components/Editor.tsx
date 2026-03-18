@@ -6,7 +6,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Presentation
+  Presentation,
+  FileSearch
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -20,7 +21,7 @@ import {
 } from './SlidePreview';
 
 export const Editor = () => {
-  const { projectName, questions } = useProjectStore();
+  const { projectName, questions, setView } = useProjectStore();
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
   const thumbnailRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -185,6 +186,15 @@ export const Editor = () => {
       {/* ============================== */}
       <div className="w-56 shrink-0 flex flex-col gap-3">
         <div className="flex-1" />
+        {/* 返回解析按钮 */}
+        <button
+          onClick={() => setView('upload')}
+          className="w-full py-4 bg-white text-gray-900 border border-gray-200 rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all active:scale-95 group"
+        >
+          <FileSearch className="w-4 h-4 text-brand-primary group-hover:-translate-y-0.5 transition-transform" />
+          返回解析
+        </button>
+
         {/* 导出按钮 */}
         <button
           onClick={() => exportToPpt(questions, projectName)}
