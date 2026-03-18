@@ -13,7 +13,8 @@ import {
   Play,
   ChevronLeft,
   ChevronRight,
-  Monitor
+  Monitor,
+  EyeOff
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -134,6 +135,55 @@ const renderClozeText = (text: string, show: boolean) => {
   });
 };
 
+const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
+  return questions.map(q => {
+    if (!q.answer_box || q.answer_box.length !== 4) return null;
+    const [ymin, xmin, ymax, xmax] = q.answer_box;
+    
+    // 自动检测坐标系：如果是万分位(0-10000)则除以100，如果是千分位(0-1000)则除以10
+    const isTenThousand = q.answer_box.some(v => v > 1000);
+    const divisor = isTenThousand ? 100 : 10;
+
+    const top = ymin / divisor;
+    const left = xmin / divisor;
+    const height = (ymax - ymin) / divisor;
+    const width = (xmax - xmin) / divisor;
+    
+    return (
+      <div
+        key={`mask-${q.id}`}
+        className={cn(
+          "absolute z-10 backdrop-blur-2xl bg-white/95 border-2 border-dashed border-gray-400 rounded-lg shadow-xl flex flex-col items-center justify-center transition-all duration-300 group/mask",
+          isDrawMode ? "pointer-events-none opacity-20" : "cursor-help hover:opacity-0"
+        )}
+        style={{ top: `${top}%`, left: `${left}%`, height: `${height}%`, width: `${width}%` }}
+        title="此处答案已被打码遮挡 (鼠标移入可查看原图)"
+        onClick={(e) => { e.stopPropagation(); }} // 阻止外层放大弹窗
+      >
+        <EyeOff className="w-5 h-5 text-gray-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
+        <span className="text-[10px] font-bold text-gray-400 group-hover/mask:opacity-0 transition-opacity">答案隐藏区</span>
+        
+        {/* 手动删除错误遮罩的按钮 */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const { questions, updateQuestion } = useProjectStore.getState();
+            // 找到拥有这个 mask 的题目坐标并清除（目前逻辑是 1题1mask）
+            const targetQ = questions.find(item => item.id === q.id);
+            if (targetQ) {
+              updateQuestion(q.id, { answer_box: undefined });
+            }
+          }}
+          className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/mask:opacity-100 transition-opacity shadow-lg hover:bg-red-600 z-20"
+          title="删除此错误遮罩"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  });
+};
+
 interface UnifiedSlideProps {
   questions: Question[];
   editable?: boolean;
@@ -219,6 +269,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  // 手动打码区状态
+  const [isMaskDrawMode, setIsMaskDrawMode] = useState(false);
+  const [drawingMask, setDrawingMask] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+
   // 当弹窗打开时，确保索引与当前题目同步 (如果题目有 pageIndex)
   useEffect(() => {
     if (isMaterialExpanded && firstQ?.pageIndex !== undefined) {
@@ -253,9 +307,12 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           {hasMaterialImage ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative group border border-gray-100 cursor-zoom-in"
+              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group"
             >
-              <img src={firstQ.materialImage} alt="素材原图" className="w-full h-full object-contain mix-blend-multiply" />
+              <div className="relative inline-flex max-w-full max-h-full">
+                <img src={firstQ.materialImage} alt="素材原图" className="w-[auto] h-[auto] max-w-full max-h-full object-contain mix-blend-multiply" />
+                {renderAnswerMasks(questions)}
+              </div>
               {editable && (
                 <button
                   onClick={(e) => {
@@ -271,9 +328,12 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           ) : firstQ.image ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 rounded-xl flex items-start bg-white shadow-inner p-1 border border-gray-100 cursor-zoom-in"
+              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group"
             >
-              <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
+              <div className="relative inline-flex max-w-full max-h-full">
+                <img src={firstQ.image} alt="原文切片" className="w-[auto] h-[auto] max-w-full max-h-full object-contain mix-blend-multiply" />
+                {renderAnswerMasks(questions)}
+              </div>
             </div>
           ) : hasMaterial ? (
             <div 
@@ -566,6 +626,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
              onClick={() => {
                setIsMaterialExpanded(false);
                setZoomState({ scale: 1, x: 0, y: 0 });
+               setIsMaskDrawMode(false);
+               setDrawingMask(null);
              }}
            >
              <motion.div
@@ -584,21 +646,36 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
 
                 {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
                 <div 
-                  className={cn("relative group inline-block", zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "")}
+                  className={cn("relative group inline-block", isMaskDrawMode ? "cursor-crosshair" : (zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""))}
                   style={{
                     transform: `translate(${zoomState.x}px, ${zoomState.y}px) scale(${zoomState.scale})`,
                     transformOrigin: 'center center',
-                    transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+                    transition: (isDragging || isMaskDrawMode) ? 'none' : 'transform 0.2s ease-out'
                   }}
                   onPointerDown={(e) => {
-                    if (zoomState.scale > 1) {
+                    if (isMaskDrawMode) {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pctX = (e.clientX - rect.left) / rect.width;
+                      const pctY = (e.clientY - rect.top) / rect.height;
+                      setDrawingMask({ startX: pctX, startY: pctY, currentX: pctX, currentY: pctY });
+                    } else if (zoomState.scale > 1) {
                       e.currentTarget.setPointerCapture(e.pointerId);
                       setIsDragging(true);
                       setDragStart({ x: e.clientX - zoomState.x, y: e.clientY - zoomState.y });
                     }
                   }}
                   onPointerMove={(e) => {
-                    if (isDragging && zoomState.scale > 1) {
+                    if (isMaskDrawMode && drawingMask) {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      let pctX = (e.clientX - rect.left) / rect.width;
+                      let pctY = (e.clientY - rect.top) / rect.height;
+                      pctX = Math.max(0, Math.min(1, pctX));
+                      pctY = Math.max(0, Math.min(1, pctY));
+                      setDrawingMask(prev => prev ? { ...prev, currentX: pctX, currentY: pctY } : null);
+                    } else if (isDragging && zoomState.scale > 1) {
                       setZoomState(prev => ({
                         ...prev,
                         x: e.clientX - dragStart.x,
@@ -607,11 +684,36 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     }
                   }}
                   onPointerUp={(e) => {
-                    setIsDragging(false);
-                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    if (isMaskDrawMode && drawingMask) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                      const minX = Math.min(drawingMask.startX, drawingMask.currentX);
+                      const maxX = Math.max(drawingMask.startX, drawingMask.currentX);
+                      const minY = Math.min(drawingMask.startY, drawingMask.currentY);
+                      const maxY = Math.max(drawingMask.startY, drawingMask.currentY);
+                      
+                      if (maxX - minX > 0.01 && maxY - minY > 0.01) {
+                         const answer_box: [number, number, number, number] = [
+                           Math.round(minY * 10000),
+                           Math.round(minX * 10000),
+                           Math.round(maxY * 10000),
+                           Math.round(maxX * 10000)
+                         ];
+                         updateQuestion(firstQ.id, { answer_box });
+                      }
+                      
+                      setDrawingMask(null);
+                      setIsMaskDrawMode(false);
+                    } else {
+                      setIsDragging(false);
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
                   }}
-                  onPointerCancel={() => setIsDragging(false)}
+                  onPointerCancel={() => {
+                     setIsDragging(false);
+                     setDrawingMask(null);
+                  }}
                   onWheel={(e) => {
+                    if (isMaskDrawMode) return;
                     // 阻止页面默认滚动
                     e.preventDefault();
                     // 动态调整整体缩放倍数 (1.0 到 5.0)，以当前鼠标位置缩放会比较复杂，这里用简单的中心缩放
@@ -634,6 +736,19 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-white block select-none pointer-events-none"
                     draggable={false}
                   />
+                  {renderAnswerMasks(questions, isMaskDrawMode)}
+
+                  {drawingMask && (
+                    <div 
+                      className="absolute z-50 border-2 border-brand-primary bg-brand-primary/20 shadow-lg"
+                      style={{
+                         left: `${Math.min(drawingMask.startX, drawingMask.currentX) * 100}%`,
+                         top: `${Math.min(drawingMask.startY, drawingMask.currentY) * 100}%`,
+                         width: `${Math.abs(drawingMask.currentX - drawingMask.startX) * 100}%`,
+                         height: `${Math.abs(drawingMask.currentY - drawingMask.startY) * 100}%`
+                      }}
+                    />
+                  )}
                  
                  {/* 左右翻页按钮 (仅当有多个 examPages 时显示) */}
                  {examPages && examPages.length > 1 && (
@@ -662,10 +777,33 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                  )}
                </div>
 
-               <div className="mt-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20 flex items-center gap-4">
-                 <p className="text-white text-sm font-bold tracking-widest uppercase">
+               <div className="mt-4 flex flex-wrap items-center justify-center gap-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
+                 <p className="text-white text-sm font-bold tracking-widest uppercase border-r border-white/20 pr-4">
                    {examPages && examPages.length > 0 ? `原文第 ${materialPageIndex + 1} / ${examPages.length} 页` : '原文切片预览'}
                  </p>
+                 
+                 <button
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     if (!isMaskDrawMode) {
+                       setZoomState({ scale: 1, x: 0, y: 0 }); 
+                     } else {
+                       setDrawingMask(null);
+                     }
+                     setIsMaskDrawMode(!isMaskDrawMode);
+                   }}
+                   className={cn(
+                     "px-4 py-1.5 rounded-full flex items-center gap-2 transition-all shadow-md active:scale-95",
+                     isMaskDrawMode 
+                       ? "bg-red-500 hover:bg-red-600 text-white" 
+                       : "bg-white/20 hover:bg-brand-primary text-white"
+                   )}
+                 >
+                   <EyeOff className="w-4 h-4" />
+                   <span className="text-sm font-bold tracking-widest">
+                     {isMaskDrawMode ? '在此处拖拽鼠标画框 (点击取消)' : '手动框选隐藏区'}
+                   </span>
+                 </button>
                </div>
              </motion.div>
            </motion.div>

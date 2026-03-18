@@ -13,6 +13,7 @@ interface Rect {
   y: number;
   width: number;
   height: number;
+  type?: 'question' | 'answer';
 }
 
 // 每页图片在纵向容器中的偏移信息
@@ -53,6 +54,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
+  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer'>('question');
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
 
@@ -165,7 +167,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     const y = e.clientY - cr.top;
 
     setSelectedId(null);
-    setDrawingRect({ id: crypto.randomUUID(), x, y, width: 0, height: 0 });
+    setDrawingRect({ id: crypto.randomUUID(), x, y, width: 0, height: 0, type: activeDrawMode });
     setIsDrawing(true);
     interactionRef.current = 'drawing';
   };
@@ -270,6 +272,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             y: currentRect.height! > 0 ? currentRect.y! : currentRect.y! + currentRect.height!,
             width: Math.abs(currentRect.width!),
             height: Math.abs(currentRect.height!),
+            type: currentRect.type as 'question' | 'answer' | undefined,
           };
           setRects(prev => [...prev, normalized]);
           setSelectedId(normalized.id);
@@ -368,11 +371,34 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     let processed = 0;
 
     try {
-      // 按 Y 坐标排序，确保题目顺序正确
-      const sorted = [...rects].sort((a, b) => a.y - b.y);
+      // 分离题目框和答案框
+      const qRects = rects.filter(r => r.type !== 'answer').sort((a, b) => a.y - b.y);
+      const aRects = rects.filter(r => r.type === 'answer');
 
-      for (let i = 0; i < sorted.length; i++) {
-        const base64 = await cropRect(sorted[i]);
+      for (let i = 0; i < qRects.length; i++) {
+        const qRect = qRects[i];
+        
+        // 寻找所有属于这个题目框的答案框（中心点在题目框内属于该题目）
+        const childAnsRects = aRects.filter(ar => {
+           const cx = ar.x + ar.width / 2;
+           const cy = ar.y + ar.height / 2;
+           // 稍微放宽一点边界，以防答案在紧挨着的下边缘
+           return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
+        });
+
+        // 取出第一个答案框计算比例坐标 0-10000
+        let manualAnswerBox: [number, number, number, number] | undefined = undefined;
+        if (childAnsRects.length > 0) {
+           const ar = childAnsRects[0];
+           manualAnswerBox = [
+             Math.max(0, Math.round((ar.y - qRect.y) / qRect.height * 10000)),
+             Math.max(0, Math.round((ar.x - qRect.x) / qRect.width * 10000)),
+             Math.min(10000, Math.round((ar.y + ar.height - qRect.y) / qRect.height * 10000)),
+             Math.min(10000, Math.round((ar.x + ar.width - qRect.x) / qRect.width * 10000)),
+           ];
+        }
+
+        const base64 = await cropRect(qRect);
         const result = await parseQuestionAction(base64);
 
         if (result.success && result.data) {
@@ -384,11 +410,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               contentImage: base64,
               order: i * 10 + subIdx,
               type: q.type || 'essay',
+              answer_box: manualAnswerBox || q.answer_box || q.answerBox, // 优先使用手动标定的框
             });
           });
         }
         processed++;
-        setProgress(Math.round((processed / sorted.length) * 100));
+        setProgress(Math.round((processed / qRects.length) * 100));
       }
       setView('editor');
       onComplete();
@@ -408,7 +435,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     if (!o) return 0;
     const pTop = o.top;
     const pBottom = pTop + o.height;
-    return rects.filter(r => r.y < pBottom && r.y + r.height > pTop).length;
+    // 仅统计题目框数量，不包含答案遮挡框
+    return rects.filter(r => r.type !== 'answer' && r.y < pBottom && r.y + r.height > pTop).length;
   };
 
   // ===================== RENDER =====================
@@ -435,17 +463,42 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       {/* === 顶部工具栏 === */}
       <div className="flex items-center justify-between px-6 py-4 bg-white border-b z-20 shadow-sm">
         <div className="flex items-center gap-6">
-          <h3 className="text-2xl font-black text-gray-900 tracking-tight">框选题目区域</h3>
-          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full text-[10px] font-black text-gray-400 uppercase tracking-widest">
-            <span>{pages.length} PAGES · 连续滚动</span>
+          <h3 className="text-2xl font-black text-gray-900 tracking-tight">内容预处理</h3>
+          
+          <div className="flex bg-gray-100 p-1 rounded-full mx-4">
+            <button
+              onClick={() => setActiveDrawMode('question')}
+              className={cn(
+                "px-4 py-1.5 rounded-full text-sm font-black transition-all flex items-center gap-2",
+                activeDrawMode === 'question' ? "bg-white text-brand-primary shadow-sm" : "text-gray-400 hover:text-gray-600"
+              )}
+            >
+              <div className="w-3 h-3 rounded bg-brand-primary/20 border-2 border-brand-primary" />
+              框选题目区
+            </button>
+            <button
+              onClick={() => setActiveDrawMode('answer')}
+              className={cn(
+                "px-4 py-1.5 rounded-full text-sm font-black transition-all flex items-center gap-2",
+                activeDrawMode === 'answer' ? "bg-white text-red-500 shadow-sm" : "text-gray-400 hover:text-gray-600"
+              )}
+            >
+              <div className="w-3 h-3 rounded bg-red-500/20 border-2 border-red-500" />
+              框选答案遮挡区
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-full text-[10px] font-black text-gray-400 uppercase tracking-widest border border-gray-100">
+            <span>{pages.length} PAGES</span>
             <span className="w-px h-3 bg-gray-300 mx-1" />
-            <span>TOTAL: {rects.length} RECTS</span>
+            <span className="text-brand-primary">{rects.filter(r => r.type !== 'answer').length} 题</span>
+            <span className="text-red-400 font-bold ml-1">{rects.filter(r => r.type === 'answer').length} 遮挡</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleConfirm}
-            disabled={rects.length === 0 || isAnalyzing}
+            disabled={rects.filter(r => r.type !== 'answer').length === 0 || isAnalyzing}
             className="px-8 py-3 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
           >
             <CheckCircle2 className="w-5 h-5" /> 确认并开始解析
@@ -532,9 +585,25 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               ))}
 
               {/* === 渲染所有矩形框 === */}
-              {rects.map((rect, globalIdx) => {
+              {rects.map((rect) => {
+                const isQuestion = rect.type !== 'answer';
                 const isSelected = selectedId === rect.id;
                 const { x, y, width: w, height: h } = rect;
+                
+                // 预先分类并排序（也可提到外部计算，但由于数量小，性能无碍）
+                const qRects = rects.filter(r => r.type !== 'answer').sort((a,b) => a.y - b.y);
+                
+                let label = '';
+                if (isQuestion) {
+                  label = `#${qRects.findIndex(r => r.id === rect.id) + 1}`;
+                } else {
+                  // 判断这块红框落在哪个蓝框中心，以便同号显示
+                  const cx = x + w / 2;
+                  const cy = y + h / 2;
+                  const parentIdx = qRects.findIndex(r => cx >= r.x && cx <= r.x + r.width && cy >= r.y - 10 && cy <= r.y + r.height + 20);
+                  label = parentIdx >= 0 ? `#${parentIdx + 1} 答案` : '未绑定';
+                }
+
                 return (
                   <div
                     key={rect.id}
@@ -543,13 +612,16 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       "absolute border-2 transition-colors group",
                       isSelected
                         ? "border-brand-secondary bg-brand-secondary/10 z-30 shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),0.3)]"
-                        : "border-brand-primary bg-brand-primary/10 z-20"
+                        : isQuestion ? "border-brand-primary bg-brand-primary/10 z-20" : "border-red-500 border-dashed bg-red-500/20 z-20"
                     )}
                     style={{ left: x, top: y, width: w, height: h }}
                   >
                     {/* 序号标签 */}
-                    <div className="absolute -top-6 left-0 bg-brand-primary text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md">
-                      #{globalIdx + 1}
+                    <div className={cn(
+                      "absolute -top-6 left-0 text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md whitespace-nowrap",
+                      isQuestion ? "bg-brand-primary" : "bg-red-500"
+                    )}>
+                      {label}
                     </div>
 
                     {/* 选中态：8 个缩放手柄 */}
@@ -559,7 +631,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                           <div
                             key={pos}
                             className={cn(
-                              "absolute w-3 h-3 bg-white border-2 border-brand-secondary rounded-full z-40 shadow-sm",
+                              "absolute w-3 h-3 bg-white border-2 rounded-full z-40 shadow-sm",
+                              isQuestion ? "border-brand-secondary" : "border-red-500",
                               pos === 'nw' && "-left-1.5 -top-1.5 cursor-nw-resize",
                               pos === 'n' && "left-1/2 -ml-1.5 -top-1.5 cursor-n-resize",
                               pos === 'ne' && "-right-1.5 -top-1.5 cursor-ne-resize",
@@ -583,7 +656,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                           setRects(prev => prev.filter(r => r.id !== rect.id));
                           setSelectedId(null);
                         }}
-                        className="absolute -top-3 -right-3 bg-red-500 text-white p-1.5 rounded-full shadow-lg hidden group-hover:block z-50 transition-transform hover:scale-110 active:scale-90"
+                        className={cn(
+                          "absolute -top-3 -right-3 text-white p-1.5 rounded-full shadow-lg hidden group-hover:block z-50 transition-transform hover:scale-110 active:scale-90",
+                          isQuestion ? "bg-red-500" : "bg-gray-800"
+                        )}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -595,7 +671,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               {/* 绘制中的虚线矩形 */}
               {drawingRect && (
                 <div
-                  className="absolute border-2 border-brand-primary border-dashed bg-brand-primary/5 shadow-inner z-20"
+                  className={cn(
+                    "absolute border-2 border-dashed shadow-inner z-20 pointer-events-none",
+                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : "border-red-500 bg-red-500/20"
+                  )}
                   style={{
                     left: drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!),
                     top: drawingRect.height! > 0 ? drawingRect.y : (drawingRect.y! + drawingRect.height!),
