@@ -307,7 +307,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           {hasMaterialImage ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0 overflow-hidden"
+              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0"
             >
               <div className="relative inline-flex w-full">
                 <img src={firstQ.materialImage} alt="素材原图" className="w-full h-auto object-contain mix-blend-multiply" />
@@ -328,7 +328,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           ) : firstQ.image ? (
             <div 
               onClick={() => setIsMaterialExpanded(true)}
-              className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0 overflow-hidden"
+              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0"
             >
               <div className="relative inline-flex w-full">
                 <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
