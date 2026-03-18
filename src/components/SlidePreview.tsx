@@ -309,8 +309,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               onClick={() => setIsMaterialExpanded(true)}
               className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0 overflow-hidden"
             >
-              <div className="relative inline-flex max-w-full max-h-full">
-                <img src={firstQ.materialImage} alt="素材原图" className="w-[auto] h-[auto] max-w-full max-h-full object-contain mix-blend-multiply" />
+              <div className="relative inline-flex w-full">
+                <img src={firstQ.materialImage} alt="素材原图" className="w-full h-auto object-contain mix-blend-multiply" />
                 {renderAnswerMasks(questions)}
               </div>
               {editable && (
@@ -330,8 +330,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               onClick={() => setIsMaterialExpanded(true)}
               className="flex-1 rounded-xl flex items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0 overflow-hidden"
             >
-              <div className="relative inline-flex max-w-full max-h-full">
-                <img src={firstQ.image} alt="原文切片" className="w-[auto] h-[auto] max-w-full max-h-full object-contain mix-blend-multiply" />
+              <div className="relative inline-flex w-full">
+                <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
                 {renderAnswerMasks(questions)}
               </div>
             </div>
