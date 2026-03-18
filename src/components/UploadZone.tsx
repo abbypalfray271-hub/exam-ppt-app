@@ -1,31 +1,34 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { 
   Upload, Image as ImageIcon, FileText, X, Wand2, 
-  FileCode, Sparkles, ChevronLeft, ChevronRight, Loader2
+  FileCode, Sparkles, ChevronLeft, ChevronRight, Loader2, FolderOpen
 } from 'lucide-react';
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExtractionCanvas } from './ExtractionCanvas';
-import { pdfToImages, wordToText, compressImage } from '@/lib/documentProcessor';
+import { pdfToImages, wordToText, compressImage, cropImageByBox } from '@/lib/documentProcessor';
 import { parseFullDocumentAction } from '@/app/actions/ai';
-import { CroppingReviewModal } from './CroppingReviewModal';
+import { importProjectJSON } from '@/lib/projectIO';
 
 export const UploadZone = () => {
   const { 
     setExamImage, 
     setExamPages, 
     setExamText, 
-    setQuestions, 
+    setQuestions,
+    addQuestions,
     isProcessing, 
     setProcessing,
     examPages,
     examText,
     setView,
     examImageUrl,
-    currentMode
+    currentMode,
+    isCanvasOpen,
+    setCanvasOpen
   } = useProjectStore();
   
   const [isDragActive, setIsDragActive] = useState(false);
@@ -34,11 +37,10 @@ export const UploadZone = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [fileType, setFileType] = useState<'image' | 'pdf' | 'word' | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [showCanvas, setShowCanvas] = useState(false);
   const [parseProgress, setParseProgress] = useState<{current: number; total: number} | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // 用于 AI 识别后的二次审阅/裁剪微调
-  const [pendingReviewData, setPendingReviewData] = useState<{questions: Question[], pages: string[]} | null>(null);
+
 
   // 初始化预览 (从 Store 恢复)
   React.useEffect(() => {
@@ -54,7 +56,7 @@ export const UploadZone = () => {
 
   const handleFullParse = async () => {
     setProcessing(true);
-    setQuestions([]); // 开始前清空已有题目
+    // 不再清空已有题目，新解析结果会追加到现有题目后面
     let allExtractedQuestions: Question[] = [];
     
     try {
@@ -65,7 +67,7 @@ export const UploadZone = () => {
         // 因为 AI Prompt 复杂度变高（要求精确切分大阅读题和框选），
         // 如果把多页塞给同一个请求，模型处理时长会指数级增加。改用 1页1发 + 高并发。
         const PAGES_PER_BATCH = 1;  
-        const MAX_CONCURRENCY = 5;  
+        const MAX_CONCURRENCY = 8; // 提升并发数以榨干 API 吞吐量
         
         // 将页面分批: [0,1,2], [3,4,5], [6,7,8], ...
         const batches: string[][] = [];
@@ -109,7 +111,49 @@ export const UploadZone = () => {
         if (allExtractedQuestions.length > 0) {
           // 按照 order 重新排序
           allExtractedQuestions.sort((a, b) => a.order - b.order);
-          setPendingReviewData({ questions: allExtractedQuestions, pages });
+
+          // === 强化去重策略 ===
+          // AI 跨页识别时可能返回同一题的略微不同版本。
+          // 策略：激进标准化（去除所有标点、空格、换行），同时按 title+content 双指纹拦截。
+          const uniqueQuestions: Question[] = [];
+          const seenFingerprints = new Set<string>();
+
+          const normalize = (text: string) => 
+            text.replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60); // 去除所有空白+标点，取前60字符
+
+          allExtractedQuestions.forEach(q => {
+            const titleFp = normalize(q.title || '');
+            const contentFp = normalize(q.content || '');
+            const fingerprint = `${titleFp}::${contentFp}`;
+            
+            if (!seenFingerprints.has(fingerprint)) {
+              seenFingerprints.add(fingerprint);
+              uniqueQuestions.push(q);
+            } else {
+              console.log('自动拦截重复题目:', q.title, '指纹:', fingerprint);
+            }
+          });
+
+          // 自动模式统一手动模式：直接后台裁剪，跳过审阅弹窗，直达 Editor!
+          setParseProgress({ current: 100, total: 100 });
+          for (let i = 0; i < uniqueQuestions.length; i++) {
+            const q = uniqueQuestions[i];
+            const pageIdx = q.pageIndex || 0;
+            const base64Img = pages[pageIdx];
+            if (!base64Img) continue;
+
+            if (q.materialBox && q.materialBox.length === 4) {
+              q.materialImage = await cropImageByBox(base64Img, q.materialBox as [number,number,number,number]) || undefined;
+            }
+            if (q.contentBox && q.contentBox.length === 4) {
+              const [ymin, xmin, ymax, xmax] = q.contentBox;
+              if (ymax > ymin && xmax > xmin) {
+                q.contentImage = await cropImageByBox(base64Img, q.contentBox as [number,number,number,number]) || undefined;
+              }
+            }
+          }
+          addQuestions(uniqueQuestions);
+          setView('editor');
         } else {
           alert('未能识别到题目，请重试');
         }
@@ -123,7 +167,7 @@ export const UploadZone = () => {
             order: idx + 1,
             type: q.type || 'essay'
           }));
-          setQuestions(questions);
+          addQuestions(questions);
           setView('editor');
         }
       }
@@ -195,7 +239,11 @@ export const UploadZone = () => {
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    if (file) {
+      handleFile(file);
+      // 重置 value，允许连续上传同一个文件触发 onChange
+      e.target.value = '';
+    }
   };
 
   return (
@@ -206,17 +254,24 @@ export const UploadZone = () => {
             key="upload-panel"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            exit={{ opacity: 0, y: -20 }}
+            style={{ pointerEvents: 'auto' }}
             className={cn(
-              "relative border-2 border-dashed rounded-3xl p-12 transition-all duration-300 glass-panel flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden",
-              isDragActive ? "border-brand-primary bg-brand-primary/10" : "border-gray-300 hover:border-brand-primary/50"
+              "relative aspect-[16/9] mt-8 border-4 border-dashed rounded-3xl flex flex-col items-center justify-center transition-all bg-white group shadow-sm",
+              !isProcessing ? "border-gray-200 cursor-pointer hover:border-brand-primary hover:bg-brand-primary/5 hover:shadow-xl active:scale-[0.99]" : "border-brand-primary/30"
             )}
             onDragOver={(e) => { e.preventDefault(); setIsDragActive(true); }}
             onDragLeave={() => setIsDragActive(false)}
             onDrop={onDrop}
-            onClick={() => document.getElementById('file-upload')?.click()}
+            onClick={() => {
+              if (isProcessing) return;
+              // 优先使用 Ref，兜底使用 ID
+              const input = fileInputRef.current || document.getElementById('file-upload') as HTMLInputElement;
+              input?.click();
+            }}
           >
             <input
+              ref={fileInputRef}
               id="file-upload"
               type="file"
               className="hidden"
@@ -232,18 +287,7 @@ export const UploadZone = () => {
             <p className="text-gray-500 mb-8 max-w-sm">
               支持高清图片、PDF 或 Word 文档，我们将自动识别题目并为您生成精美的讲解 PPT。
             </p>
-            
-            <div className="flex gap-4">
-              <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-full text-sm font-medium shadow-sm border">
-                <ImageIcon className="w-4 h-4 text-blue-500" /> 图片
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-full text-sm font-medium shadow-sm border">
-                <FileText className="w-4 h-4 text-red-500" /> PDF
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-full text-sm font-medium shadow-sm border">
-                <FileCode className="w-4 h-4 text-blue-600" /> Word
-              </div>
-            </div>
+
 
             {/* 动态上传遮罩 */}
             <AnimatePresence>
@@ -281,8 +325,10 @@ export const UploadZone = () => {
           </motion.div>
         ) : (
           <motion.div
+            key="preview-panel"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
             className="relative rounded-3xl overflow-hidden glass-panel border shadow-2xl aspect-[3/4] max-h-[70vh] group flex flex-col items-center justify-center"
           >
             {fileType === 'image' || fileType === 'pdf' ? (
@@ -347,6 +393,7 @@ export const UploadZone = () => {
                 setCurrentPage(0); 
                 setExamPages([]);
                 setExamText('');
+                setExamImage(undefined);
               }}
               className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors backdrop-blur-md z-10"
             >
@@ -357,7 +404,7 @@ export const UploadZone = () => {
               {fileType === 'image' || fileType === 'pdf' ? (
                 <button 
                   className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
-                  onClick={() => setShowCanvas(true)}
+                  onClick={() => setCanvasOpen(true)}
                 >
                   <Wand2 className="w-5 h-5" /> 框选提取题目
                 </button>
@@ -378,27 +425,6 @@ export const UploadZone = () => {
             </div>
 
             <AnimatePresence>
-              {showCanvas && (
-                <motion.div
-                  key="extraction-canvas"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="absolute inset-0 z-50 bg-white"
-                >
-                  <ExtractionCanvas 
-                    imageUrl={preview!} 
-                    onComplete={() => setShowCanvas(false)}
-                  />
-                  <button 
-                    onClick={() => setShowCanvas(false)}
-                    className="absolute top-2.5 right-60 z-[60] p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <X className="w-5 h-5 text-gray-500" />
-                  </button>
-                </motion.div>
-              )}
-
               {/* AI 解析专用遮罩 (已有预览图时触发) */}
               {isProcessing && preview && (
                 <motion.div
@@ -457,21 +483,40 @@ export const UploadZone = () => {
         )}
       </AnimatePresence>
 
-      {/* 裁剪边缘审阅弹窗 */}
+      {/* === 全屏框选画布（提升到顶层，脱离 motion.div 的 transform 上下文） === */}
       <AnimatePresence>
-        {pendingReviewData && (
-          <CroppingReviewModal
-            questions={pendingReviewData.questions}
-            pages={pendingReviewData.pages}
-            onConfirm={(updatedQuestions) => {
-              setQuestions(updatedQuestions);
-              setPendingReviewData(null);
-              setView('editor');
-            }}
-            onCancel={() => setPendingReviewData(null)}
-          />
+        {isCanvasOpen && (
+          <motion.div
+            key="extraction-canvas"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999] bg-white"
+          >
+            <ExtractionCanvas 
+              pages={pdfPages.length > 0 ? pdfPages : (examPages.length > 0 ? examPages : [preview!])} 
+              initialPageIndex={currentPage}
+              onComplete={() => setCanvasOpen(false)}
+            />
+            <button 
+              onClick={() => setCanvasOpen(false)}
+              className="fixed top-2.5 right-60 z-[1000] p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
+
+
+      {/* 右下角读档按钮 */}
+      <button
+        onClick={() => importProjectJSON()}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-2.5 bg-white/90 backdrop-blur-md rounded-full text-sm font-bold shadow-lg border hover:bg-white hover:shadow-xl hover:scale-105 transition-all active:scale-95 group"
+      >
+        <FolderOpen className="w-4 h-4 text-brand-secondary group-hover:-translate-y-0.5 transition-transform" />
+        读档
+      </button>
     </div>
   );
 };

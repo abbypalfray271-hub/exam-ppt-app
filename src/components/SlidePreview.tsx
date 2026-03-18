@@ -36,11 +36,20 @@ export function buildSlides(questions: Question[]): SlideData[] {
   
   if (questions.length === 0) return slides;
 
-  let currentGroup: Question[] = [questions[0]];
+  // === 防御性去重：确保即使 store 中已有重复数据，也不会产生重复幻灯片 ===
+  const seen = new Set<string>();
+  const dedupedQuestions = questions.filter(q => {
+    const fp = (q.content || '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60);
+    if (seen.has(fp) && fp.length > 0) return false;
+    seen.add(fp);
+    return true;
+  });
+
+  let currentGroup: Question[] = [dedupedQuestions[0]];
   
-  for (let i = 1; i < questions.length; i++) {
-    const prevQ = questions[i - 1];
-    const currQ = questions[i];
+  for (let i = 1; i < dedupedQuestions.length; i++) {
+    const prevQ = dedupedQuestions[i - 1];
+    const currQ = dedupedQuestions[i];
     
     // 判断是否共用素材 (由于 material 可能很大，建议通过精准匹配判断)
     const sameMaterial = prevQ.material === currQ.material && !!prevQ.material;
@@ -105,7 +114,11 @@ interface UnifiedSlideProps {
 }
 
 export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable = false }) => {
-  const { updateQuestion } = useProjectStore();
+  const { 
+    updateQuestion, 
+    removeQuestion,
+    examPages
+  } = useProjectStore();
 
   // ======= 放大镜状态 =======
   const [selectedText, setSelectedText] = useState('');
@@ -156,20 +169,43 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
   const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
-
-  // 假设同一组題目的素材是一致的，取第一个即可
+  
+  // 原文素材分页状态
   const firstQ = questions[0];
-  const hasMaterial = firstQ.material && firstQ.material.trim().length > 0;
-  const hasMaterialImage = !!firstQ.materialImage;
+  const [materialPageIndex, setMaterialPageIndex] = useState(firstQ?.pageIndex || 0);
+
+  // 素材全图缩放和平移状态
+  const [zoomState, setZoomState] = useState({ scale: 1, x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // 当弹窗打开时，确保索引与当前题目同步 (如果题目有 pageIndex)
+  useEffect(() => {
+    if (isMaterialExpanded && firstQ?.pageIndex !== undefined) {
+      setMaterialPageIndex(firstQ.pageIndex);
+    }
+  }, [isMaterialExpanded, firstQ?.pageIndex]);
+
+  const hasMaterial = firstQ?.material && firstQ.material.trim().length > 0;
+  const hasMaterialImage = !!firstQ?.materialImage;
 
   return (
     <div className="w-full h-full bg-white flex">
       {/* 左侧 55%：素材区 */}
       <div className="w-[55%] h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100">
-        <div className="flex items-center gap-2 mb-[3%]">
-          <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b]" />
-          <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase">
+        <div 
+          onClick={() => {
+            if (hasMaterialImage || firstQ?.image || examPages?.length > 0) {
+              setIsMaterialExpanded(true);
+            }
+          }}
+          className="flex items-center gap-2 mb-[3%] cursor-pointer group hover:bg-gray-200/50 p-1 -ml-1 rounded transition-colors self-start"
+          title="点击满屏放大阅读该素材"
+        >
+          <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b] group-hover:text-brand-primary transition-colors" />
+          <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase group-hover:text-brand-primary transition-colors flex items-center gap-1">
             原文切片(整个切片)
+            <Maximize2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
           </span>
         </div>
         
@@ -222,8 +258,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       <div className="w-[45%] h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white">
         {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0">
-            {/* 题干按钮 (点击展开看大图 + OCR文字) */}
-            <button
+            {/* 题干卡片 (点击展开看大图 + OCR文字) - 使用 div + role 避免 button 嵌套 */}
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 if (q.contentImage) setExpandedQuestion(q);
               }}
@@ -234,31 +272,55 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   : "border-transparent cursor-default"
               )}
             >
-              <div className="bg-[#1e293b] text-white px-2.5 py-1 rounded-md shadow-sm shrink-0 mt-0.5">
-                <span className="text-[0.65em] font-black italic tracking-tighter">Q{qIdx + 1}</span>
-              </div>
-              <div className="flex-1 overflow-hidden flex flex-col gap-1">
-                {editable ? (
-                  <input
-                    className="w-full text-[0.8em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-white focus:bg-white rounded px-1 -ml-1 transition-colors truncate"
-                    value={q.title}
-                    onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
-                    onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击输入框时触发弹窗
-                  />
-                ) : (
-                  <h3 className="text-[0.8em] font-black text-[#1e293b] leading-snug line-clamp-2">
-                    {q.title || (q.content ? q.content.slice(0, 30) + '...' : `点击查看第 ${qIdx + 1} 题详情`)}
-                  </h3>
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="flex items-center gap-2">
+                  <div className="bg-[#1e293b] text-white px-2 py-0.5 rounded shadow-sm shrink-0">
+                    <span className="text-[0.7em] font-black italic tracking-tighter">Q{qIdx + 1}</span>
+                  </div>
+                  {editable ? (
+                    <input
+                      className="flex-1 text-[1.05em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-white focus:bg-white rounded px-1 -ml-1 transition-colors truncate"
+                      value={q.title}
+                      onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <h3 className="flex-1 text-[1.1em] font-black text-[#1e293b] leading-tight line-clamp-1">
+                      {q.title || (q.content ? q.content.slice(0, 40) : `题目详情`)}
+                    </h3>
+                  )}
+                </div>
+                
+                {/* 如果标题只有编号，则下方紧跟内容摘要，但字号也要适度放大 */}
+                {q.content && (
+                  <p className="text-[0.85em] text-gray-600 font-bold line-clamp-1 mt-1 pl-1 border-l-2 border-brand-primary/20">
+                    {q.content.replace(/\n/g, ' ')}
+                  </p>
                 )}
                 
                 {q.contentImage && (
-                  <div className="flex items-center gap-1.5 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span className="text-[10px] font-bold">查看题目详情</span>
+                  <div className="flex items-center justify-between mt-1.5">
+                    <div className="flex items-center gap-1 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity px-1">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span className="text-[10px] font-black tracking-wider uppercase">Click to Zoom</span>
+                    </div>
+                    
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('确定要删除这道题目吗？')) {
+                          removeQuestion(q.id);
+                        }
+                      }}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                      title="删除题目"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
               </div>
-            </button>
+            </div>
 
             {/* 如果没有图片，兜底展示文字逻辑 (不再默认展示 textarea，除非处于 editable) */}
             {!q.contentImage && editable && (
@@ -357,8 +419,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                       <Maximize2 className="w-5 h-5 text-brand-primary group-hover:scale-110 transition-transform" />
                     )}
                   </button>
-                  <h3 className="text-lg font-black text-gray-800 tracking-tight">
-                    题目详情：{expandedQuestion.title || `Q${questions.findIndex(q => q.id === expandedQuestion.id) + 1}`}
+                  <h3 className="text-lg font-black text-gray-800 tracking-tight flex-1 truncate pr-4">
+                    题目详情：{expandedQuestion.title} {expandedQuestion.content ? expandedQuestion.content.split('\n')[0] : ''}
                   </h3>
                 </div>
                 <button
@@ -371,74 +433,160 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               
               {/* 图文混合展示区 (可滚动) */}
               <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
+                 {(() => {
+                   const lines = expandedQuestion.content ? expandedQuestion.content.split('\n') : [];
+                   const firstLine = lines[0] || '';
+                   const remainingContent = lines.slice(1).join('\n');
 
+                   return (
+                     <div className="w-full flex flex-col gap-2">
+                       <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold ml-1">
+                         <BookOpen className="w-4 h-4" />
+                         <span>题目内容 (选项与正文)</span>
+                       </div>
+                       <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                         {editable ? (
+                           <textarea
+                             className="w-full text-xl font-bold text-[#1e293b] leading-loose bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[12em] custom-scrollbar"
+                             value={remainingContent}
+                             onChange={(e) => {
+                               const newContent = firstLine + (firstLine ? '\n' : '') + e.target.value;
+                               updateQuestion(expandedQuestion.id, { content: newContent });
+                               setExpandedQuestion({ ...expandedQuestion, content: newContent });
+                             }}
+                             placeholder="可以在此补充或修正题目内容..."
+                           />
+                         ) : (
+                           <p className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap">
+                             {remainingContent || '暂无更多内容'}
+                           </p>
+                         )}
+                       </div>
+                     </div>
+                   );
+                 })()}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+       {/* 原文素材全屏放大弹窗 */}
+       <AnimatePresence>
+         {isMaterialExpanded && (
+           <motion.div
+             initial={{ opacity: 0 }}
+             animate={{ opacity: 1 }}
+             exit={{ opacity: 0 }}
+             className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-hidden"
+             onClick={() => {
+               setIsMaterialExpanded(false);
+               setZoomState({ scale: 1, x: 0, y: 0 });
+             }}
+           >
+             <motion.div
+               initial={{ scale: 0.9, opacity: 0 }}
+               animate={{ scale: 1, opacity: 1 }}
+               exit={{ scale: 0.9, opacity: 0 }}
+               className="relative max-w-[95vw] max-h-[95vh] flex flex-col items-center"
+               onClick={(e) => e.stopPropagation()}
+             >
+               <button
+                 onClick={() => setIsMaterialExpanded(false)}
+                 className="absolute -top-12 right-0 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors mb-4"
+               >
+                 <X className="w-6 h-6" />
+               </button>
+
+                {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
+                <div 
+                  className={cn("relative group inline-block", zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "")}
+                  style={{
+                    transform: `translate(${zoomState.x}px, ${zoomState.y}px) scale(${zoomState.scale})`,
+                    transformOrigin: 'center center',
+                    transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+                  }}
+                  onPointerDown={(e) => {
+                    if (zoomState.scale > 1) {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      setIsDragging(true);
+                      setDragStart({ x: e.clientX - zoomState.x, y: e.clientY - zoomState.y });
+                    }
+                  }}
+                  onPointerMove={(e) => {
+                    if (isDragging && zoomState.scale > 1) {
+                      setZoomState(prev => ({
+                        ...prev,
+                        x: e.clientX - dragStart.x,
+                        y: e.clientY - dragStart.y
+                      }));
+                    }
+                  }}
+                  onPointerUp={(e) => {
+                    setIsDragging(false);
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }}
+                  onPointerCancel={() => setIsDragging(false)}
+                  onWheel={(e) => {
+                    // 阻止页面默认滚动
+                    e.preventDefault();
+                    // 动态调整整体缩放倍数 (1.0 到 5.0)，以当前鼠标位置缩放会比较复杂，这里用简单的中心缩放
+                    setZoomState(prev => {
+                      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+                      let newScale = Math.min(Math.max(1, prev.scale * zoomFactor), 5.0);
+                      
+                      // 如果缩放回 1，重置位置
+                      if (newScale === 1) {
+                        return { scale: 1, x: 0, y: 0 };
+                      }
+                      
+                      return { ...prev, scale: newScale };
+                    });
+                  }}
+                >
+                  <img 
+                    src={(examPages && examPages.length > 0) ? examPages[materialPageIndex] : (firstQ.materialImage || firstQ.image)} 
+                    alt="全屏原文切片" 
+                    className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-white block select-none pointer-events-none"
+                    draggable={false}
+                  />
                  
-                 {/* 下部分：OCR 文字编辑区作兜底 */}
-                 <div className="w-full flex flex-col gap-2">
-                   <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold ml-1">
-                     <BookOpen className="w-4 h-4" />
-                     <span>文本内容 (识别结果 / 兜底显示)</span>
-                   </div>
-                   <div className="w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                     {editable ? (
-                       <textarea
-                         className="w-full text-sm font-medium text-[#475569] leading-relaxed bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[10em] custom-scrollbar"
-                         value={expandedQuestion.content}
-                         onChange={(e) => {
-                           // 实时更新 Zustand 和本地弹窗状态
-                           updateQuestion(expandedQuestion.id, { content: e.target.value });
-                           setExpandedQuestion({ ...expandedQuestion, content: e.target.value });
-                         }}
-                         placeholder="可以在此修正 OCR 提取错误..."
-                       />
-                     ) : (
-                       <p className="text-sm font-medium text-[#475569] leading-relaxed whitespace-pre-wrap">
-                         {expandedQuestion.content || '暂无文本内容'}
-                       </p>
-                     )}
-                   </div>
-                 </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                 {/* 左右翻页按钮 (仅当有多个 examPages 时显示) */}
+                 {examPages && examPages.length > 1 && (
+                   <>
+                     <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         setMaterialPageIndex(prev => Math.max(0, prev - 1));
+                       }}
+                       disabled={materialPageIndex === 0}
+                       className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/20 hover:bg-black/50 text-white rounded-full backdrop-blur-md transition-all disabled:opacity-30 disabled:cursor-not-allowed group-hover:scale-110 active:scale-95 shadow-xl"
+                     >
+                       <ChevronLeft className="w-8 h-8" />
+                     </button>
+                     <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         setMaterialPageIndex(prev => Math.min(examPages.length - 1, prev + 1));
+                       }}
+                       disabled={materialPageIndex === examPages.length - 1}
+                       className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/20 hover:bg-black/50 text-white rounded-full backdrop-blur-md transition-all disabled:opacity-30 disabled:cursor-not-allowed group-hover:scale-110 active:scale-95 shadow-xl"
+                     >
+                       <ChevronRight className="w-8 h-8" />
+                     </button>
+                   </>
+                 )}
+               </div>
 
-      {/* 原文素材全屏放大弹窗 */}
-      <AnimatePresence>
-        {isMaterialExpanded && (firstQ.materialImage || firstQ.image) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
-            onClick={() => setIsMaterialExpanded(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-[95vw] max-h-[95vh] flex flex-col items-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => setIsMaterialExpanded(false)}
-                className="absolute -top-12 right-0 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors mb-4"
-              >
-                <X className="w-6 h-6" />
-              </button>
-              <img 
-                src={firstQ.materialImage || firstQ.image} 
-                alt="全屏原文切片" 
-                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-white"
-              />
-              <div className="mt-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
-                <p className="text-white text-sm font-bold tracking-widest uppercase">原文切片预览</p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+               <div className="mt-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20 flex items-center gap-4">
+                 <p className="text-white text-sm font-bold tracking-widest uppercase">
+                   {examPages && examPages.length > 0 ? `原文第 ${materialPageIndex + 1} / ${examPages.length} 页` : '原文切片预览'}
+                 </p>
+               </div>
+             </motion.div>
+           </motion.div>
+         )}
+       </AnimatePresence>
     </div>
   );
 };
@@ -453,9 +601,10 @@ interface SlideFrameProps {
   onClick?: () => void;
   className?: string;
   label?: string;
+  onDelete?: () => void;
 }
 
-export const SlideFrame: React.FC<SlideFrameProps> = ({ children, selected, onClick, className, label }) => {
+export const SlideFrame: React.FC<SlideFrameProps> = ({ children, selected, onClick, className, label, onDelete }) => {
   return (
     <div 
       onClick={onClick}
@@ -483,6 +632,20 @@ export const SlideFrame: React.FC<SlideFrameProps> = ({ children, selected, onCl
         )}>
           {label}
         </div>
+      )}
+      
+      {/* 鼠标悬浮显示的删除按钮 */}
+      {onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-90 z-20"
+          title="删除此页"
+        >
+          <X className="w-3 h-3" />
+        </button>
       )}
     </div>
   );

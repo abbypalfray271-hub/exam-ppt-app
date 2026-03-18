@@ -1,0 +1,25 @@
+# Global Rules for AI Assistant
+
+## 1. AI 协作协议 (AI Interaction Protocol)
+- **先分析建议 (Proactive Proposal)**: 在修改代码前，必须先提供具体的物理分析（诊断报告）并解释 Bug 根源或设计思路。
+- **确认后动手 (Explicit Approval)**: 只有在用户明确回复“同意”、“认可”或“go”后，才能动刀修改代码。严禁逻辑暴走和画蛇添足。
+
+## 2. 技术与编程规范
+- **语言偏好**: 始终使用 **Simplified Chinese (简体中文)** 进行回复。
+- **技术栈**: 使用 **TypeScript** 开发，并优先使用 **Functional Components (函数式组件)**。
+- **代码质量**: 为复杂逻辑添加详尽注释。
+- **路径规则**: 在当前项目 Workspace (`d:\Ai_Vibe_Coding\superpowers-antigravity\exam-ppt-app`) 下进行开发，禁止将项目文件写入 `tmp` 或系统桌面。
+
+## 3. 上课场景与设计要求 (Classroom-Ready UI)
+- **视觉醒目 (Visual Excellence)**:
+    - 题目内容字体不小于 `text-xl` (20px)。
+    - 使用加粗 (`font-bold`) 和高对比深色设计 (`#1e293b`) 以确保投影清晰。
+    - 必须使用宽行距 (`leading-loose`, 双倍行距)，防止由于考题密集导致的视觉疲劳。
+- **信息布局**:
+    - “题号”与“标题”必须合并为一行，使用放大且醒目的文字。
+    - 内容呈现需符合教学逻辑流（如层级递进、核心突出）。
+- **零冗余**: AI 解析必须内置自动化内容指纹去重。提供便捷的“题目级”和“页面级”删除工具。
+
+## 4. 视觉美学与品质
+- **Premium 设计**: 拒绝简陋。采用 Framer Motion 动画、现代渐变排版和玻璃拟态（Glassmorphism）等手段提升交互感。
+- **真实素材**: 禁止使用简单的灰色占位符。若需演示图片，必须调用 `generate_image` 工具生成真实的教学素材。

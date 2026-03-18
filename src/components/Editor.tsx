@@ -7,11 +7,14 @@ import {
   ChevronRight,
   Download,
   Presentation,
-  FileSearch
+  FileSearch,
+  Save,
+  FolderOpen
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { exportToPpt } from '@/lib/exportPpt';
+import { exportProjectJSON, importProjectJSON } from '@/lib/projectIO';
 import { 
   buildSlides, 
   SlideData, 
@@ -21,7 +24,7 @@ import {
 } from './SlidePreview';
 
 export const Editor = () => {
-  const { projectName, questions, setView } = useProjectStore();
+  const { projectName, questions, setView, removeQuestions, resetUpload, setCanvasOpen } = useProjectStore();
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
   const thumbnailRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -78,7 +81,7 @@ export const Editor = () => {
       {/* ============================== */}
       {/* 左侧：幻灯片缩略图列表 */}
       {/* ============================== */}
-      <div className="w-48 shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col">
+      <div className="w-36 shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col">
         <div className="px-3 py-3 border-b bg-white/50">
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
             幻灯片 · {totalSlides}
@@ -95,6 +98,16 @@ export const Editor = () => {
                 onClick={() => setCurrentSlideIdx(idx)}
                 label={`${idx + 1}`}
                 className="w-full"
+                onDelete={slide.type === 'unified' ? () => {
+                  if (confirm('确定要删除这一整页及包含的题目吗？')) {
+                    const qIds = slide.questions.map(q => q.id);
+                    removeQuestions(qIds);
+                    // 如果删除了当前页或之前的页，调整索引防止溢出
+                    if (idx <= currentSlideIdx) {
+                      setCurrentSlideIdx(prev => Math.max(0, prev - 1));
+                    }
+                  }
+                } : undefined}
               >
                 {/* 缩略图使用 pointer-events-none 防止交互 */}
                 <div className="pointer-events-none select-none">
@@ -126,8 +139,8 @@ export const Editor = () => {
           </div>
         </div>
 
-        {/* 主幻灯片显示区 */}
-        <div className="flex-1 w-full flex items-center justify-center px-4">
+        {/* 主幻灯片显示区：完全占满剩余空间 */}
+        <div className="flex-1 w-full flex items-center justify-center px-4 overflow-hidden relative">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentSlideIdx}
@@ -135,75 +148,83 @@ export const Editor = () => {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.15 }}
-              className="w-full max-w-4xl"
+              className="w-full h-full flex items-center justify-center"
             >
-              <div className="w-full aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white">
-                {renderSlideContent(currentSlide, true)}
+              {/* 利用 max-h-full 和 max-w-full 以及 aspect-video 确保在不溢出的情况下放到最大 */}
+              <div className="w-full max-h-full aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white shadow-brand-primary/10">
+                <div className="w-full h-full relative">
+                  {renderSlideContent(currentSlide, true)}
+                </div>
               </div>
             </motion.div>
           </AnimatePresence>
         </div>
 
         {/* 底部导航栏 */}
-        <div className="w-full flex items-center justify-center gap-4 py-3">
-          <button
-            onClick={() => setCurrentSlideIdx(prev => Math.max(0, prev - 1))}
-            disabled={currentSlideIdx === 0}
-            className="p-2.5 bg-white rounded-full shadow-md border hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-white transition-all active:scale-95"
-          >
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
-          </button>
+        <div className="w-full flex items-center justify-between px-4 py-3">
+          {/* 左侧留空，保持居中平衡 */}
+          <div className="w-[200px]" />
           
-          {/* 快速跳转圆点 */}
-          <div className="flex items-center gap-1.5 max-w-md overflow-x-auto scrollbar-hide px-2">
-            {slides.map((slide, idx) => (
-              <button
-                key={idx}
-                onClick={() => setCurrentSlideIdx(idx)}
-                className={cn(
-                  "shrink-0 rounded-full transition-all duration-200",
-                  idx === currentSlideIdx 
-                    ? "w-6 h-2.5 bg-brand-primary" 
-                    : "w-2.5 h-2.5 bg-gray-300 hover:bg-gray-400"
-                )}
-                title={getSlideLabel(slide, idx)}
-              />
-            ))}
+          {/* 居中翻页器 */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentSlideIdx(prev => Math.max(0, prev - 1))}
+              disabled={currentSlideIdx === 0}
+              className="p-2.5 bg-white rounded-full shadow-md border hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-white transition-all active:scale-95"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            
+            {/* 快速跳转圆点 */}
+            <div className="flex items-center gap-1.5 max-w-md overflow-x-auto scrollbar-hide px-2">
+              {slides.map((slide, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCurrentSlideIdx(idx)}
+                  className={cn(
+                    "shrink-0 rounded-full transition-all duration-200",
+                    idx === currentSlideIdx 
+                      ? "w-6 h-2.5 bg-brand-primary" 
+                      : "w-2.5 h-2.5 bg-gray-300 hover:bg-gray-400"
+                  )}
+                  title={getSlideLabel(slide, idx)}
+                />
+              ))}
+            </div>
+            
+            <button
+              onClick={() => setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1))}
+              disabled={currentSlideIdx >= totalSlides - 1}
+              className="p-2.5 bg-white rounded-full shadow-md border hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-white transition-all active:scale-95"
+            >
+              <ChevronRight className="w-5 h-5 text-gray-600" />
+            </button>
           </div>
-          
-          <button
-            onClick={() => setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1))}
-            disabled={currentSlideIdx >= totalSlides - 1}
-            className="p-2.5 bg-white rounded-full shadow-md border hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-white transition-all active:scale-95"
-          >
-            <ChevronRight className="w-5 h-5 text-gray-600" />
-          </button>
+
+          {/* 右侧操作按钮 */}
+          <div className="flex items-center gap-3 w-[200px] justify-end">
+            <button
+              onClick={() => {
+                setView('upload');
+                setCanvasOpen(true);
+              }}
+              className="px-5 py-2.5 bg-white text-gray-900 border border-gray-200 rounded-full font-bold text-xs tracking-widest flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all active:scale-95 group"
+            >
+              <FileSearch className="w-4 h-4 text-brand-primary group-hover:-translate-y-0.5 transition-transform" />
+              返回解析
+            </button>
+
+            <button
+              onClick={() => exportProjectJSON()}
+              className="px-5 py-2.5 bg-gray-900 text-white rounded-full font-bold text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-gray-800 transition-all active:scale-95 group shrink-0"
+            >
+              <Save className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+              存档
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ============================== */}
-      {/* 右侧：题目快速索引 + 导出 */}
-      {/* ============================== */}
-      <div className="w-56 shrink-0 flex flex-col gap-3">
-        <div className="flex-1" />
-        {/* 返回解析按钮 */}
-        <button
-          onClick={() => setView('upload')}
-          className="w-full py-4 bg-white text-gray-900 border border-gray-200 rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all active:scale-95 group"
-        >
-          <FileSearch className="w-4 h-4 text-brand-primary group-hover:-translate-y-0.5 transition-transform" />
-          返回解析
-        </button>
-
-        {/* 导出按钮 */}
-        <button
-          onClick={() => exportToPpt(questions, projectName)}
-          className="w-full py-4 bg-gray-900 text-white rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-gray-800 transition-all active:scale-95 group"
-        >
-          <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
-          导出 PPT
-        </button>
-      </div>
     </div>
   );
 };

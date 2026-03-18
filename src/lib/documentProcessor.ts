@@ -31,7 +31,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale: 1.5 }); // 降低一点缩放以平衡性能与清晰度
+      const viewport = page.getViewport({ scale: 1.25 }); // 降低缩放以提升解析速度
       
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -47,7 +47,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
         canvas: canvas
       }).promise;
 
-      imageUrls.push(await compressImage(canvas.toDataURL('image/jpeg', 0.8), 1600));
+      imageUrls.push(await compressImage(canvas.toDataURL('image/jpeg', 0.65), 1200));
       
       // 及时释放页面资源
       page.cleanup();

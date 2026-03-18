@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useRef, useEffect } from 'react';
 import { UploadZone } from '@/components/UploadZone';
 import { Editor } from '@/components/Editor';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +10,15 @@ import { useProjectStore } from '@/store/useProjectStore';
 export default function Home() {
   const { questions, currentView } = useProjectStore();
   const hasQuestions = questions.length > 0;
+
+  // 每次切回 upload 视图时递增 key，防止 AnimatePresence 的 key 冲突
+  // 导致 framer-motion 将新进入的组件误判为正在退出的旧组件，从而禁用 pointer-events
+  const uploadKeyRef = useRef(0);
+  useEffect(() => {
+    if (currentView === 'upload') {
+      uploadKeyRef.current += 1;
+    }
+  }, [currentView]);
 
   return (
     <main className="min-h-screen bg-[#F8FAFC] overflow-hidden relative">
@@ -54,7 +64,7 @@ export default function Home() {
         <AnimatePresence mode="wait">
           {currentView === 'upload' ? (
             <motion.div
-              key="landing"
+              key={`landing-${uploadKeyRef.current}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, y: -20 }}
@@ -91,27 +101,6 @@ export default function Home() {
           )}
         </AnimatePresence>
       </section>
-
-      {/* 特性卡片 */}
-      <div className="max-w-7xl mx-auto px-8 pb-32">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {[
-            { icon: Wand2, title: '智能识别', desc: '基于 Gemini 2.0 视觉模型，精准切分题目与图表。' },
-            { icon: Sparkles, title: '双模教学', desc: '快速讲评 vs 深度解析，适配不同教学节奏。' },
-            { icon: Presentation, title: '原生导出', desc: '支持 PPT 原生对象导出，保留二次编辑权限。' },
-          ].map((item, idx) => (
-            <div key={idx} className="glass-panel p-8 rounded-3xl border border-white hover:border-brand-primary/30 transition-all duration-300 group">
-              <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-brand-primary/10 transition-colors">
-                <item.icon className="w-6 h-6 text-gray-400 group-hover:text-brand-primary" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">{item.title}</h3>
-              <p className="text-gray-500 leading-relaxed text-sm">
-                {item.desc}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
     </main>
   );
 }

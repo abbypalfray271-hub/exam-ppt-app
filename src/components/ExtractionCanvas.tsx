@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, CheckCircle2, RotateCcw, Loader2 } from 'lucide-react';
-import { parseQuestionAction, parseFullDocumentAction } from '@/app/actions/ai';
+import { parseQuestionAction } from '@/app/actions/ai';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 
@@ -15,59 +15,135 @@ interface Rect {
   height: number;
 }
 
+// 每页图片在纵向容器中的偏移信息
+interface PageOffset {
+  top: number;         // 图片顶部在 container 中的 offsetTop
+  height: number;      // 图片显示高度
+  imgWidth: number;    // 图片显示宽度
+  naturalWidth: number;
+  naturalHeight: number;
+}
+
 interface ExtractionCanvasProps {
-  imageUrl: string;
+  pages: string[];
+  initialPageIndex?: number;
   onComplete: () => void;
 }
 
-export const ExtractionCanvas = ({ imageUrl, onComplete }: ExtractionCanvasProps) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete }: ExtractionCanvasProps) => {
+  // === Refs ===
+  const containerRef = useRef<HTMLDivElement>(null);     // 包裹所有页面的坐标系根容器
+  const scrollRef = useRef<HTMLDivElement>(null);        // 外层可滚动容器
+  const imgRefs = useRef<(HTMLImageElement | null)[]>([]); // 每页一个 img ref
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // === State ===
+  // 矩形全局扁平数组（坐标基于 containerRef）
   const [rects, setRects] = useState<Rect[]>([]);
   const [drawingRect, setDrawingRect] = useState<Partial<Rect> | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
-  
-  // 编辑器增强状态
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [interactionMode, setInteractionMode] = useState<'none' | 'drawing' | 'moving' | 'resizing'>('none');
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+  const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
+  // 图片加载完成计数，用于触发首次 scroll-to-page
+  const [imagesLoaded, setImagesLoaded] = useState(0);
 
-  const { addQuestion, setProcessing } = useProjectStore();
+  const { addQuestion, setProcessing, setView } = useProjectStore();
 
-  const isDrawingRef = React.useRef(false); 
-  const interactionRef = React.useRef<'none' | 'drawing' | 'moving' | 'resizing'>('none');
-  const startPosRef = React.useRef({ x: 0, y: 0 });
-  const initialRectRef = React.useRef<Rect | null>(null);
+  const interactionRef = useRef<'none' | 'drawing' | 'moving' | 'resizing'>('none');
+  const startPosRef = useRef({ x: 0, y: 0 });
+  const initialRectRef = useRef<Rect | null>(null);
+  // 镜像 drawingRect 的 ref，用于 handleMouseUp 中读取最新值，避免嵌套 setState 导致重复 key
+  const drawingRectRef = useRef<Partial<Rect> | null>(null);
 
+  // === 首次挂载：滚动到 initialPageIndex ===
+  useEffect(() => {
+    if (initialPageIndex > 0 && imagesLoaded >= pages.length) {
+      const img = imgRefs.current[initialPageIndex];
+      if (img && scrollRef.current) {
+        img.scrollIntoView({ block: 'start' });
+      }
+    }
+  }, [initialPageIndex, imagesLoaded, pages.length]);
+
+  // === 计算每页图片在 container 中的偏移量 ===
+  const getPageOffsets = useCallback((): PageOffset[] => {
+    if (!containerRef.current) return [];
+    return imgRefs.current.map((img) => {
+      if (!img) return { top: 0, height: 0, imgWidth: 0, naturalWidth: 1, naturalHeight: 1 };
+      return {
+        // offsetTop 相对于最近的 positioned ancestor (containerRef)
+        top: img.offsetTop,
+        height: img.clientHeight,
+        imgWidth: img.clientWidth,
+        naturalWidth: img.naturalWidth || 1,
+        naturalHeight: img.naturalHeight || 1,
+      };
+    });
+  }, []);
+
+  // === 滚动监听：高亮当前可见页的缩略图 ===
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+
+    const handleScroll = () => {
+      const offsets = getPageOffsets();
+      if (offsets.length === 0) return;
+
+      // 以滚动区域 1/3 处作为锚点判断当前页
+      const scrollTop = scrollEl.scrollTop;
+      const anchor = scrollTop + scrollEl.clientHeight / 3;
+
+      let active = 0;
+      for (let i = 0; i < offsets.length; i++) {
+        if (offsets[i].top <= anchor) active = i;
+      }
+      setActivePageIdx(active);
+    };
+
+    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollEl.removeEventListener('scroll', handleScroll);
+  }, [getPageOffsets]);
+
+  // === 点击缩略图 → 平滑滚动到目标页 ===
+  const scrollToPage = (idx: number) => {
+    const img = imgRefs.current[idx];
+    if (img && scrollRef.current) {
+      const containerTop = containerRef.current?.getBoundingClientRect().top ?? 0;
+      const imgTop = img.getBoundingClientRect().top;
+      const offsetInContainer = imgTop - containerTop;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollTop + offsetInContainer - 16,
+        behavior: 'smooth',
+      });
+    }
+  };
+
+  // === 鼠标事件：开始绘制 ===
   const startDrawing = (e: React.MouseEvent) => {
     if (!containerRef.current || isAnalyzing) return;
-    
-    // 如果点在已有矩形上，逻辑会被这些矩形的 onMouseDown 拦截，
-    // 到这里说明是在背景点击，开启新框绘制
     e.preventDefault();
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+
+    const cr = containerRef.current.getBoundingClientRect();
+    // getBoundingClientRect 已经考虑了父级滚动，坐标直接相对于 container 顶部
+    const x = e.clientX - cr.left;
+    const y = e.clientY - cr.top;
 
     setSelectedId(null);
     setDrawingRect({ id: crypto.randomUUID(), x, y, width: 0, height: 0 });
     setIsDrawing(true);
-    isDrawingRef.current = true;
     interactionRef.current = 'drawing';
-    setInteractionMode('drawing');
   };
 
   const startMoving = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (isAnalyzing) return;
-    
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
-
     setSelectedId(id);
-    setInteractionMode('moving');
     interactionRef.current = 'moving';
     startPosRef.current = { x: e.clientX, y: e.clientY };
     initialRectRef.current = { ...rect };
@@ -76,72 +152,74 @@ export const ExtractionCanvas = ({ imageUrl, onComplete }: ExtractionCanvasProps
   const startResizing = (e: React.MouseEvent, id: string, handle: string) => {
     e.stopPropagation();
     if (isAnalyzing) return;
-    
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
-
     setSelectedId(id);
-    setInteractionMode('resizing');
     setResizeHandle(handle);
     interactionRef.current = 'resizing';
     startPosRef.current = { x: e.clientX, y: e.clientY };
     initialRectRef.current = { ...rect };
   };
 
-  React.useEffect(() => {
+  // === 全局 mousemove / mouseup ===
+  useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current || interactionRef.current === 'none') return;
-      
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const currentX = e.clientX;
-      const currentY = e.clientY;
+
+      const cr = containerRef.current.getBoundingClientRect();
 
       if (interactionRef.current === 'drawing') {
-        const x = currentX - containerRect.left;
-        const y = currentY - containerRect.top;
-        const boundedX = Math.max(0, Math.min(x, containerRect.width));
-        const boundedY = Math.max(0, Math.min(y, containerRect.height));
+        const x = e.clientX - cr.left;
+        const y = e.clientY - cr.top;
+        const boundedX = Math.max(0, Math.min(x, cr.width));
+        const boundedY = Math.max(0, Math.min(y, cr.height));
 
         setDrawingRect((current) => {
           if (!current || typeof current.x === 'undefined' || typeof current.y === 'undefined') return current;
-          return { ...current, width: boundedX - current.x, height: boundedY - current.y };
+          const updated = { ...current, width: boundedX - current.x, height: boundedY - current.y };
+          drawingRectRef.current = updated; // 同步更新 ref
+          return updated;
         });
-      } 
+
+        // 绘制时自动滚动（鼠标靠近滚动容器边缘时）
+        if (scrollRef.current) {
+          const sr = scrollRef.current.getBoundingClientRect();
+          const edge = 60;
+          const speed = 15;
+          if (e.clientY < sr.top + edge) {
+            scrollRef.current.scrollTop -= speed;
+          } else if (e.clientY > sr.bottom - edge) {
+            scrollRef.current.scrollTop += speed;
+          }
+        }
+      }
       else if (interactionRef.current === 'moving' && initialRectRef.current) {
-        const dx = currentX - startPosRef.current.x;
-        const dy = currentY - startPosRef.current.y;
-        
+        const dx = e.clientX - startPosRef.current.x;
+        const dy = e.clientY - startPosRef.current.y;
+
         setRects(prev => prev.map(r => {
           if (r.id === selectedId && initialRectRef.current) {
             let nextX = initialRectRef.current.x + dx;
             let nextY = initialRectRef.current.y + dy;
-            
-            // 边界约束
-            nextX = Math.max(0, Math.min(nextX, containerRect.width - initialRectRef.current.width));
-            nextY = Math.max(0, Math.min(nextY, containerRect.height - initialRectRef.current.height));
-
+            nextX = Math.max(0, Math.min(nextX, cr.width - initialRectRef.current.width));
+            nextY = Math.max(0, Math.min(nextY, cr.height - initialRectRef.current.height));
             return { ...r, x: nextX, y: nextY };
           }
           return r;
         }));
       }
       else if (interactionRef.current === 'resizing' && initialRectRef.current && resizeHandle) {
-        const dx = currentX - startPosRef.current.x;
-        const dy = currentY - startPosRef.current.y;
-        
+        const dx = e.clientX - startPosRef.current.x;
+        const dy = e.clientY - startPosRef.current.y;
+
         setRects(prev => prev.map(r => {
           if (r.id === selectedId && initialRectRef.current) {
             let { x, y, width: w, height: h } = initialRectRef.current;
-            
             if (resizeHandle.includes('e')) w += dx;
             if (resizeHandle.includes('w')) { x += dx; w -= dx; }
             if (resizeHandle.includes('s')) h += dy;
             if (resizeHandle.includes('n')) { y += dy; h -= dy; }
-
-            // 最小尺寸限制
-            if (Math.abs(w) < 20) return r;
-            if (Math.abs(h) < 20) return r;
-
+            if (Math.abs(w) < 10 || Math.abs(h) < 10) return r;
             return { ...r, x, y, width: w, height: h };
           }
           return r;
@@ -151,291 +229,357 @@ export const ExtractionCanvas = ({ imageUrl, onComplete }: ExtractionCanvasProps
 
     const handleMouseUp = () => {
       if (interactionRef.current === 'drawing') {
-        isDrawingRef.current = false;
-        setIsDrawing(false);
-        setDrawingRect((currentRect) => {
-          if (currentRect && Math.abs(currentRect.width || 0) > 20 && Math.abs(currentRect.height || 0) > 20) {
-            // 归一化坐标，确保 width/height 为正
-            const normalized: Rect = {
-              id: currentRect.id || crypto.randomUUID(),
-              x: currentRect.width! > 0 ? currentRect.x! : currentRect.x! + currentRect.width!,
-              y: currentRect.height! > 0 ? currentRect.y! : currentRect.y! + currentRect.height!,
-              width: Math.abs(currentRect.width!),
-              height: Math.abs(currentRect.height!),
-            };
-            setRects([normalized]);
-            setSelectedId(normalized.id);
-          }
-          return null;
-        });
+        // 从 ref 读取最新值，避免嵌套 setState 导致 React 中间渲染帧出现重复 key
+        const currentRect = drawingRectRef.current;
+        if (currentRect && Math.abs(currentRect.width || 0) > 10 && Math.abs(currentRect.height || 0) > 10) {
+          const normalized: Rect = {
+            id: crypto.randomUUID(), // 使用全新 ID，与 drawingRect 的 ID 彻底分离
+            x: currentRect.width! > 0 ? currentRect.x! : currentRect.x! + currentRect.width!,
+            y: currentRect.height! > 0 ? currentRect.y! : currentRect.y! + currentRect.height!,
+            width: Math.abs(currentRect.width!),
+            height: Math.abs(currentRect.height!),
+          };
+          setRects(prev => [...prev, normalized]);
+          setSelectedId(normalized.id);
+        }
+        // 同级调用，React 18 自动批处理，不会出现中间状态
+        setDrawingRect(null);
+        drawingRectRef.current = null;
       }
-      
       interactionRef.current = 'none';
-      setInteractionMode('none');
       setResizeHandle(null);
       initialRectRef.current = null;
+      setIsDrawing(false);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-    
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [selectedId, resizeHandle]); 
+  }, [selectedId, resizeHandle]);
 
-  const cropImage = async (rect: Rect): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = imgRef.current;
-      if (!img) return reject(new Error('图片引用丢失'));
+  // =================================================================
+  // 核心：跨页裁剪 —— 判断矩形覆盖哪些页，分别裁剪后纵向拼接
+  // =================================================================
+  const cropRect = async (rect: Rect): Promise<string> => {
+    const offsets = getPageOffsets();
+    if (offsets.length === 0) throw new Error('No page offsets');
 
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('无法创建 Canvas 上下文'));
+    const rectTop = rect.y;
+    const rectBottom = rect.y + rect.height;
 
-      // 计算缩放比例
-      const scaleX = img.naturalWidth / img.width;
-      const scaleY = img.naturalHeight / img.height;
+    // 找出所有与矩形重叠的页
+    const overlapping: { pageIdx: number; cropTop: number; cropHeight: number; offset: PageOffset }[] = [];
+    for (let i = 0; i < offsets.length; i++) {
+      const pTop = offsets[i].top;
+      const pBottom = pTop + offsets[i].height;
+      if (rectTop < pBottom && rectBottom > pTop) {
+        const cTop = Math.max(0, rectTop - pTop);
+        const cBottom = Math.min(offsets[i].height, rectBottom - pTop);
+        overlapping.push({ pageIdx: i, cropTop: cTop, cropHeight: cBottom - cTop, offset: offsets[i] });
+      }
+    }
+    if (overlapping.length === 0) throw new Error('Rect does not overlap any page');
 
-      const x = (rect.width > 0 ? rect.x : rect.x + rect.width) * scaleX;
-      const y = (rect.height > 0 ? rect.y : rect.y + rect.height) * scaleY;
-      const w = Math.abs(rect.width) * scaleX;
-      const h = Math.abs(rect.height) * scaleY;
+    // 并行加载所有涉及的页面原图
+    const loaded = await Promise.all(
+      overlapping.map(({ pageIdx }) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.src = pages[pageIdx];
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error(`Page ${pageIdx} load failed`));
+        })
+      )
+    );
 
-      canvas.width = w;
-      canvas.height = h;
-      ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
-    });
+    // 计算每段裁剪参数（物理像素级别）
+    const segments: { img: HTMLImageElement; sx: number; sy: number; sw: number; sh: number }[] = [];
+    let totalH = 0;
+    let outputW = 0;
+
+    for (let i = 0; i < overlapping.length; i++) {
+      const { cropTop: cTop, cropHeight: cH, offset } = overlapping[i];
+      const img = loaded[i];
+      const sx = (rect.x / offset.imgWidth) * img.naturalWidth;
+      const sy = (cTop / offset.height) * img.naturalHeight;
+      const sw = (rect.width / offset.imgWidth) * img.naturalWidth;
+      const sh = (cH / offset.height) * img.naturalHeight;
+      segments.push({ img, sx, sy, sw, sh });
+      totalH += sh;
+      if (i === 0) outputW = sw; // 以第一段的宽度为准
+    }
+
+    // 拼接到同一张 Canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas ctx failed');
+    canvas.width = outputW;
+    canvas.height = totalH;
+
+    let yOff = 0;
+    for (const seg of segments) {
+      ctx.drawImage(seg.img, seg.sx, seg.sy, seg.sw, seg.sh, 0, yOff, outputW, seg.sh);
+      yOff += seg.sh;
+    }
+
+    return canvas.toDataURL('image/jpeg', 0.85);
   };
 
+  // === 确认并解析 ===
   const handleConfirm = async () => {
     if (rects.length === 0) return;
     setIsAnalyzing(true);
     setProcessing(true);
-    
+    let processed = 0;
+
     try {
-      for (let i = 0; i < rects.length; i++) {
-        const rect = rects[i];
-        // 第一次剪裁：用户手动框选的整个区域（大图 Base64）
-        const croppedBase64 = await cropImage(rect);
-        
-        // 调用 AI 解析（注意：AI 拿到的也是上面的大图，它的坐标会是相对于这张大图的）
-        const result = await parseQuestionAction(croppedBase64);
-        
+      // 按 Y 坐标排序，确保题目顺序正确
+      const sorted = [...rects].sort((a, b) => a.y - b.y);
+
+      for (let i = 0; i < sorted.length; i++) {
+        const base64 = await cropRect(sorted[i]);
+        const result = await parseQuestionAction(base64);
+
         if (result.success && result.data) {
-          const questionsArray = result.data;
-          
-          for (let subIdx = 0; subIdx < questionsArray.length; subIdx++) {
-            const q = questionsArray[subIdx];
-            let specificContentImage = croppedBase64; // 默认为大图
-            
-            // 如果 AI 返回了万分位坐标，进行二次精确切割
-            if (q.content_box && Array.isArray(q.content_box) && q.content_box.length === 4) {
-              const [ymin, xmin, ymax, xmax] = q.content_box;
-              // 将万分位转为百分比宽高比例
-              const y = ymin / 10000;
-              const x = xmin / 10000;
-              const height = (ymax - ymin) / 10000;
-              const width = (xmax - xmin) / 10000;
-              
-              // 创建离线 Canvas 进行二次剪裁
-              const img = new Image();
-              img.src = croppedBase64;
-              await new Promise((res) => { img.onload = res; });
-              
-              const canvas = document.createElement('canvas');
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                // 原坐标计算
-                const originalSx = img.width * x;
-                const originalSy = img.height * y;
-                const originalSw = img.width * width;
-                const originalSh = img.height * height;
-                
-                // 给切片增加安全外扩边距 (Padding)
-                // 比如宽度加两边各 1.5%，高度加两边各 1.5%
-                const paddingX = img.width * 0.015;
-                const paddingY = img.height * 0.015;
-                
-                // 确保扩展后不超出原图物理边界
-                const sx = Math.max(0, originalSx - paddingX);
-                const sy = Math.max(0, originalSy - paddingY);
-                // 算新的边界坐标再求宽，不能用 originalSw + ...
-                const ex = Math.min(img.width, originalSx + originalSw + paddingX);
-                const ey = Math.min(img.height, originalSy + originalSh + paddingY);
-                
-                const sw = ex - sx;
-                const sh = ey - sy;
-                
-                canvas.width = sw;
-                canvas.height = sh;
-                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-                specificContentImage = canvas.toDataURL('image/jpeg', 0.8);
-              }
-            }
-            
+          result.data.forEach((q: any, subIdx: number) => {
             addQuestion({
-              id: `${rect.id}-${subIdx}`,
-              image: croppedBase64, // 底图始终保留整块
-              contentImage: specificContentImage, // 二次切割后的精准小图
-              material: q.material || '',
-              title: q.title || `题目 ${i + 1}-${subIdx + 1}`,
-              content: q.content || '',
-              type: 'essay',
-              order: i * 100 + subIdx,
+              ...q,
+              id: crypto.randomUUID(),
+              image: base64,
+              contentImage: base64,
+              order: i * 10 + subIdx,
+              type: q.type || 'essay',
             });
-          }
-        } else {
-          throw new Error(result.error || 'AI 解析未返回成功状态');
+          });
         }
-        setProgress(((i + 1) / rects.length) * 100);
+        processed++;
+        setProgress(Math.round((processed / sorted.length) * 100));
       }
+      setView('editor');
       onComplete();
-    } catch (error: any) {
-      console.error('Extraction failed:', error);
-      alert(`解析失败: ${error.message || '未知错误'}`);
+    } catch (error) {
+      console.error(error);
+      alert('解析失败，请重试');
     } finally {
       setIsAnalyzing(false);
       setProcessing(false);
     }
   };
 
+  // 统计每页被框选数量（用于侧边栏 badge）
+  const getPageRectCount = (pageIdx: number): number => {
+    const offsets = getPageOffsets();
+    const o = offsets[pageIdx];
+    if (!o) return 0;
+    const pTop = o.top;
+    const pBottom = pTop + o.height;
+    return rects.filter(r => r.y < pBottom && r.y + r.height > pTop).length;
+  };
+
+  // ===================== RENDER =====================
   return (
-    <div className="flex flex-col h-full bg-gray-50 rounded-3xl overflow-hidden relative">
+    <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
+      {/* AI 解析遮罩 */}
       <AnimatePresence>
         {isAnalyzing && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="absolute inset-0 z-50 bg-white/80 backdrop-blur-md flex flex-col items-center justify-center"
+          <motion.div
+            key="analyzing-overlay"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-xl flex flex-col items-center justify-center p-12 text-center"
           >
-            <div className="relative w-24 h-24 mb-6">
+            <div className="relative w-24 h-24 mb-10">
               <Loader2 className="w-24 h-24 text-brand-primary animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center font-bold text-sm text-brand-primary">
-                {Math.round(progress)}%
-              </div>
+              <div className="absolute inset-0 flex items-center justify-center font-black text-brand-primary">{progress}%</div>
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">AI 正在深度解析...</h3>
-            <p className="text-gray-500">正在识别题目并生成教学 PPT 的讲解内容</p>
+            <h3 className="text-2xl font-black text-gray-900 mb-2">AI 正在跨页深度解析</h3>
+            <p className="text-gray-500 max-w-sm">正在依次处理所有选框，请稍候...</p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* 工具栏 */}
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b z-20">
-        <div className="flex items-center gap-4">
-          <h3 className="font-bold text-gray-900">请框选题目区域</h3>
+      {/* === 顶部工具栏 === */}
+      <div className="flex items-center justify-between px-6 py-4 bg-white border-b z-20 shadow-sm">
+        <div className="flex items-center gap-6">
+          <h3 className="text-2xl font-black text-gray-900 tracking-tight">框选题目区域</h3>
+          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full text-[10px] font-black text-gray-400 uppercase tracking-widest">
+            <span>{pages.length} PAGES · 连续滚动</span>
+            <span className="w-px h-3 bg-gray-300 mx-1" />
+            <span>TOTAL: {rects.length} RECTS</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {!isAnalyzing && (
-            <>
-              <button 
-                onClick={() => setRects([])}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
-              >
-                <RotateCcw className="w-4 h-4" /> 重置
-              </button>
-              <button 
-                onClick={handleConfirm}
-                disabled={rects.length === 0}
-                className="flex items-center gap-2 px-6 py-2 bg-brand-primary text-white text-sm font-bold rounded-full shadow-lg shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 transition-all font-sans"
-              >
-                <CheckCircle2 className="w-4 h-4" /> 确认并开始解析
-              </button>
-            </>
-          )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setRects([])}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-400 hover:text-red-500 transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" /> 重置所有
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={rects.length === 0 || isAnalyzing}
+            className="px-8 py-3 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
+          >
+            <CheckCircle2 className="w-5 h-5" /> 确认并开始解析
+          </button>
         </div>
       </div>
 
-      {/* 画布区域 */}
-      <div className="relative flex-1 p-6 flex justify-center items-center overflow-hidden bg-gray-100/50">
-        <div 
-          ref={containerRef}
-          className={cn(
-            "relative shadow-xl border border-gray-200 rounded-sm bg-white inline-block",
-            !isAnalyzing && "cursor-crosshair"
-          )}
-          onMouseDown={startDrawing}
+      {/* === 主区域：左侧缩略图 + 右侧连续滚动画布 === */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧页面导航缩略图 */}
+        {pages.length > 1 && (
+          <div className="w-48 bg-white border-r flex flex-col shrink-0">
+            <div className="p-3 border-b bg-gray-50/50">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">页面导航</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-hide">
+              {pages.map((page, idx) => {
+                const rectCount = getPageRectCount(idx);
+                return (
+                  <button
+                    key={idx}
+                    ref={el => { thumbRefs.current[idx] = el; }}
+                    onClick={() => scrollToPage(idx)}
+                    className={cn(
+                      "w-full relative rounded-xl overflow-hidden border-2 transition-all aspect-[3/4] bg-gray-50 group",
+                      activePageIdx === idx
+                        ? "border-brand-primary shadow-lg ring-4 ring-brand-primary/10 scale-[1.02]"
+                        : "border-transparent hover:border-gray-200"
+                    )}
+                  >
+                    <img src={page} alt="" className="w-full h-full object-cover" />
+                    <div className={cn(
+                      "absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black shadow-md",
+                      activePageIdx === idx ? "bg-brand-primary text-white" : "bg-white/90 text-gray-600"
+                    )}>
+                      {idx + 1}
+                    </div>
+                    {rectCount > 0 && (
+                      <div className="absolute top-2 right-2 w-5 h-5 bg-brand-secondary text-white rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
+                        {rectCount}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 右侧：可滚动画布区域，所有页面纵向排列 */}
+        <div
+          ref={scrollRef}
+          className="relative flex-1 overflow-auto bg-gray-100/30"
         >
-          <img 
-            ref={imgRef}
-            src={imageUrl} 
-            alt="To Extract" 
-            className="block max-h-[calc(70vh-100px)] max-w-full w-auto select-none pointer-events-none"
-            draggable={false}
-          />
-
-          {rects.map((rect) => {
-            const isSelected = selectedId === rect.id;
-            const x = rect.width > 0 ? rect.x : rect.x + rect.width;
-            const y = rect.height > 0 ? rect.y : rect.y + rect.height;
-            const w = Math.abs(rect.width);
-            const h = Math.abs(rect.height);
-
-            return (
-              <div
-                key={rect.id}
-                onMouseDown={(e) => startMoving(e, rect.id)}
-                className={cn(
-                  "absolute border-2 transition-colors group",
-                  isSelected ? "border-brand-secondary bg-brand-secondary/10 z-30" : "border-brand-primary bg-brand-primary/5 z-20 hover:bg-brand-primary/10",
-                  !isAnalyzing && "cursor-move"
-                )}
-                style={{ left: x, top: y, width: w, height: h }}
-              >
-                {/* 缩放手柄 (仅选中时显示) */}
-                {isSelected && !isAnalyzing && (
-                  <>
-                    {[
-                      { h: 'nw', c: '-left-1.5 -top-1.5 cursor-nw-resize' },
-                      { h: 'n',  c: 'left-1/2 -ml-1.5 -top-1.5 cursor-n-resize' },
-                      { h: 'ne', c: '-right-1.5 -top-1.5 cursor-ne-resize' },
-                      { h: 'e',  c: '-right-1.5 top-1/2 -mt-1.5 cursor-e-resize' },
-                      { h: 'se', c: '-right-1.5 -bottom-1.5 cursor-se-resize' },
-                      { h: 's',  c: 'left-1/2 -ml-1.5 -bottom-1.5 cursor-s-resize' },
-                      { h: 'sw', c: '-left-1.5 -bottom-1.5 cursor-sw-resize' },
-                      { h: 'w',  c: '-left-1.5 top-1/2 -mt-1.5 cursor-w-resize' },
-                    ].map(handle => (
-                      <div
-                        key={handle.h}
-                        className={cn("absolute w-3 h-3 bg-white border-2 border-brand-secondary rounded-full shadow-sm z-40", handle.c)}
-                        onMouseDown={(e) => startResizing(e, rect.id, handle.h)}
-                      />
-                    ))}
-                  </>
-                )}
-
-                {!isAnalyzing && (
-                  <div className={cn(
-                    "absolute -top-3 -right-3 z-50",
-                    isSelected ? "flex" : "hidden group-hover:flex"
-                  )}>
-                    <button 
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); setRects(prev => prev.filter(r => r.id !== rect.id)); setSelectedId(null); }}
-                      className="bg-red-500 text-white p-1.5 rounded-full shadow-lg hover:bg-red-600 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {drawingRect && (
+          <div className="flex justify-center py-8 px-8">
             <div
-              className="absolute border-2 border-brand-primary border-dashed bg-brand-primary/10"
-              style={{
-                left: drawingRect.width! > 0 ? drawingRect.x : drawingRect.x! + drawingRect.width!,
-                top: drawingRect.height! > 0 ? drawingRect.y : drawingRect.y! + drawingRect.height!,
-                width: Math.abs(drawingRect.width!),
-                height: Math.abs(drawingRect.height!),
-              }}
-            />
-          )}
+              ref={containerRef}
+              className={cn(
+                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300",
+                !isAnalyzing ? "cursor-crosshair" : "opacity-50"
+              )}
+              onMouseDown={startDrawing}
+            >
+              {/* === 纵向排列所有页面图片 === */}
+              {pages.map((page, idx) => (
+                <React.Fragment key={idx}>
+                  {/* 分页线指示器 */}
+                  {idx > 0 && (
+                    <div className="w-full h-1 bg-red-400/30 relative z-10 flex items-center justify-center shrink-0">
+                      <span className="absolute bg-red-400/80 text-white text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
+                        P{idx} ↕ P{idx + 1}
+                      </span>
+                    </div>
+                  )}
+                  <img
+                    ref={el => { imgRefs.current[idx] = el; }}
+                    src={page}
+                    alt={`Page ${idx + 1}`}
+                    className="block w-full select-none pointer-events-none shrink-0"
+                    draggable={false}
+                    onLoad={() => setImagesLoaded(prev => prev + 1)}
+                  />
+                </React.Fragment>
+              ))}
+
+              {/* === 渲染所有矩形框 === */}
+              {rects.map((rect, globalIdx) => {
+                const isSelected = selectedId === rect.id;
+                const { x, y, width: w, height: h } = rect;
+                return (
+                  <div
+                    key={rect.id}
+                    onMouseDown={(e) => startMoving(e, rect.id)}
+                    className={cn(
+                      "absolute border-2 transition-colors group",
+                      isSelected
+                        ? "border-brand-secondary bg-brand-secondary/10 z-30 shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),0.3)]"
+                        : "border-brand-primary bg-brand-primary/10 z-20"
+                    )}
+                    style={{ left: x, top: y, width: w, height: h }}
+                  >
+                    {/* 序号标签 */}
+                    <div className="absolute -top-6 left-0 bg-brand-primary text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md">
+                      #{globalIdx + 1}
+                    </div>
+
+                    {/* 选中态：8 个缩放手柄 */}
+                    {isSelected && !isAnalyzing && (
+                      <>
+                        {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(pos => (
+                          <div
+                            key={pos}
+                            className={cn(
+                              "absolute w-3 h-3 bg-white border-2 border-brand-secondary rounded-full z-40 shadow-sm",
+                              pos === 'nw' && "-left-1.5 -top-1.5 cursor-nw-resize",
+                              pos === 'n' && "left-1/2 -ml-1.5 -top-1.5 cursor-n-resize",
+                              pos === 'ne' && "-right-1.5 -top-1.5 cursor-ne-resize",
+                              pos === 'e' && "-right-1.5 top-1/2 -mt-1.5 cursor-e-resize",
+                              pos === 'se' && "-right-1.5 -bottom-1.5 cursor-se-resize",
+                              pos === 's' && "left-1/2 -ml-1.5 -bottom-1.5 cursor-s-resize",
+                              pos === 'sw' && "-left-1.5 -bottom-1.5 cursor-sw-resize",
+                              pos === 'w' && "-left-1.5 top-1/2 -mt-1.5 cursor-w-resize"
+                            )}
+                            onMouseDown={(e) => startResizing(e, rect.id, pos)}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {/* 删除按钮 */}
+                    {!isAnalyzing && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRects(prev => prev.filter(r => r.id !== rect.id));
+                          setSelectedId(null);
+                        }}
+                        className="absolute -top-3 -right-3 bg-red-500 text-white p-1.5 rounded-full shadow-lg hidden group-hover:block z-50 transition-transform hover:scale-110 active:scale-90"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* 绘制中的虚线矩形 */}
+              {drawingRect && (
+                <div
+                  className="absolute border-2 border-brand-primary border-dashed bg-brand-primary/5 shadow-inner z-20"
+                  style={{
+                    left: drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!),
+                    top: drawingRect.height! > 0 ? drawingRect.y : (drawingRect.y! + drawingRect.height!),
+                    width: Math.abs(drawingRect.width!),
+                    height: Math.abs(drawingRect.height!),
+                  }}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
