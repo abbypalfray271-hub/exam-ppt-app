@@ -622,7 +622,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
              initial={{ opacity: 0 }}
              animate={{ opacity: 1 }}
              exit={{ opacity: 0 }}
-             className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-hidden"
+             className="fixed inset-0 z-[110] flex items-center justify-center p-0 bg-black/90 backdrop-blur-md overflow-y-auto custom-scrollbar"
              onClick={() => {
                setIsMaterialExpanded(false);
                setZoomState({ scale: 1, x: 0, y: 0 });
@@ -634,7 +634,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                initial={{ scale: 0.9, opacity: 0 }}
                animate={{ scale: 1, opacity: 1 }}
                exit={{ scale: 0.9, opacity: 0 }}
-               className="relative max-w-[95vw] max-h-[95vh] flex flex-col items-center"
+               className="relative w-full min-h-screen flex flex-col items-center py-12"
                onClick={(e) => e.stopPropagation()}
              >
                <button
@@ -646,10 +646,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
 
                 {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
                 <div 
-                  className={cn("relative group inline-block", isMaskDrawMode ? "cursor-crosshair" : (zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""))}
+                  className={cn("relative group inline-block w-full", isMaskDrawMode ? "cursor-crosshair" : (zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""))}
                   style={{
                     transform: `translate(${zoomState.x}px, ${zoomState.y}px) scale(${zoomState.scale})`,
-                    transformOrigin: 'center center',
+                    transformOrigin: 'center top',
                     transition: (isDragging || isMaskDrawMode) ? 'none' : 'transform 0.2s ease-out'
                   }}
                   onPointerDown={(e) => {
@@ -733,7 +733,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   <img 
                     src={firstQ.materialImage || firstQ.image || ((examPages && examPages.length > 0) ? examPages[materialPageIndex] : '')} 
                     alt="全屏原文切片" 
-                    className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-white block select-none pointer-events-none"
+                    className="w-full h-auto object-contain shadow-2xl bg-white block select-none pointer-events-none"
                     draggable={false}
                   />
                   {renderAnswerMasks(questions, isMaskDrawMode)}
