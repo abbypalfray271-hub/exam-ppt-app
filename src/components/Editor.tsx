@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft,
@@ -22,10 +22,17 @@ import {
   TitleSlide, 
   UnifiedSlide 
 } from './SlidePreview';
+import { ResizableHandle } from './ResizableHandle';
 
 export const Editor = () => {
   const { projectName, questions, setView, removeQuestions, resetUpload, setCanvasOpen } = useProjectStore();
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
+  // 左侧缩略图栏宽度（可拖拽调整）
+  const [leftPanelWidth, setLeftPanelWidth] = useState(144);
+
+  const handleLeftResize = useCallback((dx: number) => {
+    setLeftPanelWidth(prev => Math.max(80, Math.min(300, prev + dx)));
+  }, []);
   const thumbnailRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // 根据题目数据构建幻灯片序列 (原子分割后自动按素材分组)
@@ -81,7 +88,7 @@ export const Editor = () => {
       {/* ============================== */}
       {/* 左侧：幻灯片缩略图列表 */}
       {/* ============================== */}
-      <div className="w-36 shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col">
+      <div className="shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col" style={{ width: leftPanelWidth }}>
         <div className="px-3 py-3 border-b bg-white/50">
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
             幻灯片 · {totalSlides}
@@ -118,6 +125,9 @@ export const Editor = () => {
           ))}
         </div>
       </div>
+
+      {/* 左侧缩略图 ↔ 中间编辑区 可拖拽分隔条 */}
+      <ResizableHandle onDrag={handleLeftResize} />
 
       {/* ============================== */}
       {/* 中间：当前幻灯片放大编辑区 */}

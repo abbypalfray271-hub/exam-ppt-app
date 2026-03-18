@@ -15,8 +15,9 @@ import {
   ChevronRight,
   Monitor
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ResizableHandle } from './ResizableHandle';
 
 // ============================================================
 // 幻灯片数据模型
@@ -120,6 +121,18 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
     examPages
   } = useProjectStore();
 
+  // ======= 素材区/题目区 宽度比例（可拖拽调整） =======
+  const [materialRatio, setMaterialRatio] = useState(55);
+  const slideContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleMaterialResize = useCallback((dx: number) => {
+    if (!slideContainerRef.current) return;
+    const containerWidth = slideContainerRef.current.clientWidth;
+    if (containerWidth <= 0) return;
+    const deltaPercent = (dx / containerWidth) * 100;
+    setMaterialRatio(prev => Math.max(30, Math.min(80, prev + deltaPercent)));
+  }, []);
+
   // ======= 放大镜状态 =======
   const [selectedText, setSelectedText] = useState('');
   const [magnifierPos, setMagnifierPos] = useState<{ x: number; y: number } | null>(null);
@@ -190,9 +203,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const hasMaterialImage = !!firstQ?.materialImage;
 
   return (
-    <div className="w-full h-full bg-white flex">
-      {/* 左侧 55%：素材区 */}
-      <div className="w-[55%] h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100">
+    <div ref={slideContainerRef} className="w-full h-full bg-white flex">
+      {/* 左侧素材区：宽度可拖拽调整 */}
+      <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100" style={{ width: `${materialRatio}%` }}>
         <div 
           onClick={() => {
             if (hasMaterialImage || firstQ?.image || examPages?.length > 0) {
@@ -254,8 +267,11 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         </div>
       </div>
 
-      {/* 右侧 45%：题目聚合区 (精简折叠模式) */}
-      <div className="w-[45%] h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white">
+      {/* 素材区 ↔ 题目区 可拖拽分隔条 */}
+      <ResizableHandle onDrag={handleMaterialResize} />
+
+      {/* 右侧题目聚合区：宽度自动适应 */}
+      <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white" style={{ width: `${100 - materialRatio}%` }}>
         {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0">
             {/* 题干卡片 (点击展开看大图 + OCR文字) - 使用 div + role 避免 button 嵌套 */}

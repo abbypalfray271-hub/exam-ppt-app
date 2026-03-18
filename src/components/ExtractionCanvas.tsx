@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, CheckCircle2, RotateCcw, Loader2 } from 'lucide-react';
+import { Trash2, CheckCircle2, Loader2 } from 'lucide-react';
 import { parseQuestionAction } from '@/app/actions/ai';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -411,12 +411,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete }: Ex
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setRects([])}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-400 hover:text-red-500 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" /> 重置所有
-          </button>
           <button
             onClick={handleConfirm}
             disabled={rects.length === 0 || isAnalyzing}
