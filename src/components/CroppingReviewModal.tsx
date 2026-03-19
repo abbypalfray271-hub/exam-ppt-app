@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, MouseEvent as ReactMouseEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Maximize, Scissors, Loader2, MousePointer2 } from 'lucide-react';
+import { Check, X, Maximize, Scissors, Loader2, MousePointer2, Sparkles } from 'lucide-react';
 import { Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { cropImageByBox } from '@/lib/documentProcessor';
@@ -181,8 +181,77 @@ export const CroppingReviewModal: React.FC<CroppingReviewModalProps> = ({
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-7xl h-full max-h-[90vh] bg-white rounded-[32px] shadow-2xl overflow-hidden flex flex-col"
+        className="relative w-full max-w-7xl h-full max-h-[90vh] bg-white rounded-[32px] shadow-2xl overflow-hidden flex flex-col"
       >
+        {/* 处理中遮罩 - 科幻动态图 */}
+        <AnimatePresence>
+          {isProcessing && (
+            <motion.div
+              key="cropping-processing-overlay"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[200] bg-slate-900/90 backdrop-blur-2xl flex flex-col items-center justify-center p-12 text-center overflow-hidden"
+            >
+              {/* 背景深邃光晕 */}
+              <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-center justify-center">
+                <motion.div 
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} 
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  className="w-[60vw] h-[60vw] max-w-[800px] max-h-[800px] bg-brand-primary rounded-full blur-[120px]"
+                />
+              </div>
+
+              {/* 中心赛博化文档扫描核心 */}
+              <div className="relative w-48 h-64 mb-10 flex items-center justify-center z-10 mt-8">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                  className="absolute inset-[-15%] rounded-[2rem] border-2 border-slate-700/50 border-t-brand-primary shadow-[0_0_30px_rgba(var(--brand-primary-rgb),0.2)]"
+                />
+                <motion.div
+                  animate={{ rotate: -360 }}
+                  transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                  className="absolute inset-[-5%] rounded-[2.5rem] border border-slate-600/30 border-b-brand-secondary border-r-brand-secondary"
+                />
+                <div className="relative w-full h-full bg-slate-800/80 rounded-2xl border border-slate-600/50 shadow-2xl overflow-hidden flex flex-col p-5 gap-3">
+                  <div className="w-3/4 h-2.5 bg-slate-600/50 rounded-full" />
+                  <div className="w-full h-2 bg-slate-700/50 rounded-full" />
+                  <div className="w-5/6 h-2 bg-slate-700/50 rounded-full" />
+                  <div className="mt-4 w-full h-20 bg-slate-700/40 rounded-xl border border-slate-600/30 flex items-center justify-center relative overflow-hidden">
+                    <motion.div 
+                      animate={{ opacity: [0.2, 0.5, 0.2], scale: [0.9, 1.1, 0.9] }} 
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="w-12 h-12 rounded-full bg-brand-primary/20 blur-md"
+                    />
+                  </div>
+                  <div className="w-2/3 h-2 bg-slate-700/50 rounded-full mt-3" />
+                  <div className="w-1/2 h-2 bg-slate-700/50 rounded-full" />
+                  <motion.div
+                    animate={{ top: ["-20%", "120%"] }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+                    className="absolute left-0 right-0 h-1 bg-brand-secondary shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),1)] z-20"
+                  >
+                    <div className="absolute bottom-full left-0 right-0 h-24 bg-gradient-to-t from-brand-secondary/30 to-transparent" />
+                  </motion.div>
+                </div>
+              </div>
+              
+              <h3 className="text-3xl font-black text-white mb-5 tracking-wide drop-shadow-xl z-10 flex items-center gap-3">
+                <Sparkles className="w-8 h-8 text-brand-primary animate-pulse" />
+                正在深度物理切割重组
+              </h3>
+              
+              <div className="flex items-center gap-3 text-brand-primary font-bold bg-brand-primary/10 px-6 py-2.5 rounded-full border border-brand-primary/30 z-10 backdrop-blur-sm shadow-[0_0_15px_rgba(var(--brand-primary-rgb),0.15)]">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="animate-pulse tracking-widest text-xs uppercase opacity-90">Image Processing Link Active</span>
+              </div>
+              
+              <p className="text-slate-400 max-w-lg mt-8 text-sm leading-relaxed z-10 font-bold">
+                正在根据最新边框分离底层像素数据，重新编排 <span className="text-white bg-white/10 px-2 py-0.5 rounded mx-1">{questions.length}</span> 道题目的语义结构...
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Header */}
         <div className="px-6 py-4 border-b bg-gray-50 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">

@@ -36,29 +36,6 @@ export default function Home() {
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 ml-1.5">试卷专家</span>
           </span>
         </div>
-        
-        <div className="flex items-center gap-6">
-          {hasQuestions ? (
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-black text-white px-5 py-2 bg-brand-primary rounded-2xl shadow-lg border border-white/20">
-                编辑模式
-              </span>
-              <button 
-                onClick={() => window.location.reload()}
-                className="text-sm font-black bg-orange-500 text-white px-6 py-2 rounded-2xl shadow-xl hover:bg-orange-600 transition-all active:scale-95 group"
-              >
-                新建项目
-              </button>
-            </div>
-          ) : (
-            <>
-              <button className="text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors">使用教程</button>
-              <button className="px-5 py-2.5 bg-gray-900 text-white rounded-full text-sm font-bold hover:bg-gray-800 transition-all shadow-md active:scale-95">
-                登 录
-              </button>
-            </>
-          )}
-        </div>
       </nav>
 
       <section className="relative z-10 pt-4 pb-20">
