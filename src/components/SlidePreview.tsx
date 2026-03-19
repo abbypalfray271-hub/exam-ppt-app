@@ -53,8 +53,12 @@ export function buildSlides(questions: Question[]): SlideData[] {
     const prevQ = dedupedQuestions[i - 1];
     const currQ = dedupedQuestions[i];
     
-    // 判断是否共用素材 (由于 material 可能很大，建议通过精准匹配判断)
-    const sameMaterial = prevQ.material === currQ.material && !!prevQ.material;
+    // 判断是否共用素材 (除了文本精确匹配外，还要判断图片 URL)
+    const sameMaterialText = prevQ.material === currQ.material && !!prevQ.material;
+    const sameMaterialImage = prevQ.materialImage === currQ.materialImage && !!prevQ.materialImage;
+    const sameFullImage = prevQ.image === currQ.image && !!prevQ.image;
+    
+    const sameMaterial = sameMaterialText || sameMaterialImage || sameFullImage;
     
     if (sameMaterial) {
       currentGroup.push(currQ);
@@ -259,6 +263,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const [isEditingContent, setIsEditingContent] = useState(false); // 新增状态：控制是否处于富文本编辑状态
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
   const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   
   // 原文素材分页状态
   const firstQ = questions[0];
@@ -284,30 +289,22 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const hasMaterialImage = !!firstQ?.materialImage;
 
   return (
-    <div ref={slideContainerRef} className="w-full h-full bg-white grid overflow-hidden" style={{ gridTemplateColumns: `${materialRatio}% auto minmax(0, 1fr)` }}>
+    <div ref={slideContainerRef} className="w-full h-full bg-white grid overflow-hidden relative" style={{ gridTemplateColumns: isRightPanelOpen ? `${materialRatio}% auto minmax(0, 1fr)` : '1fr' }}>
       {/* 左侧素材区：宽度强制受 Grid 控制，就算内置图片一万像素，也休想挤破屏幕边界！ */}
       <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100 min-w-0 overflow-hidden relative">
         <div 
-          onClick={() => {
-            if (hasMaterialImage || firstQ?.image || examPages?.length > 0) {
-              setIsMaterialExpanded(true);
-            }
-          }}
-          className="flex items-center gap-2 mb-[3%] cursor-pointer group hover:bg-gray-200/50 p-1 -ml-1 rounded transition-colors self-start"
-          title="点击满屏放大阅读该素材"
+          className="flex items-center gap-2 mb-[3%] p-1 -ml-1 rounded self-start"
         >
-          <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b] group-hover:text-brand-primary transition-colors" />
-          <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase group-hover:text-brand-primary transition-colors flex items-center gap-1">
+          <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b]" />
+          <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase flex items-center gap-1">
             原文切片(整个切片)
-            <Maximize2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
           </span>
         </div>
         
         <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar min-h-0 min-w-0">
           {hasMaterialImage ? (
             <div 
-              onClick={() => setIsMaterialExpanded(true)}
-              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0"
+              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0"
             >
               <div className="relative inline-flex w-full">
                 <img src={firstQ.materialImage} alt="素材原图" className="w-full h-auto object-contain mix-blend-multiply" />
@@ -327,8 +324,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             </div>
           ) : firstQ.image ? (
             <div 
-              onClick={() => setIsMaterialExpanded(true)}
-              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 cursor-zoom-in group min-h-0 min-w-0"
+              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0"
             >
               <div className="relative inline-flex w-full">
                 <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
@@ -355,11 +351,22 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       </div>
 
       {/* 素材区 ↔ 题目区 可拖拽分隔条 */}
-      <ResizableHandle onDrag={handleMaterialResize} />
+      {isRightPanelOpen && <ResizableHandle onDrag={handleMaterialResize} />}
 
       {/* 右侧题目聚合区：自动占满后续 Grid */}
-      <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white min-w-0 overflow-x-hidden relative">
-        {questions.map((q, qIdx) => (
+      {isRightPanelOpen ? (
+        <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white min-w-0 overflow-x-hidden relative pt-10">
+          {editable && (
+            <button
+              onClick={() => setIsRightPanelOpen(false)}
+              className="absolute top-2 right-4 p-2 flex items-center justify-center bg-red-500 border border-red-600 shadow-lg text-white hover:bg-red-600 rounded-lg transition-all active:scale-95 z-20"
+              title="收起右侧题目区"
+            >
+              <ChevronRight className="w-6 h-6" strokeWidth={3} />
+            </button>
+          )}
+          
+          {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0">
             {/* 题干卡片 (点击展开看大图 + OCR文字) - 使用 div + role 避免 button 嵌套 */}
             <div
@@ -456,7 +463,18 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             )}
           </div>
         ))}
-      </div>
+        </div>
+      ) : editable ? (
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-end h-32 w-10 group">
+          <button
+            onClick={() => setIsRightPanelOpen(true)}
+            className="p-2 bg-red-500 border border-red-600 border-r-0 shadow-2xl rounded-l-2xl text-white hover:bg-red-600 group-hover:pr-3 group-hover:w-10 w-8 transition-all flex items-center justify-center"
+            title="展开题目侧边栏"
+          >
+            <ChevronLeft className="w-6 h-6" strokeWidth={3} />
+          </button>
+        </div>
+      ) : null}
 
       {/* 放大镜悬浮气泡 (挂载到全局) */}
       <AnimatePresence>
@@ -637,16 +655,19 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                className="relative w-full min-h-screen flex flex-col items-center py-12"
                onClick={(e) => e.stopPropagation()}
              >
-               <button
-                 onClick={() => setIsMaterialExpanded(false)}
-                 className="absolute -top-12 right-0 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors mb-4"
-               >
-                 <X className="w-6 h-6" />
-               </button>
+                <button
+                  onClick={() => setIsMaterialExpanded(false)}
+                  className="fixed top-4 right-6 p-3 bg-black/50 hover:bg-red-500 text-white rounded-full transition-colors z-50 backdrop-blur-sm shadow-xl"
+                  title="关闭全屏"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+
+                {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
 
                 {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
                 <div 
-                  className={cn("relative group inline-block w-full", isMaskDrawMode ? "cursor-crosshair" : (zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""))}
+                  className={cn("relative group inline-block w-[80vw]", isMaskDrawMode ? "cursor-crosshair" : (zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""))}
                   style={{
                     transform: `translate(${zoomState.x}px, ${zoomState.y}px) scale(${zoomState.scale})`,
                     transformOrigin: 'center top',
@@ -731,7 +752,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   }}
                 >
                   <img 
-                    src={firstQ.materialImage || firstQ.image || ((examPages && examPages.length > 0) ? examPages[materialPageIndex] : '')} 
+                    src={firstQ.materialImage || firstQ.image} 
                     alt="全屏原文切片" 
                     className="w-full h-auto object-contain shadow-2xl bg-white block select-none pointer-events-none"
                     draggable={false}
@@ -752,10 +773,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                  
                 </div>
 
-               <div className="mt-4 flex flex-wrap items-center justify-center gap-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
-                 <p className="text-white text-sm font-bold tracking-widest uppercase">
-                   {examPages && examPages.length > 0 ? `原文素材预览` : '原文切片预览'}
-                 </p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
+                  <p className="text-white text-sm font-bold tracking-widest uppercase">
+                    原文切片预览
+                  </p>
                  
                  <button
                    onClick={(e) => {

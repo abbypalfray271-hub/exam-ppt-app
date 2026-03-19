@@ -27,6 +27,7 @@ import { ResizableHandle } from './ResizableHandle';
 export const Editor = () => {
   const { projectName, questions, setView, removeQuestions, resetUpload, setCanvasOpen } = useProjectStore();
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   // 左侧缩略图栏宽度（可拖拽调整）
   const [leftPanelWidth, setLeftPanelWidth] = useState(144);
 
@@ -83,51 +84,75 @@ export const Editor = () => {
 
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-gray-50/50 p-4 gap-3">
+    <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-gray-50/50 p-4 gap-3 relative">
       
       {/* ============================== */}
       {/* 左侧：幻灯片缩略图列表 */}
       {/* ============================== */}
-      <div className="shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col" style={{ width: leftPanelWidth }}>
-        <div className="px-3 py-3 border-b bg-white/50">
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-            幻灯片 · {totalSlides}
-          </h3>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-hide">
-          {slides.map((slide, idx) => (
-            <div
-              key={idx}
-              ref={(el) => { thumbnailRefs.current[idx] = el; }}
-            >
-              <SlideFrame
-                selected={idx === currentSlideIdx}
-                onClick={() => setCurrentSlideIdx(idx)}
-                label={`${idx + 1}`}
-                className="w-full"
-                onDelete={slide.type === 'unified' ? () => {
-                  if (confirm('确定要删除这一整页及包含的题目吗？')) {
-                    const qIds = slide.questions.map(q => q.id);
-                    removeQuestions(qIds);
-                    // 如果删除了当前页或之前的页，调整索引防止溢出
-                    if (idx <= currentSlideIdx) {
-                      setCurrentSlideIdx(prev => Math.max(0, prev - 1));
-                    }
-                  }
-                } : undefined}
+      {isLeftPanelOpen && (
+        <>
+          <div className="shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col" style={{ width: leftPanelWidth }}>
+            <div className="px-3 py-3 border-b bg-white/50 flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                幻灯片 · {totalSlides}
+              </h3>
+              <button 
+                onClick={() => setIsLeftPanelOpen(false)}
+                className="p-1 hover:bg-red-600 rounded shadow-md text-white bg-red-500 transition-colors"
+                title="收起幻灯片列表"
               >
-                {/* 缩略图使用 pointer-events-none 防止交互 */}
-                <div className="pointer-events-none select-none">
-                  {renderSlideContent(slide, false)}
-                </div>
-              </SlideFrame>
+                <ChevronLeft className="w-6 h-6" strokeWidth={3} />
+              </button>
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-hide">
+              {slides.map((slide, idx) => (
+                <div
+                  key={idx}
+                  ref={(el) => { thumbnailRefs.current[idx] = el; }}
+                >
+                  <SlideFrame
+                    selected={idx === currentSlideIdx}
+                    onClick={() => setCurrentSlideIdx(idx)}
+                    label={`${idx + 1}`}
+                    className="w-full"
+                    onDelete={slide.type === 'unified' ? () => {
+                      if (confirm('确定要删除这一整页及包含的题目吗？')) {
+                        const qIds = slide.questions.map(q => q.id);
+                        removeQuestions(qIds);
+                        // 如果删除了当前页或之前的页，调整索引防止溢出
+                        if (idx <= currentSlideIdx) {
+                          setCurrentSlideIdx(prev => Math.max(0, prev - 1));
+                        }
+                      }
+                    } : undefined}
+                  >
+                    {/* 缩略图使用 pointer-events-none 防止交互 */}
+                    <div className="pointer-events-none select-none">
+                      {renderSlideContent(slide, false)}
+                    </div>
+                  </SlideFrame>
+                </div>
+              ))}
+            </div>
+          </div>
+    
+          {/* 左侧缩略图 ↔ 中间编辑区 可拖拽分隔条 */}
+          <ResizableHandle onDrag={handleLeftResize} />
+        </>
+      )}
 
-      {/* 左侧缩略图 ↔ 中间编辑区 可拖拽分隔条 */}
-      <ResizableHandle onDrag={handleLeftResize} />
+      {/* 收起时的悬浮展开按钮 */}
+      {!isLeftPanelOpen && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-start h-32 w-10 group">
+          <button
+            onClick={() => setIsLeftPanelOpen(true)}
+            className="p-2 bg-red-500 border border-red-600 border-l-0 shadow-2xl rounded-r-2xl text-white hover:bg-red-600 group-hover:pl-3 group-hover:w-10 w-8 transition-all"
+            title="展开幻灯片列表"
+          >
+            <ChevronRight className="w-6 h-6" strokeWidth={3} />
+          </button>
+        </div>
+      )}
 
       {/* ============================== */}
       {/* 中间：当前幻灯片放大编辑区 */}

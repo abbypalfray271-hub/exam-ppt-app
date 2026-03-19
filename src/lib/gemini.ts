@@ -22,6 +22,7 @@ export async function chatWithGemini(
       content: m.content
     })),
     stream: false,
+    temperature: 0,
   };
 
   if (imageBuffer && messages.length > 0) {

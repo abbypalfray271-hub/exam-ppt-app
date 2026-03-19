@@ -298,9 +298,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // =================================================================
   // 核心：跨页裁剪 —— 判断矩形覆盖哪些页，分别裁剪后纵向拼接
   // =================================================================
-  const cropRect = async (rect: Rect): Promise<string> => {
-    const offsets = getPageOffsets();
-    if (offsets.length === 0) throw new Error('No page offsets');
+  const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<string> => {
+    if (offsets.length === 0) throw new Error('No page offsets - container or refs missing');
 
     const rectTop = rect.y;
     const rectBottom = rect.y + rect.height;
@@ -375,6 +374,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const qRects = rects.filter(r => r.type !== 'answer').sort((a, b) => a.y - b.y);
       const aRects = rects.filter(r => r.type === 'answer');
 
+      const offsets = getPageOffsets();
+      if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
+
       for (let i = 0; i < qRects.length; i++) {
         const qRect = qRects[i];
         
@@ -398,7 +400,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
            ];
         }
 
-        const base64 = await cropRect(qRect);
+        const base64 = await cropRect(qRect, offsets);
         const result = await parseQuestionAction(base64);
 
         if (result.success && result.data) {
