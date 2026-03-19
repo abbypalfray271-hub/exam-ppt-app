@@ -214,8 +214,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const boundedY = Math.max(0, Math.min(y, cr.height / zoom));
 
         setDrawingRect((current) => {
-          if (!current || typeof current.x === 'undefined' || typeof current.y === 'undefined') return current;
-          const updated = { ...current, width: boundedX - current.x, height: boundedY - current.y };
+          if (!current || current.x === undefined || current.y === undefined) return current;
+          const updated = { 
+            ...current, 
+            width: boundedX - current.x, 
+            height: boundedY - current.y 
+          };
           drawingRectRef.current = updated; // 同步更新 ref
           return updated;
         });
