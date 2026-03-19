@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, CheckCircle2, Loader2 } from 'lucide-react';
+import { Trash2, CheckCircle2, Loader2, X } from 'lucide-react';
 import { parseQuestionAction } from '@/app/actions/ai';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -35,9 +35,10 @@ interface ExtractionCanvasProps {
   initialPageIndex?: number;
   initialNormalizedRects?: NormalizedRect[];
   onComplete: () => void;
+  onClose?: () => void;
 }
 
-export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalizedRects, onComplete }: ExtractionCanvasProps) => {
+export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalizedRects, onComplete, onClose }: ExtractionCanvasProps) => {
   // === Refs ===
   const containerRef = useRef<HTMLDivElement>(null);     // 包裹所有页面的坐标系根容器
   const scrollRef = useRef<HTMLDivElement>(null);        // 外层可滚动容器
@@ -57,6 +58,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer'>('question');
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
+  const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
 
   const { addQuestion, setProcessing, setView } = useProjectStore();
 
@@ -81,18 +83,20 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // === 计算每页图片在 container 中的偏移量 ===
   const getPageOffsets = useCallback((): PageOffset[] => {
     if (!containerRef.current) return [];
+    // 关键：将当前缩放后的尺寸除以 zoom，回归到 1.0 倍率下的“基准尺寸”存储
+    // 这样后续的 cropRect (基于基准像素) 才能正确对应物理像素
+    const zoomFactor = zoom;
     return imgRefs.current.map((img) => {
       if (!img) return { top: 0, height: 0, imgWidth: 0, naturalWidth: 1, naturalHeight: 1 };
       return {
-        // offsetTop 相对于最近的 positioned ancestor (containerRef)
-        top: img.offsetTop,
-        height: img.clientHeight,
-        imgWidth: img.clientWidth,
+        top: img.offsetTop / zoomFactor,
+        height: img.clientHeight / zoomFactor,
+        imgWidth: img.clientWidth / zoomFactor,
         naturalWidth: img.naturalWidth || 1,
         naturalHeight: img.naturalHeight || 1,
       };
     });
-  }, []);
+  }, [zoom]);
 
   // === 注入初始 NormalizedRects ===
   const [hasInitializedRects, setHasInitializedRects] = useState(false);
@@ -129,7 +133,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       // 以滚动区域 1/3 处作为锚点判断当前页
       const scrollTop = scrollEl.scrollTop;
-      const anchor = scrollTop + scrollEl.clientHeight / 3;
+      // 锚点判断也要经过缩放转换，否则在 200% 时锚点会偏移
+      const anchor = (scrollTop + scrollEl.clientHeight / 3) / zoom;
 
       let active = 0;
       for (let i = 0; i < offsets.length; i++) {
@@ -140,7 +145,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
     scrollEl.addEventListener('scroll', handleScroll, { passive: true });
     return () => scrollEl.removeEventListener('scroll', handleScroll);
-  }, [getPageOffsets]);
+  }, [getPageOffsets, zoom]);
 
   // === 点击缩略图 → 平滑滚动到目标页 ===
   const scrollToPage = (idx: number) => {
@@ -162,9 +167,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     e.preventDefault();
 
     const cr = containerRef.current.getBoundingClientRect();
-    // getBoundingClientRect 已经考虑了父级滚动，坐标直接相对于 container 顶部
-    const x = e.clientX - cr.left;
-    const y = e.clientY - cr.top;
+    // 考虑缩放率：将真实的物理坐标转换为 1.0 倍率下的基础像素坐标
+    const x = (e.clientX - cr.left) / zoom;
+    const y = (e.clientY - cr.top) / zoom;
 
     setSelectedId(null);
     setDrawingRect({ id: crypto.randomUUID(), x, y, width: 0, height: 0, type: activeDrawMode });
@@ -203,10 +208,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const cr = containerRef.current.getBoundingClientRect();
 
       if (interactionRef.current === 'drawing') {
-        const x = e.clientX - cr.left;
-        const y = e.clientY - cr.top;
-        const boundedX = Math.max(0, Math.min(x, cr.width));
-        const boundedY = Math.max(0, Math.min(y, cr.height));
+        const x = (e.clientX - cr.left) / zoom;
+        const y = (e.clientY - cr.top) / zoom;
+        const boundedX = Math.max(0, Math.min(x, cr.width / zoom));
+        const boundedY = Math.max(0, Math.min(y, cr.height / zoom));
 
         setDrawingRect((current) => {
           if (!current || typeof current.x === 'undefined' || typeof current.y === 'undefined') return current;
@@ -228,23 +233,25 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         }
       }
       else if (interactionRef.current === 'moving' && initialRectRef.current) {
-        const dx = e.clientX - startPosRef.current.x;
-        const dy = e.clientY - startPosRef.current.y;
+        // 移动量也要经过缩放转换
+        const dx = (e.clientX - startPosRef.current.x) / zoom;
+        const dy = (e.clientY - startPosRef.current.y) / zoom;
 
         setRects(prev => prev.map(r => {
           if (r.id === selectedId && initialRectRef.current) {
             let nextX = initialRectRef.current.x + dx;
             let nextY = initialRectRef.current.y + dy;
-            nextX = Math.max(0, Math.min(nextX, cr.width - initialRectRef.current.width));
-            nextY = Math.max(0, Math.min(nextY, cr.height - initialRectRef.current.height));
+            // 边界判断也要基于缩放后的虚拟高度
+            nextX = Math.max(0, Math.min(nextX, (cr.width / zoom) - initialRectRef.current.width));
+            nextY = Math.max(0, Math.min(nextY, (cr.height / zoom) - initialRectRef.current.height));
             return { ...r, x: nextX, y: nextY };
           }
           return r;
         }));
       }
       else if (interactionRef.current === 'resizing' && initialRectRef.current && resizeHandle) {
-        const dx = e.clientX - startPosRef.current.x;
-        const dy = e.clientY - startPosRef.current.y;
+        const dx = (e.clientX - startPosRef.current.x) / zoom;
+        const dy = (e.clientY - startPosRef.current.y) / zoom;
 
         setRects(prev => prev.map(r => {
           if (r.id === selectedId && initialRectRef.current) {
@@ -490,14 +497,55 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-full text-[10px] font-black text-gray-400 uppercase tracking-widest border border-gray-100">
-            <span>{pages.length} PAGES</span>
-            <span className="w-px h-3 bg-gray-300 mx-1" />
-            <span className="text-brand-primary">{rects.filter(r => r.type !== 'answer').length} 题</span>
-            <span className="text-red-400 font-bold ml-1">{rects.filter(r => r.type === 'answer').length} 遮挡</span>
+          <div className="flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 w-64 shadow-sm">
+            <span className="flex items-center gap-1.5 underline decoration-gray-300 decoration-2 underline-offset-4 shrink-0">{pages.length} 页</span>
+            <span className="w-px h-4 bg-gray-300 shrink-0" />
+            <span className="text-brand-primary flex items-center gap-1.5 shrink-0">
+               <span className="w-2 h-2 rounded-full bg-brand-primary" />
+               {rects.filter(r => r.type !== 'answer').length} 题
+            </span>
+            <span className="text-red-500 flex items-center gap-1.5 shrink-0">
+               <span className="w-2 h-2 rounded-full bg-red-500" />
+               {rects.filter(r => r.type === 'answer').length} 遮挡
+            </span>
           </div>
+
+          {/* 缩放选择器 */}
+          <div className="flex items-center justify-center gap-3 px-4 py-2 bg-gray-100/80 rounded-full border border-gray-200 w-64 shadow-sm group/zoom">
+            <span className="text-[11px] font-black text-gray-400 uppercase tracking-tighter shrink-0">页面缩放</span>
+            <select 
+              value={zoom} 
+              onChange={(e) => setZoom(parseFloat(e.target.value))}
+              className="bg-transparent text-[13px] font-black text-gray-700 outline-none cursor-pointer hover:text-brand-primary transition-colors"
+            >
+              <option value="0.5">50%</option>
+              <option value="0.75">75%</option>
+              <option value="1">100%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5">150%</option>
+              <option value="2">200%</option>
+            </select>
+          </div>
+          
+          {/* 中间插入关闭模式按钮，放置在箭头指示的位置 */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-2.5 py-2.5 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-all active:scale-95 border-2 border-white ml-2 flex items-center justify-center shrink-0"
+              title="放弃预处理，返回上传"
+            >
+              <X className="w-5 h-5 stroke-[4px]" />
+            </button>
+          )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4 group">
+          <button
+            onClick={() => setView('editor')}
+            className="px-6 py-2.5 bg-orange-500 text-white text-[13px] font-black rounded-full border border-orange-600 hover:bg-orange-600 transition-all flex items-center gap-2 shadow-lg shadow-orange-500/20 active:scale-95"
+            title="跳过预处理，直接进入编辑器"
+          >
+            跳过并进入编辑器
+          </button>
           <button
             onClick={handleConfirm}
             disabled={rects.filter(r => r.type !== 'answer').length === 0 || isAnalyzing}
@@ -559,9 +607,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             <div
               ref={containerRef}
               className={cn(
-                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300",
+                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300 origin-top-center",
                 !isAnalyzing ? "cursor-crosshair" : "opacity-50"
               )}
+              style={{ width: `${zoom * 100}%`, maxWidth: 'none' }}
               onMouseDown={startDrawing}
             >
               {/* === 纵向排列所有页面图片 === */}
@@ -571,7 +620,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                   {idx > 0 && (
                     <div className="w-full h-1 bg-red-400/30 relative z-10 flex items-center justify-center shrink-0">
                       <span className="absolute bg-red-400/80 text-white text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-                        P{idx} ↕ P{idx + 1}
+                        第{idx}页 ↕ 第{idx + 1}页
                       </span>
                     </div>
                   )}
@@ -616,7 +665,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                         ? "border-brand-secondary bg-brand-secondary/10 z-30 shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),0.3)]"
                         : isQuestion ? "border-brand-primary bg-brand-primary/10 z-20" : "border-red-500 border-dashed bg-red-500/20 z-20"
                     )}
-                    style={{ left: x, top: y, width: w, height: h }}
+                    style={{ 
+                      left: rect.x * zoom, 
+                      top: rect.y * zoom, 
+                      width: rect.width * zoom, 
+                      height: rect.height * zoom 
+                    }}
                   >
                     {/* 序号标签 */}
                     <div className={cn(
@@ -678,10 +732,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : "border-red-500 bg-red-500/20"
                   )}
                   style={{
-                    left: drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!),
-                    top: drawingRect.height! > 0 ? drawingRect.y : (drawingRect.y! + drawingRect.height!),
-                    width: Math.abs(drawingRect.width!),
-                    height: Math.abs(drawingRect.height!),
+                    left: (drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!))! * zoom,
+                    top: (drawingRect.height! > 0 ? drawingRect.y : (drawingRect.y! + drawingRect.height!))! * zoom,
+                    width: Math.abs(drawingRect.width!) * zoom,
+                    height: Math.abs(drawingRect.height!) * zoom,
                   }}
                 />
               )}

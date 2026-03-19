@@ -1,7 +1,7 @@
 import pptxgen from 'pptxgenjs';
 import { Question } from '@/store/useProjectStore';
 
-/** 导出 PPT：极简课件模式 (同素材多区块聚合版) */
+/** 导出演示稿：极简课件模式 (同素材多区块聚合版) */
 export async function exportToPpt(questions: Question[], projectName: string) {
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE'; // 16:9
@@ -84,7 +84,7 @@ export async function exportToPpt(questions: Question[], projectName: string) {
       // 这里的布局简单化：在一个小区域内显示题号和图片
       // 100% 还原图片切片是最关键的
       // 导出模式：直接展示文字
-      slide.addText(`Q: ${q.content}`, {
+      slide.addText(`题: ${q.content}`, {
         x: rightMargin, y: currentY, w: rightWidth, h: qHeight - 0.2,
         fontSize: 12, color: '334155', valign: 'top'
       });
@@ -99,7 +99,7 @@ export async function exportToPpt(questions: Question[], projectName: string) {
     });
 
     // 顶部通用页眉 (显示 Q 范围)
-    slide.addText(`题目组: Q1 - Q${qCount}`, {
+    slide.addText(`题目组: 题1 - 题${qCount}`, {
       x: 4.1, y: 0.2, w: 3, h: 0.4,
       fontSize: 14, color: '1e293b', bold: true
     });

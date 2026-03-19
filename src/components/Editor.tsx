@@ -76,9 +76,9 @@ export const Editor = () => {
     if (slide.type === 'title') return '封面';
     // 如果是一组题，显示 Q 范围
     if (slide.questions.length > 1) {
-      return `Q组 (${slide.questions.length}题)`;
+      return `题组 (${slide.questions.length}题)`;
     }
-    return `Q题`;
+    return `题目`;
   };
 
 
@@ -161,15 +161,15 @@ export const Editor = () => {
         {/* 顶部工具栏 */}
         <div className="w-full flex items-center justify-between px-4 mb-3">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-gray-500">
+            <span className="text-sm font-black text-gray-500 uppercase tracking-widest">
             {currentSlide.type === 'title' ? '📋 封面页' 
                 : `📝 题目组 (${currentSlide.questions.length} 道题目)`}
             </span>
-            <span className="text-[10px] font-black text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded-full">
+            <span className="text-xs font-black text-white bg-brand-primary px-3 py-1 rounded-lg shadow-lg shadow-brand-primary/20">
               {currentSlideIdx + 1} / {totalSlides}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+          <div className="flex items-center gap-2 text-xs font-black text-red-500 uppercase tracking-[0.2em]">
             点击文字可编辑 · 方向键翻页
           </div>
         </div>
@@ -237,23 +237,23 @@ export const Editor = () => {
           </div>
 
           {/* 右侧操作按钮 */}
-          <div className="flex items-center gap-3 w-[200px] justify-end">
+          <div className="flex items-center gap-4 w-[320px] justify-end">
             <button
               onClick={() => {
                 setView('upload');
                 setCanvasOpen(true);
               }}
-              className="px-5 py-2.5 bg-white text-gray-900 border border-gray-200 rounded-full font-bold text-xs tracking-widest flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all active:scale-95 group"
+              className="w-[140px] h-12 bg-orange-500 text-white rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-orange-500/20 hover:bg-orange-600 hover:scale-105 transition-all active:scale-95 group"
             >
-              <FileSearch className="w-4 h-4 text-brand-primary group-hover:-translate-y-0.5 transition-transform" />
+              <FileSearch className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
               返回解析
             </button>
 
             <button
               onClick={() => exportProjectJSON()}
-              className="px-5 py-2.5 bg-gray-900 text-white rounded-full font-bold text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-gray-800 transition-all active:scale-95 group shrink-0"
+              className="w-[140px] h-12 bg-gray-900 text-white rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-gray-800 hover:scale-105 transition-all active:scale-95 group"
             >
-              <Save className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+              <Save className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
               存档
             </button>
           </div>

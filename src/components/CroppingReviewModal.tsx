@@ -208,7 +208,7 @@ export const CroppingReviewModal: React.FC<CroppingReviewModalProps> = ({
               className="px-6 py-2 bg-gray-900 text-white rounded-full font-bold shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
             >
               {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {isProcessing ? '正在物理裁切...' : '确认切割并生成 PPT'}
+              {isProcessing ? '正在物理裁切...' : '确认切割并生成演示稿'}
             </button>
           </div>
         </div>

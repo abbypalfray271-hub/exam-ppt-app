@@ -389,7 +389,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="flex items-center gap-2">
                   <div className="bg-[#1e293b] text-white px-2 py-0.5 rounded shadow-sm shrink-0">
-                    <span className="text-[0.7em] font-black italic tracking-tighter">Q{qIdx + 1}</span>
+                    <span className="text-[0.7em] font-black italic tracking-tighter">题{qIdx + 1}</span>
                   </div>
                   {editable ? (
                     <input
@@ -462,7 +462,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                </div>
             )}
           </div>
-        ))}
+          ))}
         </div>
       ) : editable ? (
         <div className="absolute right-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-end h-32 w-10 group">
@@ -579,22 +579,22 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                            <span>题目内容 (选项与正文)</span>
                          </div>
                          {editable && (
-                           <button
-                             onClick={(e) => {
-                               e.stopPropagation();
-                               setIsEditingContent(!isEditingContent);
-                             }}
-                             className={cn(
-                               "flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs transition-colors",
-                               isEditingContent 
-                                 ? "bg-brand-primary text-white border-brand-primary" 
-                                 : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-brand-primary"
-                             )}
-                           >
-                             <span>✏️</span>
-                             <span>{isEditingContent ? '完成编辑' : '编辑源码'}</span>
-                           </button>
-                         )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsEditingContent(!isEditingContent);
+                              }}
+                              className={cn(
+                                "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black transition-all shadow-xl active:scale-95 group border-none",
+                                isEditingContent 
+                                  ? "bg-brand-primary text-white" 
+                                  : "bg-orange-500 text-white hover:bg-orange-600"
+                              )}
+                            >
+                              <span className="group-hover:-translate-y-0.5 transition-transform">{isEditingContent ? '✅' : '✏️'}</span>
+                              <span>{isEditingContent ? '完成编辑' : '编辑源码'}</span>
+                            </button>
+                          )}
                        </div>
                        <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[12em]">
                          {editable && isEditingContent ? (
@@ -621,7 +621,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                        <div className="text-center mt-6 mb-2 text-gray-400 text-[11px] font-black tracking-widest uppercase animate-pulse pointer-events-none">
                          {isEditingContent
                             ? "👆 在文本中加入类似 {{答案}} 即可创建下划线特效"
-                            : "👇 点击屏幕任意空白处即可显隐填空/解析"
+                             : "👇 点击屏幕任意空白处即可显隐填空/解析"
                          }
                        </div>
                      </div>

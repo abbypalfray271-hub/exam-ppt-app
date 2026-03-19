@@ -31,20 +31,21 @@ export default function Home() {
           <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/30">
             <Presentation className="text-white w-6 h-6" />
           </div>
-          <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-            EXAM PPT MAKER
+          <span className="text-xl font-black tracking-tight">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">Ai</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 ml-1.5">试卷专家</span>
           </span>
         </div>
         
         <div className="flex items-center gap-6">
           {hasQuestions ? (
             <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-brand-primary px-3 py-1 bg-brand-primary/10 rounded-full">
+              <span className="text-sm font-black text-white px-5 py-2 bg-brand-primary rounded-2xl shadow-lg border border-white/20">
                 编辑模式
               </span>
               <button 
                 onClick={() => window.location.reload()}
-                className="text-xs font-bold text-gray-500 hover:text-gray-900"
+                className="text-sm font-black bg-orange-500 text-white px-6 py-2 rounded-2xl shadow-xl hover:bg-orange-600 transition-all active:scale-95 group"
               >
                 新建项目
               </button>
@@ -71,13 +72,15 @@ export default function Home() {
               className="max-w-7xl mx-auto px-8 text-center"
             >
               <div className="pt-16">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-primary/10 text-brand-primary text-xs font-bold tracking-widest uppercase mb-6 shadow-sm border border-brand-primary/20">
-                  <Sparkles className="w-3 h-3" /> 
-                  AI 驱动的课件革命
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/50 backdrop-blur-sm text-xs font-bold tracking-widest uppercase mb-6 shadow-md border border-gray-100 animate-pulse transition-all hover:scale-105">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" /> 
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">
+                    AI 驱动的课件革命
+                  </span>
                 </div>
                 
                 <h1 className="text-6xl md:text-7xl font-black text-gray-900 mb-8 leading-[1.1]">
-                  试卷秒变 PPT<br />
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">Ai</span> 让试卷秒变<br />
                   <span className="text-brand-primary italic">智慧讲解</span> 即刻开启
                 </h1>
                 
