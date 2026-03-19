@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  exam-ppt-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: exam-ppt-app
+    restart: always
+    ports:
+      - "3004:3000"
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
