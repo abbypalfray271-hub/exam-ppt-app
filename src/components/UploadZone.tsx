@@ -14,39 +14,6 @@ import { pdfToImages, wordToText, compressImage } from '@/lib/documentProcessor'
 // // import { parseFullDocumentAction } from '@/app/actions/ai';
 import { importProjectJSON } from '@/lib/projectIO';
 
-function mergeBoxes(boxes: [number, number, number, number][]): [number, number, number, number][] {
-  let changed = true;
-  let currentBoxes = [...boxes];
-  while (changed) {
-    changed = false;
-    let nextBoxes: [number, number, number, number][] = [];
-    while (currentBoxes.length > 0) {
-      let b1 = currentBoxes.pop()!;
-      let merged = false;
-      for (let i = 0; i < nextBoxes.length; i++) {
-        let b2 = nextBoxes[i];
-        const overlapY = Math.max(0, Math.min(b1[2], b2[2]) - Math.max(b1[0], b2[0]));
-        const overlapX = Math.max(0, Math.min(b1[3], b2[3]) - Math.max(b1[1], b2[1]));
-        if (overlapY > 0 && overlapX > 0) {
-          nextBoxes[i] = [
-            Math.min(b1[0], b2[0]),
-            Math.min(b1[1], b2[1]),
-            Math.max(b1[2], b2[2]),
-            Math.max(b1[3], b2[3])
-          ];
-          merged = true;
-          changed = true;
-          break;
-        }
-      }
-      if (!merged) {
-        nextBoxes.push(b1);
-      }
-    }
-    currentBoxes = nextBoxes;
-  }
-  return currentBoxes;
-}
 
 export const UploadZone = () => {
   const { 
@@ -71,7 +38,6 @@ export const UploadZone = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [fileType, setFileType] = useState<'image' | 'pdf' | 'word' | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [parseProgress, setParseProgress] = useState<{current: number; total: number} | null>(null);
   const [autoDetectedRects, setAutoDetectedRects] = useState<NormalizedRect[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -87,101 +53,33 @@ export const UploadZone = () => {
     }
   }, [examImageUrl, examPages, preview]);
 
-  const handleFullParse = async () => {
-    setProcessing(true);
-    let allNormalizedRects: NormalizedRect[] = [];
-    
+  const handleWordParse = async () => {
+    if (!examText) return;
     try {
-      if (fileType === 'pdf' || (fileType === 'image' && examPages.length > 0)) {
-        const pages = examPages.length > 0 ? examPages : [preview!];
-        const PAGES_PER_BATCH = 1;  
-        const MAX_CONCURRENCY = 8; 
-        
-        const batches: string[][] = [];
-        for (let i = 0; i < pages.length; i += PAGES_PER_BATCH) {
-          batches.push(pages.slice(i, i + PAGES_PER_BATCH));
-        }
-        
-        setParseProgress({ current: 0, total: batches.length });
-        let completedBatches = 0;
-        
-        const processBatch = async (batch: string[], batchIndex: number) => {
-          // 使用 API Route 代替 Server Action
-          const response = await fetch('/api/ai-parse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'parseFullDocument', images: batch })
-          });
-          const result = await response.json();
-          completedBatches++;
-          setParseProgress({ current: completedBatches, total: batches.length });
-          
-          if (result.success && result.data) {
-            let batchBoxes: [number, number, number, number][] = [];
-            result.data.forEach((q: any) => {
-              let box = q.content_box || q.contentBox;
-              if (box && box.length === 4) {
-                let [ymin, xmin, ymax, xmax] = box;
-                const mBox = q.material_box || q.materialBox;
-                if (mBox && mBox.length === 4) {
-                  ymin = Math.min(ymin, mBox[0]);
-                  xmin = Math.min(xmin, mBox[1]);
-                  ymax = Math.max(ymax, mBox[2]);
-                  xmax = Math.max(xmax, mBox[3]);
-                }
-                batchBoxes.push([ymin, xmin, ymax, xmax]);
-              }
-            });
-            const mergedBoxes = mergeBoxes(batchBoxes);
-            mergedBoxes.forEach(box => {
-              allNormalizedRects.push({
-                pageIdx: batchIndex * PAGES_PER_BATCH,
-                box
-              });
-            });
-          }
-        };
-        
-        for (let i = 0; i < batches.length; i += MAX_CONCURRENCY) {
-          const concurrentBatches = batches.slice(i, i + MAX_CONCURRENCY);
-          await Promise.all(
-            concurrentBatches.map((batch, j) => processBatch(batch, i + j))
-          );
-        }
-        
-        if (allNormalizedRects.length > 0) {
-          setParseProgress({ current: 100, total: 100 });
-          setAutoDetectedRects(allNormalizedRects);
-          setCanvasOpen(true);
-        } else {
-          alert('未能识别到题目框，请确认图片中包含题目');
-        }
-      } else if (fileType === 'word' && examText) {
-        setParseProgress({ current: 1, total: 1 });
-        // 使用 API Route 代替 Server Action
-        const response = await fetch('/api/ai-parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'parseFullDocument', images: examText })
-        });
-        const result = await response.json();
-        if (result.success && result.data) {
-          const questions: Question[] = result.data.map((q: any, idx: number) => ({
-            ...q,
-            id: crypto.randomUUID(),
-            order: idx + 1,
-            type: q.type || 'essay'
-          }));
-          addQuestions(questions);
-          setView('editor');
-        }
+      setProcessing(true);
+      const response = await fetch('/api/ai-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'parseFullDocument', images: examText })
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        const questions: Question[] = result.data.map((q: any, idx: number) => ({
+          ...q,
+          id: crypto.randomUUID(),
+          order: idx + 1,
+          type: q.type || 'essay'
+        }));
+        addQuestions(questions);
+        setView('editor');
+      } else {
+        throw new Error(result.error || '解析失败');
       }
     } catch (error) {
-      console.error('Full parse error:', error);
+      console.error('Word parse error:', error);
       alert('解析过程中发生错误');
     } finally {
       setProcessing(false);
-      setParseProgress(null);
     }
   };
 
@@ -399,20 +297,20 @@ export const UploadZone = () => {
                     setCanvasOpen(true);
                   }}
                 >
-                  <Wand2 className="w-5 h-5" /> 框选提取题目
+                  <Wand2 className="w-5 h-5" /> 开始框选题目
                 </button>
               )}
               
-              <button 
-                className="px-8 py-3 bg-brand-secondary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50"
-                onClick={handleFullParse}
-                disabled={isProcessing}
-              >
-                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                <span>
-                  {fileType === 'word' ? 'AI 一键全卷解析' : 'AI 全页自动识别'}
-                </span>
-              </button>
+              {fileType === 'word' && (
+                <button 
+                  className="px-8 py-3 bg-brand-secondary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50"
+                  onClick={handleWordParse}
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                  <span>AI 一键解析全文</span>
+                </button>
+              )}
             </div>
 
             <AnimatePresence>
@@ -424,39 +322,12 @@ export const UploadZone = () => {
                   exit={{ opacity: 0 }}
                   className="absolute inset-0 bg-brand-secondary/10 backdrop-blur-md z-[45] flex flex-col items-center justify-center p-12 text-center"
                 >
-                  <div className="relative mb-10">
-                    <motion.div 
-                      animate={{ rotate: 360, scale: [1, 1.1, 1] }}
-                      transition={{ 
-                        rotate: { duration: 3, repeat: Infinity, ease: "linear" },
-                        scale: { duration: 2, repeat: Infinity }
-                      }}
-                      className="w-24 h-24 rounded-full border-4 border-t-brand-secondary border-r-transparent border-b-brand-secondary border-l-transparent"
-                    />
-                    <Sparkles className="absolute inset-0 m-auto w-10 h-10 text-brand-secondary animate-pulse" />
-                  </div>
-                  
-                  <h3 className="text-2xl font-black text-gray-900 mb-3">AI 正在深度解析全卷</h3>
+                  <Loader2 className="w-16 h-16 text-brand-secondary animate-spin mb-6" />
+                  <h3 className="text-2xl font-black text-gray-900 mb-3">AI 正在深度解析文档</h3>
                   <div className="space-y-2">
-                    <p className="text-gray-600 font-medium italic">
-                      {parseProgress ? `正在识别第 ${parseProgress.current} / ${parseProgress.total} 页...` : '准备中...'}
-                    </p>
                     <p className="text-gray-500 text-sm max-w-sm mx-auto">
-                      正在提取题目、解析与解题思路，已发现 {useProjectStore.getState().questions.length} 道题目
+                      正在提取题目、解析与解题思路...
                     </p>
-                    <p className="text-[10px] text-brand-secondary font-black tracking-[0.2em] uppercase mt-4">
-                      Gemini 2.0 多模态解析引擎
-                    </p>
-                  </div>
-
-                  <div className="mt-12 w-64 h-2 bg-gray-200 rounded-full overflow-hidden border shadow-inner">
-                    <motion.div 
-                      key={parseProgress?.current}
-                      initial={{ width: `${((parseProgress?.current || 1) - 1) / (parseProgress?.total || 1) * 100}%` }}
-                      animate={{ width: `${(parseProgress?.current || 1) / (parseProgress?.total || 1) * 100}%` }}
-                      transition={{ duration: 0.5, ease: "easeOut" }}
-                      className="h-full bg-brand-secondary shadow-[0_0_12px_rgba(var(--brand-secondary-rgb),0.5)]"
-                    />
                   </div>
                 </motion.div>
               )}
