@@ -288,7 +288,7 @@ export const UploadZone = () => {
               <X className="w-6 h-6" />
             </button>
 
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
               {(fileType === 'image' || fileType === 'pdf') && (
                 <button 
                   className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"

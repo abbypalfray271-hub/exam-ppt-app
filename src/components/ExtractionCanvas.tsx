@@ -179,9 +179,13 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   };
 
   // === 鼠标事件：开始绘制 ===
-  const startDrawing = (e: React.MouseEvent) => {
+  const startDrawing = (e: React.PointerEvent) => {
     if (!containerRef.current || isAnalyzing) return;
-    e.preventDefault();
+    // 拦截触摸等事件默认的滚动和双击放大行为
+    if (e.pointerType === 'touch') {
+      // 在 Safari/iOS 环境中，仅依靠 touch-none 可能不够
+      // 我们通过 pointer down 不调用 preventDefault（以防影响焦点），但依靠 CSS touch-none 主导
+    }
 
     const cr = containerRef.current.getBoundingClientRect();
     // 考虑缩放率：将真实的物理坐标转换为 1.0 倍率下的基础像素坐标
@@ -194,7 +198,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     interactionRef.current = 'drawing';
   };
 
-  const startMoving = (e: React.MouseEvent, id: string) => {
+  const startMoving = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
     if (isAnalyzing) return;
     const rect = rects.find(r => r.id === id);
@@ -205,7 +209,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     initialRectRef.current = { ...rect };
   };
 
-  const startResizing = (e: React.MouseEvent, id: string, handle: string) => {
+  const startResizing = (e: React.PointerEvent, id: string, handle: string) => {
     e.stopPropagation();
     if (isAnalyzing) return;
     const rect = rects.find(r => r.id === id);
@@ -217,9 +221,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     initialRectRef.current = { ...rect };
   };
 
-  // === 全局 mousemove / mouseup ===
+  // === 全局 pointermove / pointerup ===
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (e: PointerEvent) => {
       if (!containerRef.current || interactionRef.current === 'none') return;
 
       const cr = containerRef.current.getBoundingClientRect();
@@ -315,11 +319,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       setIsDrawing(false);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handleMouseMove);
+    window.addEventListener('pointerup', handleMouseUp);
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handleMouseMove);
+      window.removeEventListener('pointerup', handleMouseUp);
     };
   }, [selectedId, resizeHandle]);
 
@@ -496,11 +500,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       </AnimatePresence>
 
       {/* === 顶部工具栏 === */}
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b z-20 shadow-sm">
-        <div className="flex items-center gap-6">
-          <h3 className="text-2xl font-black text-gray-900 tracking-tight">内容预处理</h3>
+      <div className="flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 bg-white border-b z-20 shadow-sm gap-4">
+        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 md:gap-6 w-full md:w-auto">
+          <h3 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight hidden md:block">内容预处理</h3>
           
-          <div className="flex bg-gray-100 p-1 rounded-full mx-4">
+          <div className="flex bg-gray-100 p-1 rounded-full mx-0 md:mx-4 shrink-0">
             <button
               onClick={() => setActiveDrawMode('question')}
               className={cn(
@@ -523,7 +527,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             </button>
           </div>
 
-          <div className="flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 w-64 shadow-sm">
+          <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0">
             <span className="flex items-center gap-1.5 underline decoration-gray-300 decoration-2 underline-offset-4 shrink-0">{pages.length} 页</span>
             <span className="w-px h-4 bg-gray-300 shrink-0" />
             <span className="text-brand-primary flex items-center gap-1.5 shrink-0">
@@ -537,7 +541,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </div>
 
           {/* 缩放选择器 */}
-          <div className="flex items-center justify-center gap-3 px-4 py-2 bg-gray-100/80 rounded-full border border-gray-200 w-64 shadow-sm group/zoom">
+          <div className="hidden md:flex items-center justify-center gap-3 px-4 py-2 bg-gray-100/80 rounded-full border border-gray-200 shadow-sm shrink-0">
             <span className="text-[11px] font-black text-gray-400 uppercase tracking-tighter shrink-0">页面缩放</span>
             <select 
               value={zoom} 
@@ -557,27 +561,27 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           {onClose && (
             <button
               onClick={onClose}
-              className="px-2.5 py-2.5 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-all active:scale-95 border-2 border-white ml-2 flex items-center justify-center shrink-0"
+              className="px-2.5 py-2.5 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-all active:scale-95 border-2 border-white md:ml-2 flex items-center justify-center shrink-0"
               title="放弃预处理，返回上传"
             >
               <X className="w-5 h-5 stroke-[4px]" />
             </button>
           )}
         </div>
-        <div className="flex items-center gap-4 group">
+        <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4 w-full md:w-auto">
           <button
             onClick={() => setView('editor')}
-            className="px-6 py-2.5 bg-orange-500 text-white text-[13px] font-black rounded-full border border-orange-600 hover:bg-orange-600 transition-all flex items-center gap-2 shadow-lg shadow-orange-500/20 active:scale-95"
+            className="px-4 py-2 bg-orange-500 text-white text-[12px] md:text-[13px] font-black rounded-full border border-orange-600 hover:bg-orange-600 transition-all shadow-lg active:scale-95 shrink-0"
             title="跳过预处理，直接进入编辑器"
           >
-            跳过并进入编辑器
+            跳过
           </button>
           <button
             onClick={handleConfirm}
             disabled={rects.filter(r => r.type !== 'answer').length === 0 || isAnalyzing}
-            className="px-8 py-3 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
+            className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2 shrink-0"
           >
-            <CheckCircle2 className="w-5 h-5" /> 确认并开始解析
+            <CheckCircle2 className="w-5 h-5" /> 解析
           </button>
         </div>
       </div>
@@ -629,15 +633,15 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           ref={scrollRef}
           className="relative flex-1 overflow-auto bg-gray-100/30"
         >
-          <div className="flex justify-center py-8 px-8">
+          <div className="flex justify-center py-8 px-2 md:px-8">
             <div
               ref={containerRef}
               className={cn(
-                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300 origin-top-center",
+                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300 origin-top-center touch-none",
                 !isAnalyzing ? "cursor-crosshair" : "opacity-50"
               )}
               style={{ width: `${zoom * 100}%`, maxWidth: 'none' }}
-              onMouseDown={startDrawing}
+              onPointerDown={startDrawing}
             >
               {/* === 纵向排列所有页面图片 === */}
               {pages.map((page, idx) => (
@@ -684,7 +688,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 return (
                   <div
                     key={rect.id}
-                    onMouseDown={(e) => startMoving(e, rect.id)}
+                    onPointerDown={(e) => startMoving(e, rect.id)}
                     className={cn(
                       "absolute border-2 transition-colors group",
                       isSelected
@@ -724,7 +728,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                               pos === 'sw' && "-left-1.5 -bottom-1.5 cursor-sw-resize",
                               pos === 'w' && "-left-1.5 top-1/2 -mt-1.5 cursor-w-resize"
                             )}
-                            onMouseDown={(e) => startResizing(e, rect.id, pos)}
+                            onPointerDown={(e) => startResizing(e, rect.id, pos)}
                           />
                         ))}
                       </>
