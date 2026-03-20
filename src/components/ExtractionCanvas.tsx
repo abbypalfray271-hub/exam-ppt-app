@@ -597,9 +597,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       {/* === 主区域：左侧缩略图 + 右侧连续滚动画布 === */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧页面导航缩略图 - 移动端隐藏以释放空间 */}
+        {/* 左侧页面导航缩略图 - 移动端（含横屏）彻底隐藏以释放空间 */}
         {pages.length > 1 && (
-          <div className="hidden md:flex w-48 bg-white border-r flex-col shrink-0">
+          <div className="hidden lg:flex w-48 bg-white border-r flex-col shrink-0">
             <div className="p-3 border-b bg-gray-50/50">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">页面导航</span>
             </div>
