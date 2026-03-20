@@ -304,11 +304,21 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar min-h-0 min-w-0">
           {hasMaterialImage ? (
             <div 
-              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0"
+              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0 cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
+              onClick={() => setIsMaterialExpanded(true)}
+              title="点击全屏查看原文切片"
             >
-              <div className="relative inline-flex w-full">
-                <img src={firstQ.materialImage} alt="素材原图" className="w-full h-auto object-contain mix-blend-multiply" />
+              <div className="relative inline-flex w-full overflow-hidden rounded-lg">
+                <img src={firstQ.materialImage} alt="素材原图" className="w-full h-auto object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-[1.02]" />
                 {renderAnswerMasks(questions)}
+                
+                {/* 悬浮全屏提示遮罩 */}
+                <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
+                  <div className="bg-black/70 text-white px-4 py-2 rounded-full flex items-center gap-2 backdrop-blur-md shadow-2xl transform scale-90 group-hover:scale-100 transition-all duration-300">
+                    <Maximize2 className="w-4 h-4" />
+                    <span className="text-sm font-bold tracking-widest">全屏查看</span>
+                  </div>
+                </div>
               </div>
               {editable && (
                 <button
@@ -324,11 +334,21 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             </div>
           ) : firstQ.image ? (
             <div 
-              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0"
+              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0 cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
+              onClick={() => setIsMaterialExpanded(true)}
+              title="点击全屏查看原文切片"
             >
-              <div className="relative inline-flex w-full">
-                <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply" />
+              <div className="relative inline-flex w-full overflow-hidden rounded-lg">
+                <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-[1.02]" />
                 {renderAnswerMasks(questions)}
+                
+                {/* 悬浮全屏提示遮罩 */}
+                <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
+                  <div className="bg-black/70 text-white px-4 py-2 rounded-full flex items-center gap-2 backdrop-blur-md shadow-2xl transform scale-90 group-hover:scale-100 transition-all duration-300">
+                    <Maximize2 className="w-4 h-4" />
+                    <span className="text-sm font-bold tracking-widest">全屏查看</span>
+                  </div>
+                </div>
               </div>
             </div>
           ) : hasMaterial ? (
