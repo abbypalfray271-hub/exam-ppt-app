@@ -4,14 +4,17 @@ FROM node:20-alpine AS builder
 # 切换阿里云 Alpine 镜像源
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
-# [Next.js 16 关键修复] 固定 Server Action 加密密钥
-ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=c369fc8774771746261298495394f4c2
-
 WORKDIR /app
+
+# NEXT_PUBLIC_* 变量必须在构建时注入，它们会被内联到客户端 JS 中
+# 运行时通过 docker-compose environment 注入的 NEXT_PUBLIC_* 对客户端无效
+ARG NEXT_PUBLIC_MODEL_NAME=gemini-2.5-flash
+ARG NEXT_PUBLIC_API_BASE_URL=https://api.devdove.site/v1
+ENV NEXT_PUBLIC_MODEL_NAME=$NEXT_PUBLIC_MODEL_NAME
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 
 # 复制 package.json 和 lock 文件
 COPY package*.json ./
-# 安装依赖
 # 使用淘宝/阿里云 NPM 镜像加速
 RUN npm config set registry https://registry.npmmirror.com && \
     npm install
@@ -30,18 +33,14 @@ RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
 WORKDIR /app
 
-# [Next.js 16 关键修复] 运行环境也必须持有相同的加密密钥
-ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=c369fc8774771746261298495394f4c2
-
 # 设置为生产环境
-ENV NODE_ENV production
+ENV NODE_ENV=production
 # 允许外部访问
-ENV HOST 0.0.0.0
+ENV HOST=0.0.0.0
 
 # 从 builder 阶段复制构建好的 standalone 文件和静态资源
 COPY --from=builder /app/public ./public
 
-# 自动创建 .next/standalone 目录
 # https://nextjs.org/docs/pages/api-reference/next-config-js/output
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
