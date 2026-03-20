@@ -6,6 +6,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action, imageData, images } = body;
 
+    console.log(`[API-DEBUG] Received request for action: ${action}`);
+
     if (action === 'parseQuestion') {
       const result = await parseQuestion(imageData);
       return NextResponse.json({ success: true, data: result });
