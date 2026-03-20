@@ -65,10 +65,7 @@ export default function Home() {
                   <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">Ai</span> 让试卷秒变<br />
                   <span className="text-brand-primary italic">智慧讲解</span> 即刻开启
                 </h1>
-                {/* 终极缓存验证探针：版本号 */}
-        <div className="fixed bottom-1 right-2 text-[8px] text-gray-200/50 pointer-events-none z-[9999] select-none font-mono">
-          v2026.03.21.0012.FCP
-        </div>
+
                 <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-16 leading-relaxed">
                   上传试卷，由 AI 自动切割题目、生成解析、并排版成精美的讲解课件。
                   支持手写识别与双模教学。
@@ -89,6 +86,11 @@ export default function Home() {
           )}
         </AnimatePresence>
       </section>
+
+      {/* 终极缓存验证探针：版本号 */}
+      <div className="fixed bottom-1 right-2 text-[8px] text-gray-200/50 pointer-events-none z-[9999] select-none font-mono">
+        v2026.03.21.0012.FCP
+      </div>
     </main>
   );
 }
