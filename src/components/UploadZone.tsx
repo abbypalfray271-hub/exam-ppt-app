@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExtractionCanvas, NormalizedRect } from './ExtractionCanvas';
 import { pdfToImages, wordToText, compressImage } from '@/lib/documentProcessor';
-import { parseFullDocumentAction } from '@/app/actions/ai';
+// 删掉原本的 Server Action 引用
+// // import { parseFullDocumentAction } from '@/app/actions/ai';
 import { importProjectJSON } from '@/lib/projectIO';
 
 function mergeBoxes(boxes: [number, number, number, number][]): [number, number, number, number][] {
@@ -105,7 +106,13 @@ export const UploadZone = () => {
         let completedBatches = 0;
         
         const processBatch = async (batch: string[], batchIndex: number) => {
-          const result = await parseFullDocumentAction(batch);
+          // 使用 API Route 代替 Server Action
+          const response = await fetch('/api/ai-parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'parseFullDocument', images: batch })
+          });
+          const result = await response.json();
           completedBatches++;
           setParseProgress({ current: completedBatches, total: batches.length });
           
@@ -151,7 +158,13 @@ export const UploadZone = () => {
         }
       } else if (fileType === 'word' && examText) {
         setParseProgress({ current: 1, total: 1 });
-        const result = await parseFullDocumentAction(examText);
+        // 使用 API Route 代替 Server Action
+        const response = await fetch('/api/ai-parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'parseFullDocument', images: examText })
+        });
+        const result = await response.json();
         if (result.success && result.data) {
           const questions: Question[] = result.data.map((q: any, idx: number) => ({
             ...q,

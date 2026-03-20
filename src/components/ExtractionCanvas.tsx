@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, CheckCircle2, Loader2, X, Sparkles } from 'lucide-react';
-import { parseQuestionAction } from '@/app/actions/ai';
+// import { parseQuestionAction } from '@/app/actions/ai';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 
@@ -412,7 +412,13 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         }
 
         const base64 = await cropRect(qRect, offsets);
-        const result = await parseQuestionAction(base64);
+        // 使用 API Route 代替 Server Action
+        const response = await fetch('/api/ai-parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'parseQuestion', imageData: base64 })
+        });
+        const result = await response.json();
 
         if (result.success && result.data) {
           result.data.forEach((q: any, subIdx: number) => {
