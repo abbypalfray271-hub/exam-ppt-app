@@ -167,7 +167,7 @@ export const UploadZone = () => {
               ref={fileInputRef}
               type="file"
               className="hidden"
-              accept="image/*,.pdf,.docx"
+              accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
               onChange={onChange}
             />
             
