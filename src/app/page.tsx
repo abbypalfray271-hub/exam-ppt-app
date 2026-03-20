@@ -6,6 +6,9 @@ import { Editor } from '@/components/Editor';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Presentation, Sparkles, Wand2 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
+// 移除不再需要的 Server Action 调试按钮导入
+// import { testServerAction } from '@/app/actions/ai';
+
 
 export default function Home() {
   const { questions, currentView } = useProjectStore();
@@ -36,6 +39,9 @@ export default function Home() {
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 ml-1.5">试卷专家</span>
           </span>
         </div>
+        
+        {/* Debug 按钮已移除，全面使用 API 路由 */}
+
       </nav>
 
       <section className="relative z-10 pt-4 pb-20">

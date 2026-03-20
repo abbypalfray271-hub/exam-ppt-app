@@ -3,6 +3,8 @@
 ## 1. AI 协作协议 (AI Interaction Protocol)
 - **先分析建议 (Proactive Proposal)**: 在修改代码前，必须先提供具体的物理分析（诊断报告）并解释 Bug 根源或设计思路。
 - **确认后动手 (Explicit Approval)**: 只有在用户明确回复“同意”、“认可”或“go”后，才能动刀修改代码。严禁逻辑暴走和画蛇添足。
+- **Gitee 同步优先 (Gitee First)**: 所有的代码修改必须先推送到 Gitee (`git push gitee main`)，再指导用户在服务器上同步。
+- **指令单步执行 (One Command at a Time)**: 在提供服务器指令时，必须做到“一次一条”，并在用户反馈后再给下一条。
 
 ## 2. 技术与编程规范
 - **语言偏好**: 始终使用 **Simplified Chinese (简体中文)** 进行回复。
