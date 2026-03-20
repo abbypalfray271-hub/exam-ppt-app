@@ -304,7 +304,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar min-h-0 min-w-0">
           {hasMaterialImage ? (
             <div 
-              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0 cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
+              className="w-full shrink-0 rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
               onClick={() => setIsMaterialExpanded(true)}
               title="点击全屏查看原文切片"
             >
@@ -334,7 +334,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             </div>
           ) : firstQ.image ? (
             <div 
-              className="w-full rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group min-h-0 min-w-0 cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
+              className="w-full shrink-0 rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
               onClick={() => setIsMaterialExpanded(true)}
               title="点击全屏查看原文切片"
             >
@@ -660,7 +660,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
              initial={{ opacity: 0 }}
              animate={{ opacity: 1 }}
              exit={{ opacity: 0 }}
-             className="fixed inset-0 z-[110] flex items-center justify-center p-0 bg-black/90 backdrop-blur-md overflow-y-auto custom-scrollbar"
+             className="fixed inset-0 z-[110] flex items-start justify-center p-0 bg-black/90 backdrop-blur-md overflow-y-auto custom-scrollbar"
              onClick={() => {
                setIsMaterialExpanded(false);
                setZoomState({ scale: 1, x: 0, y: 0 });
