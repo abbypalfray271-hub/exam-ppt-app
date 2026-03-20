@@ -752,7 +752,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                           setSelectedId(null);
                         }}
                         className={cn(
-                          "absolute -top-3 -right-3 text-white p-1.5 rounded-full shadow-lg hidden group-hover:block z-50 transition-transform hover:scale-110 active:scale-90",
+                          "absolute -top-3 -right-3 text-white p-1.5 rounded-full shadow-lg z-50 transition-transform hover:scale-110 active:scale-90",
+                          isSelected ? "block" : "hidden group-hover:block",
                           isQuestion ? "bg-red-500" : "bg-gray-800"
                         )}
                       >
