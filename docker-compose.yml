@@ -11,6 +11,9 @@ services:
       - "3004:3000"
     environment:
       - NODE_ENV=production
+      - API_KEY=sk-6PSePN7C8I36tBHLQ20tqnyVeOgjQGVvVJSOW7LuaXPLJ09A
+      - NEXT_PUBLIC_MODEL_NAME=gemini-2.5-flash
+      - NEXT_PUBLIC_API_BASE_URL=https://api.devdove.site/v1
     logging:
       driver: "json-file"
       options:
