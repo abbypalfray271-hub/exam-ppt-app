@@ -4,6 +4,9 @@ FROM node:20-alpine AS builder
 # 切换阿里云 Alpine 镜像源
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
+# [Next.js 16 关键修复] 固定 Server Action 加密密钥
+ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=c369fc8774771746261298495394f4c2
+
 WORKDIR /app
 
 # 复制 package.json 和 lock 文件
@@ -26,6 +29,9 @@ FROM node:20-alpine AS runner
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
 WORKDIR /app
+
+# [Next.js 16 关键修复] 运行环境也必须持有相同的加密密钥
+ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=c369fc8774771746261298495394f4c2
 
 # 设置为生产环境
 ENV NODE_ENV production
