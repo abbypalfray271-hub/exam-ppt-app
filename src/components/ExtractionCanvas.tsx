@@ -68,21 +68,28 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // 镜像 drawingRect 的 ref，用于 handleMouseUp 中读取最新值，避免嵌套 setState 导致重复 key
   const drawingRectRef = useRef<Partial<Rect> | null>(null);
 
-  // === 模拟分析进度条 ===
+  // === 模拟分析进度条 (Fake Progress Engine) ===
+  const lastProgressRef = useRef(0);
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isAnalyzing) {
-      setProgress(0);
+      setProgress(2); // 瞬间起步
+      lastProgressRef.current = 2;
       interval = setInterval(() => {
         setProgress(prev => {
-          if (prev < 60) return prev + Math.floor(Math.random() * 5) + 5;
-          if (prev < 85) return Math.min(85, prev + Math.floor(Math.random() * 3) + 1);
-          if (prev < 99) return prev + 1;
-          return 99;
+          let next = prev;
+          if (prev < 60) next = prev + Math.floor(Math.random() * 5) + 5;
+          else if (prev < 88) next = prev + Math.floor(Math.random() * 2) + 1;
+          else if (prev < 99) next = prev + 0.5;
+          else next = 99;
+          
+          // 如果 real progress 领先了，就跳到 real progress
+          return Math.max(next, lastProgressRef.current);
         });
-      }, 300);
+      }, 400);
     } else {
       setProgress(0);
+      lastProgressRef.current = 0;
     }
     return () => clearInterval(interval);
   }, [isAnalyzing]);
@@ -455,7 +462,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           });
         }
         processed++;
-        setProgress(Math.round((processed / qRects.length) * 100));
+        const realPercent = Math.round((processed / qRects.length) * 100);
+        lastProgressRef.current = realPercent;
+        setProgress(prev => Math.max(prev, realPercent));
       }
       setView('editor');
       onComplete();
@@ -491,9 +500,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center text-center"
           >
             <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">正在解析题目图像...</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">AI 智能分析中...</h3>
             <p className="text-gray-500 text-sm">
-              已处理 {progress}%
+              识别进度 {Math.floor(progress)}%
             </p>
           </motion.div>
         )}
