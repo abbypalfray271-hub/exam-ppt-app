@@ -461,85 +461,18 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // ===================== RENDER =====================
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
-      {/* AI 解析动态遮罩 - 科幻高定版 */}
+      {/* 极简解析遮罩 */}
       <AnimatePresence>
         {isAnalyzing && (
           <motion.div
             key="analyzing-overlay"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[100] bg-slate-900/90 backdrop-blur-2xl flex flex-col items-center justify-center p-12 text-center overflow-hidden"
+            className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center text-center"
           >
-            {/* 1. 背景深邃光晕 */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-center justify-center">
-              <motion.div 
-                animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} 
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                className="w-[60vw] h-[60vw] max-w-[800px] max-h-[800px] bg-brand-primary rounded-full blur-[120px]"
-              />
-            </div>
-
-            {/* 2. 中心赛博化文档扫描核心 */}
-            <div className="relative w-48 h-64 mb-10 flex items-center justify-center z-10 mt-8">
-              {/* 外围量子能量环 1: 正转 */}
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-[-15%] rounded-[2rem] border-2 border-slate-700/50 border-t-brand-primary shadow-[0_0_30px_rgba(var(--brand-primary-rgb),0.2)]"
-              />
-              {/* 外围量子能量环 2: 逆转 */}
-              <motion.div
-                animate={{ rotate: -360 }}
-                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-[-5%] rounded-[2.5rem] border border-slate-600/30 border-b-brand-secondary border-r-brand-secondary"
-              />
-
-              {/* 3. 文档本体骨架 */}
-              <div className="relative w-full h-full bg-slate-800/80 rounded-2xl border border-slate-600/50 shadow-2xl overflow-hidden flex flex-col p-5 gap-3">
-                {/* 模拟文本段落 */}
-                <div className="w-3/4 h-2.5 bg-slate-600/50 rounded-full" />
-                <div className="w-full h-2 bg-slate-700/50 rounded-full" />
-                <div className="w-5/6 h-2 bg-slate-700/50 rounded-full" />
-                
-                {/* 模拟试卷配图识别 */}
-                <div className="mt-4 w-full h-20 bg-slate-700/40 rounded-xl border border-slate-600/30 flex items-center justify-center relative overflow-hidden">
-                  <motion.div 
-                    animate={{ opacity: [0.2, 0.5, 0.2], scale: [0.9, 1.1, 0.9] }} 
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="w-12 h-12 rounded-full bg-brand-primary/20 blur-md"
-                  />
-                </div>
-                
-                <div className="w-2/3 h-2 bg-slate-700/50 rounded-full mt-3" />
-                <div className="w-1/2 h-2 bg-slate-700/50 rounded-full" />
-
-                {/* 科幻随动发光扫描线 */}
-                <motion.div
-                  animate={{ top: ["-20%", "120%"] }}
-                  transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
-                  className="absolute left-0 right-0 h-1 bg-brand-secondary shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),1)] z-20"
-                >
-                  <div className="absolute bottom-full left-0 right-0 h-24 bg-gradient-to-t from-brand-secondary/30 to-transparent" />
-                </motion.div>
-
-                {/* 屏幕正中心百分比进度跟随 */}
-                <div className="absolute inset-0 flex items-center justify-center z-30">
-                  <div className="bg-slate-900/60 backdrop-blur-md px-5 py-3 rounded-2xl border border-slate-500/30 shadow-2xl flex items-baseline">
-                    <span className="text-4xl font-black text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] tabular-nums tracking-tighter">
-                      {progress}
-                    </span>
-                    <span className="text-xl font-black text-brand-primary ml-1">%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* 4. 底层炫光文案与请求状态播报 */}
-            <h3 className="text-3xl font-black text-white mb-5 tracking-wide drop-shadow-xl z-10 flex items-center gap-3">
-              <Sparkles className="w-8 h-8 text-brand-primary animate-pulse" />
-              AI 视觉引擎全息重构中
-            </h3>
-            <p className="text-slate-400 max-w-lg mt-8 text-sm leading-relaxed z-10 font-bold">
-              正在剥离冗余像素，深度切割 <span className="text-white bg-white/10 px-2 py-0.5 rounded mx-1">{rects.filter(r => r.type !== 'answer').length}</span> 道题图与 {rects.filter(r => r.type === 'answer').length} 处语义伪装区...
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+            <h3 className="text-xl font-bold text-gray-900 mb-2">正在解析题目图像...</h3>
+            <p className="text-gray-500 text-sm">
+              已处理 {progress}%
             </p>
           </motion.div>
         )}
