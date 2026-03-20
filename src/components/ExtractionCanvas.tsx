@@ -68,7 +68,24 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // 镜像 drawingRect 的 ref，用于 handleMouseUp 中读取最新值，避免嵌套 setState 导致重复 key
   const drawingRectRef = useRef<Partial<Rect> | null>(null);
 
-
+  // === 模拟分析进度条 ===
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isAnalyzing) {
+      setProgress(0);
+      interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev < 60) return prev + Math.floor(Math.random() * 5) + 5;
+          if (prev < 85) return Math.min(85, prev + Math.floor(Math.random() * 3) + 1);
+          if (prev < 99) return prev + 1;
+          return 99;
+        });
+      }, 300);
+    } else {
+      setProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
 
   // === 首次挂载：滚动到 initialPageIndex ===
   useEffect(() => {
