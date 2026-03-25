@@ -304,7 +304,18 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete, onCl
       ctx.drawImage(seg.img, seg.sx, seg.sy, seg.sw, seg.sh, 0, yOff, outputW, seg.sh);
       yOff += seg.sh;
     }
-    return canvas.toDataURL('image/jpeg', 0.85);
+
+    // 限制发送给 AI 的图片最大宽度为 1400px，避免 Cloudflare 524 超时
+    const MAX_WIDTH = 1400;
+    if (canvas.width > MAX_WIDTH) {
+      const scale = MAX_WIDTH / canvas.width;
+      const scaled = document.createElement('canvas');
+      scaled.width = MAX_WIDTH;
+      scaled.height = Math.round(canvas.height * scale);
+      scaled.getContext('2d')!.drawImage(canvas, 0, 0, scaled.width, scaled.height);
+      return scaled.toDataURL('image/jpeg', 0.82);
+    }
+    return canvas.toDataURL('image/jpeg', 0.82);
   };
 
   const handleConfirm = async () => {
@@ -349,12 +360,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete, onCl
     try {
       const store = useProjectStore.getState();
       store.setQuestions([]); // 清空旧数据，准备接收新识别结果
+      const addedTitles = new Set<string>(); // 防止同次解析内重复添加相同题号
 
-      for (let i = 0; i < qRects.length; i++) {
-        const qRect = qRects[i];
-        setStatusText(`正在识别第 ${i + 1} / ${qRects.length} 题...`);
-        setProgress((i / qRects.length) * 100);
+      setStatusText(`准备并发解析 ${qRects.length} 道题目...`);
+      setProgress(5);
 
+      const promises = qRects.map(async (qRect, i) => {
         const childAns = aRects.filter(ar => {
           const cx = ar.x + ar.width / 2;
           const cy = ar.y + ar.height / 2;
@@ -401,6 +412,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete, onCl
 
         if (result.success && result.data) {
           result.data.forEach((q: any, idx: number) => {
+            const titleKey = (q.title || '').trim();
+            if (titleKey.length > 0 && addedTitles.has(titleKey)) return; // 跳过重复题目
+            if (titleKey.length > 0) addedTitles.add(titleKey);
             store.addQuestion({
               ...q,
               id: crypto.randomUUID(),
@@ -414,9 +428,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, onComplete, onCl
             });
           });
         }
+        
         processedCount++;
         setProgress((processedCount / qRects.length) * 100);
-      }
+        setStatusText(`正在提取信息... 已完成 ${processedCount} / ${qRects.length} 题`);
+      });
+
+      await Promise.all(promises);
+
       setProgress(100);
       setStatusText('识别完成，正在进入编辑器...');
       await new Promise(r => setTimeout(r, 600));

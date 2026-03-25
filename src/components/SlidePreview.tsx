@@ -40,11 +40,17 @@ export function buildSlides(questions: Question[]): SlideData[] {
   if (questions.length === 0) return slides;
 
   // === 防御性去重：确保即使 store 中已有重复数据，也不会产生重复幻灯片 ===
-  const seen = new Set<string>();
+  const seenContent = new Set<string>();
+  const seenTitle = new Set<string>();
   const dedupedQuestions = questions.filter(q => {
-    const fp = (q.content || '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60);
-    if (seen.has(fp) && fp.length > 0) return false;
-    seen.add(fp);
+    // 内容指纹（去除空白/标点后取前 80 字符）
+    const contentFp = (q.content || '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 80);
+    // 题目标题去重（捕捉 AI 返回内容略有差异但题号相同的情况）
+    const titleFp = (q.title || '').trim();
+    if (contentFp.length > 0 && seenContent.has(contentFp)) return false;
+    if (titleFp.length > 0 && seenTitle.has(titleFp)) return false;
+    if (contentFp.length > 0) seenContent.add(contentFp);
+    if (titleFp.length > 0) seenTitle.add(titleFp);
     return true;
   });
 
@@ -609,12 +615,28 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                  {(() => {
                     const fullContent = expandedQuestion.content || '';
                     // 自动过滤解析内容：如果不是在编辑源码模式下，且包含【解析】字样，则截断显示
-                    const displayContent = (!isEditingContent && fullContent.includes('【解析】')) 
-                      ? fullContent.split('【解析】')[0].trim() 
+                    const displayContent = (!isEditingContent && fullContent.includes('【解析】'))
+                      ? fullContent.split('【解析】')[0].trim()
                       : fullContent;
-                    
+
                     // 提取解析内容：优先使用 analysis 字段，否则从 content 中截取
                     const analysisText = expandedQuestion.analysis || (fullContent.includes('【解析】') ? fullContent.split('【解析】')[1].trim() : '');
+
+                    // 将 analysisText 拆分为【答案】和详解两部分
+                    let answerText = '';
+                    let detailText = analysisText;
+                    if (analysisText.includes('【答案】')) {
+                      const idx = analysisText.indexOf('【答案】');
+                      const afterAnswer = analysisText.slice(idx + 4);
+                      const nextTagIdx = afterAnswer.search(/【[^】]+】/);
+                      if (nextTagIdx !== -1) {
+                        answerText = ('【答案】' + afterAnswer.slice(0, nextTagIdx)).trim();
+                        detailText = (analysisText.slice(0, idx) + afterAnswer.slice(nextTagIdx)).trim();
+                      } else {
+                        answerText = ('【答案】' + afterAnswer).trim();
+                        detailText = analysisText.slice(0, idx).trim();
+                      }
+                    }
 
                    return (
                      <div className="w-full flex flex-col gap-2">
@@ -642,8 +664,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                               }}
                               className={cn(
                                 "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black transition-all shadow-xl active:scale-95 group border-none",
-                                isEditingContent 
-                                  ? "bg-brand-primary text-white" 
+                                isEditingContent
+                                  ? "bg-brand-primary text-white"
                                   : "bg-orange-500 text-white hover:bg-orange-600"
                               )}
                             >
@@ -652,7 +674,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                             </button>
                           )}
                        </div>
-                       <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[12em]">
+                       <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[8em]">
                          {editable && isEditingContent ? (
                            <div className="flex flex-col gap-6 w-full h-full min-h-[400px]">
                               {/* 题干编辑 */}
@@ -671,7 +693,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                                   autoFocus
                                 />
                               </div>
-                              
+
                               {/* 解析编辑 */}
                               <div className="flex flex-col gap-2">
                                 <label className="text-[10px] font-black text-brand-primary tracking-widest uppercase ml-1">解题过程 (解析/详解)</label>
@@ -690,20 +712,45 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                            </div>
                          ) : (
                            <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                                                            {renderClozeText(displayContent, displayMode >= 1)}
+                             {renderClozeText(displayContent, displayMode >= 1)}
                            </div>
                          )}
-                         </div>
+                       </div>
 
-                        {/* 新增：解题过程展示区 (只在放大页显示，且随显隐逻辑联动) */}
+                        {/* 答案展示区：displayMode >= 1 时显示 */}
                         <AnimatePresence>
-                          {displayMode === 2 && analysisText && !isEditingContent && (
+                          {displayMode >= 1 && answerText && !isEditingContent && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 16 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -8 }}
+                              className="flex flex-col gap-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex items-center gap-2 ml-1 text-red-500 text-sm font-black tracking-widest uppercase">
+                                <div className="p-1.5 bg-red-50 rounded-lg">
+                                  <BookOpen className="w-4 h-4" />
+                                </div>
+                                <span>参考答案</span>
+                              </div>
+                              <div className="w-full bg-red-50 rounded-2xl border border-red-100 p-6 shadow-sm">
+                                <div className="text-lg font-bold text-gray-800 leading-loose whitespace-pre-wrap">
+                                  {answerText.replace(/^【答案】\s*/, '')}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        {/* 解题过程展示区：displayMode === 2 时显示 */}
+                        <AnimatePresence>
+                          {displayMode === 2 && detailText && !isEditingContent && (
                             <motion.div
                               initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -10 }}
-                              className="mt-4 flex flex-col gap-3"
-                              onClick={(e) => e.stopPropagation()} // 阻止冒泡
+                              className="flex flex-col gap-3"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <div className="flex items-center gap-2 ml-1 text-brand-primary text-sm font-black tracking-widest uppercase">
                                 <div className="p-1.5 bg-brand-primary/10 rounded-lg">
@@ -713,7 +760,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                               </div>
                               <div className="w-full bg-brand-primary/5 rounded-2xl border border-brand-primary/20 p-6 shadow-sm">
                                 <div className="text-lg font-bold text-gray-700 leading-loose whitespace-pre-wrap">
-                                  {renderClozeText(analysisText, true)}
+                                  {renderClozeText(detailText, true)}
                                 </div>
                               </div>
                             </motion.div>
@@ -724,7 +771,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                        <div className="text-center mt-6 mb-2 text-gray-400 text-[11px] font-black tracking-widest uppercase animate-pulse pointer-events-none">
                          {isEditingContent
                             ? "👆 在文本中加入类似 {{答案}} 即可创建下划线特效"
-                             : "👇 点击空白处切换：显示答案 -> 显示解析 -> 隐藏全部"
+                             : "👇 点击空白处切换：显示答案 → 显示解析 → 隐藏全部"
                          }
                        </div>
                      </div>
