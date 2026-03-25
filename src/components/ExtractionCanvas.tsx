@@ -432,22 +432,35 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       yOff += seg.sh;
     }
 
-    // 如果裁剪图宽度超过 2000px，等比缩放以减小 base64 体积
-    const MAX_WIDTH = 2000;
+    // 深度优化方案 2++：极致缩放与黑白化
+    const MAX_WIDTH = 960; // 进一步降低到 960px，足以应付 OCR
+    const finalCanvas = document.createElement('canvas');
+    const finalCtx = finalCanvas.getContext('2d');
+    if (!finalCtx) throw new Error('Final canvas ctx failed');
+
     if (outputW > MAX_WIDTH) {
       const scale = MAX_WIDTH / outputW;
-      const scaledW = MAX_WIDTH;
-      const scaledH = Math.round(totalH * scale);
-      const smallCanvas = document.createElement('canvas');
-      const smallCtx = smallCanvas.getContext('2d');
-      if (!smallCtx) throw new Error('Scaled canvas ctx failed');
-      smallCanvas.width = scaledW;
-      smallCanvas.height = scaledH;
-      smallCtx.drawImage(canvas, 0, 0, scaledW, scaledH);
-      return smallCanvas.toDataURL('image/jpeg', 0.5);
+      finalCanvas.width = MAX_WIDTH;
+      finalCanvas.height = Math.round(totalH * scale);
+      finalCtx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height);
+    } else {
+      finalCanvas.width = canvas.width;
+      finalCanvas.height = canvas.height;
+      finalCtx.drawImage(canvas, 0, 0);
     }
 
-    return canvas.toDataURL('image/jpeg', 0.5);
+    // 应用灰度滤镜：减少 JPEG 编码时的颜色信息熵，大幅瘦身 Base64
+    const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      data[i] = avg;     // R
+      data[i + 1] = avg; // G
+      data[i + 2] = avg; // B
+    }
+    finalCtx.putImageData(imageData, 0, 0);
+
+    return finalCanvas.toDataURL('image/jpeg', 0.4);
   };
 
   // === 确认并解析 ===
@@ -473,8 +486,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
 
-      // 并发控制函数
-      const concurrencyLimit = 2; // API 代理限流，降低并发避免 500 错误
+      // 并发控制函数 - 深度优化方案 1+
+      const concurrencyLimit = 1; // 强制改为 1 (串行)，极大降低 524 网关排队压力
       const tasks = qRects.map((qRect, i) => async () => {
         // 寻找所有属于这个题目框的答案框
         const childAnsRects = aRects.filter(ar => {
@@ -508,22 +521,48 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
         const base64 = await cropRect(qRect, offsets);
         console.log(`%c[AI解析] 🧩 题目 ${i + 1}/${qRects.length} 开始请求 API... (图片大小: ${Math.round(base64.length / 1024)}KB)`, 'color: #f59e0b');
-        const startTime = Date.now();
-        const response = await fetch('/api/ai-parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'parseQuestion', imageData: base64 })
-        });
-        const result = await response.json();
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        
+        let retryCount = 0;
+        const maxRetries = 1; // 仅重试一次，避免无限循环
+        let result: any = null;
 
-        if (!result.success) {
-          console.error(`%c[AI解析] ❌ 题目 ${i + 1} 解析失败 (${elapsed}s): ${result.error}`, 'color: #ef4444; font-weight: bold');
-        } else {
-          console.log(`%c[AI解析] ✅ 题目 ${i + 1} 解析成功 (${elapsed}s), 拆出 ${result.data?.length || 0} 个子题`, 'color: #22c55e; font-weight: bold');
-        }
+        const performParse = async (): Promise<any> => {
+          const startTime = Date.now();
+          try {
+            const response = await fetch('/api/ai-parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'parseQuestion', imageData: base64 })
+            });
+            const data = await response.json();
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        if (result.success && result.data) {
+            if (!data.success) {
+              const isTimeout = data.error?.includes('524') || data.error?.includes('超时');
+              if (isTimeout && retryCount < maxRetries) {
+                retryCount++;
+                console.warn(`%c[AI解析] ⚠️ 题目 ${i + 1} 首次超时，准备自动重试 (${retryCount}/${maxRetries})...`, 'color: #f59e0b');
+                await new Promise(r => setTimeout(r, 2000)); // 重试前等待 2s
+                return performParse();
+              }
+              console.error(`%c[AI解析] ❌ 题目 ${i + 1} 解析失败 (${elapsed}s): ${isTimeout ? '网络请求超时 (524)，请点击解析重新开始' : data.error}`, 'color: #ef4444; font-weight: bold');
+            } else {
+              console.log(`%c[AI解析] ✅ 题目 ${i + 1} 解析成功 (${elapsed}s), 拆出 ${data.data?.length || 0} 个子题`, 'color: #22c55e; font-weight: bold');
+            }
+            return data;
+          } catch (err: any) {
+            if (retryCount < maxRetries) {
+              retryCount++;
+              await new Promise(r => setTimeout(r, 2000));
+              return performParse();
+            }
+            throw err;
+          }
+        };
+
+        result = await performParse();
+
+        if (result && result.success && result.data) {
           result.data.forEach((q: any, subIdx: number) => {
             addQuestion({
               ...q,
@@ -542,6 +581,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const realPercent = Math.round((processed / qRects.length) * 100);
         lastProgressRef.current = realPercent;
         setProgress(prev => Math.max(prev, realPercent));
+
+        // 串行队列任务间的“呼吸”延迟 - 1.5s
+        if (i < qRects.length - 1) {
+          await new Promise(r => setTimeout(r, 1500));
+        }
       });
 
       // 执行并发任务
@@ -564,9 +608,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       setView('editor');
       onComplete();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('解析失败，请重试');
+      const isTimeout = error?.message?.includes('超时') || error?.message?.includes('524');
+      alert(isTimeout ? '解析请求超时，请尝试减小框选范围后重试' : '解析失败，请检查网络后重试');
     } finally {
       setIsAnalyzing(false);
       setProcessing(false);
