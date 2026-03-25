@@ -22,6 +22,7 @@ export interface Question {
   contentImage?: string;  // 裁剪后的题目图片 (Base64)
   pageIndex?: number;     // 所在页码，如果在多页 PDF 模式下
   answer_box?: [number, number, number, number];  // 记录原图上答案区域的万分位坐标，以便打码
+  analysis_box?: [number, number, number, number]; // 记录原图上解析区域的万分位坐标，以便打码
 }
 
 interface ProjectState {

@@ -13,7 +13,7 @@ interface Rect {
   y: number;
   width: number;
   height: number;
-  type?: 'question' | 'answer';
+  type?: 'question' | 'answer' | 'analysis';
 }
 
 // 每页图片在纵向容器中的偏移信息
@@ -55,7 +55,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
-  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer'>('question');
+  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'analysis'>('question');
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
@@ -409,9 +409,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     let processed = 0;
 
     try {
-      // 分离题目框和答案框
-      const qRects = rects.filter(r => r.type !== 'answer').sort((a, b) => a.y - b.y);
+      // 分离题目框、答案框和分析框
+      const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a, b) => a.y - b.y);
       const aRects = rects.filter(r => r.type === 'answer');
+      const analysisRects = rects.filter(r => r.type === 'analysis');
 
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
@@ -437,6 +438,24 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           ];
         }
 
+        // 寻找所有属于这个题目框的分析框
+        const childAnalysisRects = analysisRects.filter(ar => {
+          const cx = ar.x + ar.width / 2;
+          const cy = ar.y + ar.height / 2;
+          return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
+        });
+
+        let manualAnalysisBox: [number, number, number, number] | undefined = undefined;
+        if (childAnalysisRects.length > 0) {
+          const ar = childAnalysisRects[0];
+          manualAnalysisBox = [
+            Math.max(0, Math.round((ar.y - qRect.y) / qRect.height * 10000)),
+            Math.max(0, Math.round((ar.x - qRect.x) / qRect.width * 10000)),
+            Math.min(10000, Math.round((ar.y + ar.height - qRect.y) / qRect.height * 10000)),
+            Math.min(10000, Math.round((ar.x + ar.width - qRect.x) / qRect.width * 10000)),
+          ];
+        }
+
         const base64 = await cropRect(qRect, offsets);
         const response = await fetch('/api/ai-parse', {
           method: 'POST',
@@ -455,6 +474,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               order: i * 10 + subIdx,
               type: q.type || 'essay',
               answer_box: manualAnswerBox || q.answer_box || q.answerBox,
+              analysis_box: manualAnalysisBox,
             });
           });
         }
@@ -501,8 +521,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     if (!o) return 0;
     const pTop = o.top;
     const pBottom = pTop + o.height;
-    // 仅统计题目框数量，不包含答案遮挡框
-    return rects.filter(r => r.type !== 'answer' && r.y < pBottom && r.y + r.height > pTop).length;
+    // 仅统计题目框数量，不包含答案遮挡框和分析框
+    return rects.filter(r => (r.type === 'question' || r.type === undefined) && r.y < pBottom && r.y + r.height > pTop).length;
   };
 
   // ===================== RENDER =====================
@@ -551,6 +571,16 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               <div className="w-3 h-3 rounded bg-red-500/20 border-2 border-red-500" />
               框选答案遮挡区
             </button>
+            <button
+              onClick={() => setActiveDrawMode('analysis')}
+              className={cn(
+                "px-4 py-1.5 rounded-full text-sm font-black transition-all flex items-center gap-2",
+                activeDrawMode === 'analysis' ? "bg-white text-purple-600 shadow-sm" : "text-gray-400 hover:text-gray-600"
+              )}
+            >
+              <div className="w-3 h-3 rounded bg-purple-500/20 border-2 border-purple-500" />
+              框选试题分析区
+            </button>
           </div>
 
           <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0">
@@ -558,11 +588,15 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             <span className="w-px h-4 bg-gray-300 shrink-0" />
             <span className="text-brand-primary flex items-center gap-1.5 shrink-0">
                <span className="w-2 h-2 rounded-full bg-brand-primary" />
-               {rects.filter(r => r.type !== 'answer').length} 题
+               {rects.filter(r => r.type === 'question' || r.type === undefined).length} 题
             </span>
             <span className="text-red-500 flex items-center gap-1.5 shrink-0">
                <span className="w-2 h-2 rounded-full bg-red-500" />
                {rects.filter(r => r.type === 'answer').length} 遮挡
+            </span>
+            <span className="text-purple-600 flex items-center gap-1.5 shrink-0">
+               <span className="w-2 h-2 rounded-full bg-purple-500" />
+               {rects.filter(r => r.type === 'analysis').length} 分析
             </span>
           </div>
 
@@ -604,7 +638,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </button>
           <button
             onClick={handleConfirm}
-            disabled={rects.filter(r => r.type !== 'answer').length === 0 || isAnalyzing}
+            disabled={rects.filter(r => r.type === 'question' || r.type === undefined).length === 0 || isAnalyzing}
             className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2 shrink-0"
           >
             <CheckCircle2 className="w-5 h-5" /> 解析
@@ -693,22 +727,25 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
               {/* === 渲染所有矩形框 === */}
               {rects.map((rect) => {
-                const isQuestion = rect.type !== 'answer';
+                const isQuestion = rect.type === 'question' || rect.type === undefined;
+                const isAnswer = rect.type === 'answer';
+                const isAnalysis = rect.type === 'analysis';
                 const isSelected = selectedId === rect.id;
                 const { x, y, width: w, height: h } = rect;
                 
-                // 预先分类并排序（也可提到外部计算，但由于数量小，性能无碍）
-                const qRects = rects.filter(r => r.type !== 'answer').sort((a,b) => a.y - b.y);
+                // 预先分类并排序
+                const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a,b) => a.y - b.y);
                 
                 let label = '';
                 if (isQuestion) {
                   label = `#${qRects.findIndex(r => r.id === rect.id) + 1}`;
                 } else {
-                  // 判断这块红框落在哪个蓝框中心，以便同号显示
+                  // 判断遮挡/分析框落在哪个题目框内
                   const cx = x + w / 2;
                   const cy = y + h / 2;
                   const parentIdx = qRects.findIndex(r => cx >= r.x && cx <= r.x + r.width && cy >= r.y - 10 && cy <= r.y + r.height + 20);
-                  label = parentIdx >= 0 ? `#${parentIdx + 1} 答案` : '未绑定';
+                  const suffix = isAnalysis ? ' 分析' : ' 答案';
+                  label = parentIdx >= 0 ? `#${parentIdx + 1}${suffix}` : '未绑定';
                 }
 
                 return (
@@ -719,7 +756,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       "absolute border-2 transition-colors group",
                       isSelected
                         ? "border-brand-secondary bg-brand-secondary/10 z-30 shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),0.3)]"
-                        : isQuestion ? "border-brand-primary bg-brand-primary/10 z-20" : "border-red-500 border-dashed bg-red-500/20 z-20"
+                        : isQuestion ? "border-brand-primary bg-brand-primary/10 z-20" 
+                        : isAnalysis ? "border-purple-500 border-dashed bg-purple-500/20 z-20"
+                        : "border-red-500 border-dashed bg-red-500/20 z-20"
                     )}
                     style={{ 
                       left: rect.x * zoom, 
@@ -731,7 +770,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     {/* 序号标签 */}
                     <div className={cn(
                       "absolute -top-6 left-0 text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md whitespace-nowrap",
-                      isQuestion ? "bg-brand-primary" : "bg-red-500"
+                      isQuestion ? "bg-brand-primary" : isAnalysis ? "bg-purple-500" : "bg-red-500"
                     )}>
                       {label}
                     </div>
@@ -786,7 +825,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 <div
                   className={cn(
                     "absolute border-2 border-dashed shadow-inner z-20 pointer-events-none",
-                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : "border-red-500 bg-red-500/20"
+                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : activeDrawMode === 'analysis' ? "border-purple-500 bg-purple-500/20" : "border-red-500 bg-red-500/20"
                   )}
                   style={{
                     left: (drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!))! * zoom,

@@ -140,52 +140,89 @@ const renderClozeText = (text: string, show: boolean) => {
 };
 
 const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
-  return questions.map(q => {
-    if (!q.answer_box || q.answer_box.length !== 4) return null;
-    const [ymin, xmin, ymax, xmax] = q.answer_box;
-    
-    // 自动检测坐标系：如果是万分位(0-10000)则除以100，如果是千分位(0-1000)则除以10
-    const isTenThousand = q.answer_box.some(v => v > 1000);
-    const divisor = isTenThousand ? 100 : 10;
-
-    const top = ymin / divisor;
-    const left = xmin / divisor;
-    const height = (ymax - ymin) / divisor;
-    const width = (xmax - xmin) / divisor;
-    
-    return (
-      <div
-        key={`mask-${q.id}`}
-        className={cn(
-          "absolute z-10 backdrop-blur-2xl bg-white/95 border-2 border-dashed border-gray-400 rounded-lg shadow-xl flex flex-col items-center justify-center transition-all duration-300 group/mask",
-          isDrawMode ? "pointer-events-none opacity-20" : "cursor-help hover:opacity-0"
-        )}
-        style={{ top: `${top}%`, left: `${left}%`, height: `${height}%`, width: `${width}%` }}
-        title="此处答案已被打码遮挡 (鼠标移入可查看原图)"
-        onClick={(e) => { e.stopPropagation(); }} // 阻止外层放大弹窗
-      >
-        <EyeOff className="w-5 h-5 text-gray-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
-        <span className="text-[10px] font-bold text-gray-400 group-hover/mask:opacity-0 transition-opacity">答案隐藏区</span>
-        
-        {/* 手动删除错误遮罩的按钮 */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            const { questions, updateQuestion } = useProjectStore.getState();
-            // 找到拥有这个 mask 的题目坐标并清除（目前逻辑是 1题1mask）
-            const targetQ = questions.find(item => item.id === q.id);
-            if (targetQ) {
-              updateQuestion(q.id, { answer_box: undefined });
-            }
-          }}
-          className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/mask:opacity-100 transition-opacity shadow-lg hover:bg-red-600 z-20"
-          title="删除此错误遮罩"
+  const masks: React.ReactNode[] = [];
+  
+  questions.forEach(q => {
+    // 渲染答案遮挡区
+    if (q.answer_box && q.answer_box.length === 4) {
+      const [ymin, xmin, ymax, xmax] = q.answer_box;
+      const isTenThousand = q.answer_box.some(v => v > 1000);
+      const divisor = isTenThousand ? 100 : 10;
+      const top = ymin / divisor;
+      const left = xmin / divisor;
+      const height = (ymax - ymin) / divisor;
+      const width = (xmax - xmin) / divisor;
+      
+      masks.push(
+        <div
+          key={`mask-answer-${q.id}`}
+          className={cn(
+            "absolute z-10 backdrop-blur-2xl bg-white/95 border-2 border-dashed border-gray-400 rounded-lg shadow-xl flex flex-col items-center justify-center transition-all duration-300 group/mask",
+            isDrawMode ? "pointer-events-none opacity-20" : "cursor-help hover:opacity-0"
+          )}
+          style={{ top: `${top}%`, left: `${left}%`, height: `${height}%`, width: `${width}%` }}
+          title="此处答案已被打码遮挡 (鼠标移入可查看原图)"
+          onClick={(e) => { e.stopPropagation(); }}
         >
-          <X className="w-3 h-3" />
-        </button>
-      </div>
-    );
+          <EyeOff className="w-5 h-5 text-gray-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
+          <span className="text-[10px] font-bold text-gray-400 group-hover/mask:opacity-0 transition-opacity">答案隐藏区</span>
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const { updateQuestion } = useProjectStore.getState();
+              updateQuestion(q.id, { answer_box: undefined });
+            }}
+            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/mask:opacity-100 transition-opacity shadow-lg hover:bg-red-600 z-20"
+            title="删除此错误遮罩"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      );
+    }
+
+    // 渲染试题分析区 (紫色主题)
+    if (q.analysis_box && q.analysis_box.length === 4) {
+      const [ymin, xmin, ymax, xmax] = q.analysis_box;
+      const isTenThousand = q.analysis_box.some(v => v > 1000);
+      const divisor = isTenThousand ? 100 : 10;
+      const top = ymin / divisor;
+      const left = xmin / divisor;
+      const height = (ymax - ymin) / divisor;
+      const width = (xmax - xmin) / divisor;
+      
+      masks.push(
+        <div
+          key={`mask-analysis-${q.id}`}
+          className={cn(
+            "absolute z-10 backdrop-blur-2xl bg-purple-50/95 border-2 border-dashed border-purple-400 rounded-lg shadow-xl flex flex-col items-center justify-center transition-all duration-300 group/mask",
+            isDrawMode ? "pointer-events-none opacity-20" : "cursor-help hover:opacity-0"
+          )}
+          style={{ top: `${top}%`, left: `${left}%`, height: `${height}%`, width: `${width}%` }}
+          title="此处试题分析已被隐藏 (鼠标移入可查看原图)"
+          onClick={(e) => { e.stopPropagation(); }}
+        >
+          <EyeOff className="w-5 h-5 text-purple-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
+          <span className="text-[10px] font-bold text-purple-400 group-hover/mask:opacity-0 transition-opacity">试题分析区</span>
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const { updateQuestion } = useProjectStore.getState();
+              updateQuestion(q.id, { analysis_box: undefined });
+            }}
+            className="absolute -top-2 -right-2 w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/mask:opacity-100 transition-opacity shadow-lg hover:bg-purple-600 z-20"
+            title="删除此分析遮罩"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      );
+    }
   });
+  
+  return masks;
 };
 
 interface UnifiedSlideProps {
@@ -257,9 +294,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   };
   // =========================
 
-  // ======= 题干放大弹窗状态 =======
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
-  const [showAnswer, setShowAnswer] = useState(false);
+  // 3-state click cycle: hidden → answer → analysis → hidden
+  const [revealState, setRevealState] = useState<'hidden' | 'answer' | 'analysis'>('hidden');
   const [isEditingContent, setIsEditingContent] = useState(false); // 新增状态：控制是否处于富文本编辑状态
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
   const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
@@ -394,8 +431,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               tabIndex={0}
               onClick={() => {
                 if (q.contentImage) {
-                  setExpandedQuestion(q);
-                  setShowAnswer(false);
+                setExpandedQuestion(q);
+                  setRevealState('hidden');
                   setIsEditingContent(false); // 每次打开弹窗默认显示特效模式
                 }
               }}
@@ -557,8 +594,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               )}
               onClick={(e) => {
                 e.stopPropagation();
-                setShowAnswer(prev => !prev);
-              }} // 点击弹窗内部空白区，触发答案显隐
+                // 3-state cycle: hidden → answer → analysis → hidden
+                setRevealState(prev => prev === 'hidden' ? 'answer' : prev === 'answer' ? 'analysis' : 'hidden');
+              }} // 点击弹窗内部空白区，触发 3 阶段切换
             >
               {/* 弹窗头部栏 */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
@@ -589,7 +627,12 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               {/* 图文混合展示区 (可滚动) */}
               <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
                  {(() => {
-                   const remainingContent = expandedQuestion.content || '';
+                   const fullContent = expandedQuestion.content || '';
+                   // 将内容在【解析】标记处分割为题目部分和解析部分
+                   const analysisSplitRegex = /([\r\n]*【(?:解析|详解|分析)】)/;
+                   const splitParts = fullContent.split(analysisSplitRegex);
+                   const questionPart = splitParts[0] || '';
+                   const analysisPart = splitParts.length > 1 ? splitParts.slice(1).join('') : (expandedQuestion.analysis || '');
 
                    return (
                      <div className="w-full flex flex-col gap-2">
@@ -620,8 +663,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                          {editable && isEditingContent ? (
                            <textarea
                              className="w-full text-xl font-bold text-[#1e293b] leading-loose bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[12em] custom-scrollbar"
-                             value={remainingContent}
-                             onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点正文区时触发答案切换
+                             value={fullContent}
+                             onClick={(e) => e.stopPropagation()}
                              onChange={(e) => {
                                const newContent = e.target.value;
                                updateQuestion(expandedQuestion.id, { content: newContent });
@@ -632,16 +675,31 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                            />
                          ) : (
                            <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                             {renderClozeText(remainingContent, showAnswer)}
+                             {/* 题目部分：答案在 answer/analysis 状态下可见 */}
+                             {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis')}
+                             
+                             {/* 解析部分：仅在 analysis 状态下显示 */}
+                             {analysisPart && revealState === 'analysis' && (
+                               <div className="mt-4 pt-4 border-t-2 border-dashed border-purple-200">
+                                 <div className="text-purple-600 whitespace-pre-wrap">
+                                   {analysisPart}
+                                 </div>
+                               </div>
+                             )}
                            </div>
                          )}
                        </div>
 
-                       {/* 交互指引提示 */}
-                       <div className="text-center mt-6 mb-2 text-gray-400 text-[11px] font-black tracking-widest uppercase animate-pulse pointer-events-none">
+                       {/* 交互指引提示：根据当前状态动态切换 */}
+                       <div className={cn(
+                         "text-center mt-6 mb-2 text-[11px] font-black tracking-widest uppercase animate-pulse pointer-events-none",
+                         revealState === 'hidden' ? 'text-gray-400' : revealState === 'answer' ? 'text-brand-primary' : 'text-purple-500'
+                       )}>
                          {isEditingContent
                             ? "👆 在文本中加入类似 {{答案}} 即可创建下划线特效"
-                             : "👇 点击屏幕任意空白处即可显隐填空/解析"
+                            : revealState === 'hidden' ? "👆 点击屏幕任意空白处即可显示答案"
+                            : revealState === 'answer' ? "👆 再次点击即可查看解析"
+                            : "👆 再次点击即可隐藏答案/解析"
                          }
                        </div>
                      </div>
