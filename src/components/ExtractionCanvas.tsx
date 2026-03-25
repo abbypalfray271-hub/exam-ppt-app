@@ -404,21 +404,29 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // === 确认并解析 ===
   const handleConfirm = async () => {
     if (rects.length === 0) return;
+
+    // 分离题目框、答案框和分析框
+    const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a, b) => a.y - b.y);
+    const aRects = rects.filter(r => r.type === 'answer');
+    const analysisRects = rects.filter(r => r.type === 'analysis');
+
+    if (qRects.length === 0) {
+      alert('请至少框选一道题干区！\n(红色“答案区”或紫色“分析区”必须附属于蓝色的题目区内)');
+      return;
+    }
+
     setIsAnalyzing(true);
     setProcessing(true);
     let processed = 0;
 
     try {
-      // 分离题目框、答案框和分析框
-      const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a, b) => a.y - b.y);
-      const aRects = rects.filter(r => r.type === 'answer');
-      const analysisRects = rects.filter(r => r.type === 'analysis');
+      console.log(`%c[AI解析] 开始解析 ${qRects.length} 道题目 (答案框: ${aRects.length}, 分析框: ${analysisRects.length})`, 'color: #3b82f6; font-weight: bold');
 
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
 
       // 并发控制函数
-      const concurrencyLimit = 5;
+      const concurrencyLimit = 2; // API 代理限流，降低并发避免 500 错误
       const tasks = qRects.map((qRect, i) => async () => {
         // 寻找所有属于这个题目框的答案框
         const childAnsRects = aRects.filter(ar => {
@@ -457,12 +465,21 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         }
 
         const base64 = await cropRect(qRect, offsets);
+        console.log(`%c[AI解析] 🧩 题目 ${i + 1}/${qRects.length} 开始请求 API... (图片大小: ${Math.round(base64.length / 1024)}KB)`, 'color: #f59e0b');
+        const startTime = Date.now();
         const response = await fetch('/api/ai-parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'parseQuestion', imageData: base64 })
         });
         const result = await response.json();
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        if (!result.success) {
+          console.error(`%c[AI解析] ❌ 题目 ${i + 1} 解析失败 (${elapsed}s): ${result.error}`, 'color: #ef4444; font-weight: bold');
+        } else {
+          console.log(`%c[AI解析] ✅ 题目 ${i + 1} 解析成功 (${elapsed}s), 拆出 ${result.data?.length || 0} 个子题`, 'color: #22c55e; font-weight: bold');
+        }
 
         if (result.success && result.data) {
           result.data.forEach((q: any, subIdx: number) => {
@@ -529,21 +546,25 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
       {/* 极简解析遮罩 */}
-      <AnimatePresence>
-        {isAnalyzing && (
-          <motion.div
-            key="analyzing-overlay"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center text-center"
-          >
-            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">AI 智能分析中...</h3>
-            <p className="text-gray-500 text-sm">
-              识别进度 {Math.floor(progress)}%
+      {isAnalyzing && (
+        <div
+          className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center text-center animate-in fade-in duration-300"
+        >
+          <Loader2 className="w-12 h-12 text-brand-primary animate-spin mb-4" />
+          <h3 className="text-2xl font-black text-gray-900 mb-2 tracking-widest">AI 智能分析中...</h3>
+          <div className="flex flex-col items-center gap-3 mt-4">
+            <div className="h-1.5 w-48 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-brand-primary rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${Math.floor(progress)}%` }}
+              />
+            </div>
+            <p className="text-gray-500 text-sm font-bold tracking-wider">
+              识别进度 <span className="text-brand-primary">{Math.floor(progress)}%</span>
             </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      )}
 
       {/* === 顶部工具栏 === */}
       <div className="flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 bg-white border-b z-20 shadow-sm gap-4">
