@@ -398,7 +398,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       yOff += seg.sh;
     }
 
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvas.toDataURL('image/jpeg', 0.75);
   };
 
   // === 确认并解析 ===
@@ -416,31 +416,28 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
 
-      for (let i = 0; i < qRects.length; i++) {
-        const qRect = qRects[i];
-        
-        // 寻找所有属于这个题目框的答案框（中心点在题目框内属于该题目）
+      // 并发控制函数
+      const concurrencyLimit = 5;
+      const tasks = qRects.map((qRect, i) => async () => {
+        // 寻找所有属于这个题目框的答案框
         const childAnsRects = aRects.filter(ar => {
-           const cx = ar.x + ar.width / 2;
-           const cy = ar.y + ar.height / 2;
-           // 稍微放宽一点边界，以防答案在紧挨着的下边缘
-           return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
+          const cx = ar.x + ar.width / 2;
+          const cy = ar.y + ar.height / 2;
+          return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
         });
 
-        // 取出第一个答案框计算比例坐标 0-10000
         let manualAnswerBox: [number, number, number, number] | undefined = undefined;
         if (childAnsRects.length > 0) {
-           const ar = childAnsRects[0];
-           manualAnswerBox = [
-             Math.max(0, Math.round((ar.y - qRect.y) / qRect.height * 10000)),
-             Math.max(0, Math.round((ar.x - qRect.x) / qRect.width * 10000)),
-             Math.min(10000, Math.round((ar.y + ar.height - qRect.y) / qRect.height * 10000)),
-             Math.min(10000, Math.round((ar.x + ar.width - qRect.x) / qRect.width * 10000)),
-           ];
+          const ar = childAnsRects[0];
+          manualAnswerBox = [
+            Math.max(0, Math.round((ar.y - qRect.y) / qRect.height * 10000)),
+            Math.max(0, Math.round((ar.x - qRect.x) / qRect.width * 10000)),
+            Math.min(10000, Math.round((ar.y + ar.height - qRect.y) / qRect.height * 10000)),
+            Math.min(10000, Math.round((ar.x + ar.width - qRect.x) / qRect.width * 10000)),
+          ];
         }
 
         const base64 = await cropRect(qRect, offsets);
-        // 使用 API Route 代替 Server Action
         const response = await fetch('/api/ai-parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -457,15 +454,35 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               contentImage: base64,
               order: i * 10 + subIdx,
               type: q.type || 'essay',
-              answer_box: manualAnswerBox || q.answer_box || q.answerBox, // 优先使用手动标定的框
+              answer_box: manualAnswerBox || q.answer_box || q.answerBox,
             });
           });
         }
+        
         processed++;
         const realPercent = Math.round((processed / qRects.length) * 100);
         lastProgressRef.current = realPercent;
         setProgress(prev => Math.max(prev, realPercent));
-      }
+      });
+
+      // 执行并发任务
+      const limit = (fn: () => Promise<void>) => fn();
+      const executeInParallel = async (tasks: (() => Promise<void>)[], limit: number) => {
+        const executing: Promise<void>[] = [];
+        for (const task of tasks) {
+          const p = task().then(() => {
+            executing.splice(executing.indexOf(p), 1);
+          });
+          executing.push(p);
+          if (executing.length >= limit) {
+            await Promise.race(executing);
+          }
+        }
+        await Promise.all(executing);
+      };
+
+      await executeInParallel(tasks, concurrencyLimit);
+
       setView('editor');
       onComplete();
     } catch (error) {

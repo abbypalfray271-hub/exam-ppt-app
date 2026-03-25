@@ -4,21 +4,17 @@ import mammoth from 'mammoth';
  * 将 PDF 的每一页转化为 Base64 图片
  */
 export async function pdfToImages(file: File): Promise<string[]> {
-  console.log('Initiating PDF to Image conversion (Local Worker mode)');
+  console.log('Initiating PDF to Image conversion (Parallel local mode)');
   
-  // 仅在浏览器端动态加载 pdfjs-dist
   let pdfjsLib;
   try {
-    // 简化导入路径，提高兼容性
     const mod = await import('pdfjs-dist');
     pdfjsLib = mod.default || mod;
-    console.log('PDF.js library loaded successfully');
   } catch (err) {
     console.error('Critical: Failed to load PDF.js library:', err);
     throw new Error('PDF 渲染引擎启动失败，请检查浏览器兼容性');
   }
   
-  // 配置本地 Worker 路径
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
   const arrayBuffer = await file.arrayBuffer();
@@ -27,31 +23,60 @@ export async function pdfToImages(file: File): Promise<string[]> {
   try {
     const pdf = await loadingTask.promise;
     console.log(`Document opened: ${pdf.numPages} pages found`);
-    const imageUrls: string[] = [];
+    const imageUrls: string[] = new Array(pdf.numPages);
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale: 1.25 }); // 降低缩放以提升解析速度
+    // 并发控制器
+    const concurrencyLimit = 3;
+    const pageIndices = Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+    
+    const renderPage = async (pageNum: number) => {
+      const page = await pdf.getPage(pageNum);
+      // 这里的 scale 1.5 通常足够清晰且性能较好
+      const viewport = page.getViewport({ scale: 1.5 });
       
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      if (!context) continue;
+      if (!context) throw new Error('Canvas context failed');
 
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
+      // 自动计算目标尺寸，限制最大宽度以节省内存和提高速度
+      const maxWidth = 1200;
+      let width = viewport.width;
+      let height = viewport.height;
+      if (width > maxWidth) {
+        height = (maxWidth / width) * height;
+        width = maxWidth;
+      }
 
+      canvas.width = width;
+      canvas.height = height;
+
+      // 渲染时直接缩放到目标尺寸
       await page.render({
         canvasContext: context,
-        viewport: viewport,
+        viewport: page.getViewport({ scale: width / (viewport.width / 1.5) }),
         // @ts-ignore
         canvas: canvas
       }).promise;
 
-      imageUrls.push(await compressImage(canvas.toDataURL('image/jpeg', 0.65), 1200));
+      // 直接输出中等质量 JPEG，省去二次加载 Image 对象的过程
+      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', 0.65);
       
-      // 及时释放页面资源
       page.cleanup();
+      console.log(`Page ${pageNum} rendered and compressed`);
+    };
+
+    // 执行并发渲染
+    const executing: Promise<void>[] = [];
+    for (const pageNum of pageIndices) {
+      const p = renderPage(pageNum).then(() => {
+        executing.splice(executing.indexOf(p), 1);
+      });
+      executing.push(p);
+      if (executing.length >= concurrencyLimit) {
+        await Promise.race(executing);
+      }
     }
+    await Promise.all(executing);
     
     console.log('PDF conversion completed successfully');
     return imageUrls;
