@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, CheckCircle2, Loader2, X, Sparkles } from 'lucide-react';
 // import { parseQuestionAction } from '@/app/actions/ai';
@@ -55,12 +55,46 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
-  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'analysis'>('question');
+  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer'>('question');
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
 
   const { addQuestion, setProcessing, setView } = useProjectStore();
+
+  // === 自动计算紫色分析区：题目区 - 答案遮挡区 ===
+  const autoAnalysisRects = useMemo(() => {
+    const qRects = rects.filter(r => r.type === 'question' || r.type === undefined);
+    const aRects = rects.filter(r => r.type === 'answer');
+    const result: { id: string; x: number; y: number; width: number; height: number; parentLabel: string }[] = [];
+
+    qRects.sort((a, b) => a.y - b.y).forEach((qRect, qIdx) => {
+      // 找到属于该题目框的答案框
+      const childAns = aRects.filter(ar => {
+        const cx = ar.x + ar.width / 2;
+        const cy = ar.y + ar.height / 2;
+        return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
+      });
+      if (childAns.length === 0) return; // 没有答案框则不生成分析区
+
+      // 取答案框中最靠下的那个的底边作为分界线
+      const ansBottom = Math.max(...childAns.map(a => a.y + a.height));
+      // 分析区 = 答案遮挡区下方到题目区底部的部分
+      const qBottom = qRect.y + qRect.height;
+      const analysisHeight = qBottom - ansBottom;
+      if (analysisHeight > 10) {
+        result.push({
+          id: `auto-analysis-${qRect.id}`,
+          x: qRect.x,
+          y: ansBottom,
+          width: qRect.width,
+          height: analysisHeight,
+          parentLabel: `#${qIdx + 1} 分析`,
+        });
+      }
+    });
+    return result;
+  }, [rects]);
 
   const interactionRef = useRef<'none' | 'drawing' | 'moving' | 'resizing'>('none');
   const startPosRef = useRef({ x: 0, y: 0 });
@@ -398,17 +432,31 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       yOff += seg.sh;
     }
 
-    return canvas.toDataURL('image/jpeg', 0.75);
+    // 如果裁剪图宽度超过 2000px，等比缩放以减小 base64 体积
+    const MAX_WIDTH = 2000;
+    if (outputW > MAX_WIDTH) {
+      const scale = MAX_WIDTH / outputW;
+      const scaledW = MAX_WIDTH;
+      const scaledH = Math.round(totalH * scale);
+      const smallCanvas = document.createElement('canvas');
+      const smallCtx = smallCanvas.getContext('2d');
+      if (!smallCtx) throw new Error('Scaled canvas ctx failed');
+      smallCanvas.width = scaledW;
+      smallCanvas.height = scaledH;
+      smallCtx.drawImage(canvas, 0, 0, scaledW, scaledH);
+      return smallCanvas.toDataURL('image/jpeg', 0.5);
+    }
+
+    return canvas.toDataURL('image/jpeg', 0.5);
   };
 
   // === 确认并解析 ===
   const handleConfirm = async () => {
     if (rects.length === 0) return;
 
-    // 分离题目框、答案框和分析框
+    // 分离题目框、答案框（分析框由 autoAnalysisRects 自动计算）
     const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a, b) => a.y - b.y);
     const aRects = rects.filter(r => r.type === 'answer');
-    const analysisRects = rects.filter(r => r.type === 'analysis');
 
     if (qRects.length === 0) {
       alert('请至少框选一道题干区！\n(红色“答案区”或紫色“分析区”必须附属于蓝色的题目区内)');
@@ -420,7 +468,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     let processed = 0;
 
     try {
-      console.log(`%c[AI解析] 开始解析 ${qRects.length} 道题目 (答案框: ${aRects.length}, 分析框: ${analysisRects.length})`, 'color: #3b82f6; font-weight: bold');
+      console.log(`%c[AI解析] 开始解析 ${qRects.length} 道题目 (答案框: ${aRects.length}, 自动分析框: ${autoAnalysisRects.length})`, 'color: #3b82f6; font-weight: bold');
 
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
@@ -446,21 +494,15 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           ];
         }
 
-        // 寻找所有属于这个题目框的分析框
-        const childAnalysisRects = analysisRects.filter(ar => {
-          const cx = ar.x + ar.width / 2;
-          const cy = ar.y + ar.height / 2;
-          return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
-        });
-
+        // 自动计算分析框：从 autoAnalysisRects 中找对应的
+        const autoAnalysis = autoAnalysisRects.find(ar => ar.id === `auto-analysis-${qRect.id}`);
         let manualAnalysisBox: [number, number, number, number] | undefined = undefined;
-        if (childAnalysisRects.length > 0) {
-          const ar = childAnalysisRects[0];
+        if (autoAnalysis) {
           manualAnalysisBox = [
-            Math.max(0, Math.round((ar.y - qRect.y) / qRect.height * 10000)),
-            Math.max(0, Math.round((ar.x - qRect.x) / qRect.width * 10000)),
-            Math.min(10000, Math.round((ar.y + ar.height - qRect.y) / qRect.height * 10000)),
-            Math.min(10000, Math.round((ar.x + ar.width - qRect.x) / qRect.width * 10000)),
+            Math.max(0, Math.round((autoAnalysis.y - qRect.y) / qRect.height * 10000)),
+            Math.max(0, Math.round((autoAnalysis.x - qRect.x) / qRect.width * 10000)),
+            Math.min(10000, Math.round((autoAnalysis.y + autoAnalysis.height - qRect.y) / qRect.height * 10000)),
+            Math.min(10000, Math.round((autoAnalysis.x + autoAnalysis.width - qRect.x) / qRect.width * 10000)),
           ];
         }
 
@@ -592,16 +634,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               <div className="w-3 h-3 rounded bg-red-500/20 border-2 border-red-500" />
               框选答案遮挡区
             </button>
-            <button
-              onClick={() => setActiveDrawMode('analysis')}
-              className={cn(
-                "px-4 py-1.5 rounded-full text-sm font-black transition-all flex items-center gap-2",
-                activeDrawMode === 'analysis' ? "bg-white text-purple-600 shadow-sm" : "text-gray-400 hover:text-gray-600"
-              )}
+            {/* 紫色分析区为自动计算，仅显示状态指示 */}
+            <div
+              className="px-4 py-1.5 rounded-full text-sm font-black flex items-center gap-2 text-purple-500 opacity-80 cursor-default"
+              title="分析区 = 题目区 − 答案遮挡区（自动计算）"
             >
               <div className="w-3 h-3 rounded bg-purple-500/20 border-2 border-purple-500" />
-              框选试题分析区
-            </button>
+              分析区 <span className="text-[10px] text-purple-400">自动</span>
+            </div>
           </div>
 
           <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0">
@@ -617,7 +657,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             </span>
             <span className="text-purple-600 flex items-center gap-1.5 shrink-0">
                <span className="w-2 h-2 rounded-full bg-purple-500" />
-               {rects.filter(r => r.type === 'analysis').length} 分析
+               {autoAnalysisRects.length} 分析
             </span>
           </div>
 
@@ -841,12 +881,30 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 );
               })}
 
+              {/* === 渲染自动计算的紫色分析区 === */}
+              {autoAnalysisRects.map((ar) => (
+                <div
+                  key={ar.id}
+                  className="absolute border-2 border-dashed border-purple-500 bg-purple-500/15 z-[25] pointer-events-none"
+                  style={{
+                    left: ar.x * zoom,
+                    top: ar.y * zoom,
+                    width: ar.width * zoom,
+                    height: ar.height * zoom,
+                  }}
+                >
+                  <div className="absolute -top-6 left-0 text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md whitespace-nowrap bg-purple-500">
+                    {ar.parentLabel}
+                  </div>
+                </div>
+              ))}
+
               {/* 绘制中的虚线矩形 */}
               {drawingRect && (
                 <div
                   className={cn(
                     "absolute border-2 border-dashed shadow-inner z-20 pointer-events-none",
-                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : activeDrawMode === 'analysis' ? "border-purple-500 bg-purple-500/20" : "border-red-500 bg-red-500/20"
+                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : "border-red-500 bg-red-500/20"
                   )}
                   style={{
                     left: (drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!))! * zoom,
