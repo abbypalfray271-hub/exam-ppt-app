@@ -240,6 +240,8 @@ export const Editor = () => {
           <div className="flex items-center gap-4 w-[320px] justify-end">
             <button
               onClick={() => {
+                const { setAutoDetectedRects } = useProjectStore.getState();
+                setAutoDetectedRects([]);
                 setView('upload');
                 setCanvasOpen(true);
               }}

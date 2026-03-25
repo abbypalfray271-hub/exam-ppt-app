@@ -38,7 +38,6 @@ export const UploadZone = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [fileType, setFileType] = useState<'image' | 'pdf' | 'word' | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [autoDetectedRects, setAutoDetectedRects] = useState<NormalizedRect[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // 初始化预览 (从 Store 恢复)
@@ -293,7 +292,6 @@ export const UploadZone = () => {
                 <button 
                   className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
                   onClick={() => {
-                    setAutoDetectedRects([]);
                     setCanvasOpen(true);
                   }}
                 >
@@ -348,14 +346,11 @@ export const UploadZone = () => {
             <ExtractionCanvas 
               pages={pdfPages.length > 0 ? pdfPages : (examPages.length > 0 ? examPages : [preview!])} 
               initialPageIndex={currentPage}
-              initialNormalizedRects={autoDetectedRects}
               onComplete={() => {
                 setCanvasOpen(false);
-                setAutoDetectedRects([]);
               }}
               onClose={() => {
                 setCanvasOpen(false);
-                setAutoDetectedRects([]);
               }}
             />
           </motion.div>
@@ -366,7 +361,6 @@ export const UploadZone = () => {
         {preview && (
           <button
             onClick={() => {
-              setAutoDetectedRects([]);
               setCanvasOpen(true);
             }}
             className="flex items-center gap-2 px-8 py-3.5 bg-orange-500 text-white rounded-2xl text-sm font-black shadow-xl hover:bg-orange-600 transition-all active:scale-95 group border-none"

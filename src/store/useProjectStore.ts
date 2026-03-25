@@ -22,6 +22,14 @@ export interface Question {
   contentImage?: string;  // 裁剪后的题目图片 (Base64)
   pageIndex?: number;     // 所在页码，如果在多页 PDF 模式下
   answer_box?: [number, number, number, number];  // 记录原图上答案区域的万分位坐标，以便打码
+  solutionImage?: string; // 裁剪后的解题思路图片 (Base64)
+  analysis_box?: [number, number, number, number]; // [ymin, xmin, ymax, xmax] 万分位坐标
+}
+
+export interface NormalizedRect {
+  pageIdx: number;
+  box: [number, number, number, number];
+  type?: 'question' | 'answer' | 'solution';
 }
 
 interface ProjectState {
@@ -36,7 +44,8 @@ interface ProjectState {
   currentSlideIndex: number;  // -- 新增：当前播放页码 --
   currentView: 'upload' | 'editor'; // -- 新增：当前视图 --
   isCanvasOpen: boolean; // -- 新增：框选画布是否打开 --
-  
+  autoDetectedRects: NormalizedRect[]; // -- 新增：返回解析时恢复的框选区域 --
+
   // Actions
   setProjectName: (name: string) => void;
   setExamImage: (url?: string) => void;
@@ -54,6 +63,7 @@ interface ProjectState {
   setCurrentSlideIndex: (index: number) => void; // -- 新增：切页 --
   setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
   setCanvasOpen: (open: boolean) => void; // -- 新增：控制框选画布 --
+  setAutoDetectedRects: (rects: NormalizedRect[]) => void; // -- 新增：设置返回解析时的框选区域 --
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
 }
 
@@ -67,7 +77,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   currentSlideIndex: 0,
   currentView: 'upload',
   isCanvasOpen: false,
-  
+  autoDetectedRects: [],
+
   setProjectName: (name) => set({ projectName: name }),
   setExamImage: (url) => set({ examImageUrl: url }),
   setExamPages: (pages) => set({ examPages: pages }),
@@ -90,11 +101,13 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setCurrentSlideIndex: (index) => set({ currentSlideIndex: index }),
   setView: (view) => set({ currentView: view }),
   setCanvasOpen: (open) => set({ isCanvasOpen: open }),
-  resetUpload: () => set({ 
+  setAutoDetectedRects: (rects) => set({ autoDetectedRects: rects }),
+  resetUpload: () => set({
     examImageUrl: undefined, 
     examPages: [], 
     examText: undefined, 
-    questions: [], 
+    questions: [],
+    autoDetectedRects: [],
     isProcessing: false,
     currentSlideIndex: 0 
   }),
