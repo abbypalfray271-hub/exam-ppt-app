@@ -538,7 +538,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     return {
       base64: finalCanvas.toDataURL('image/jpeg', 0.85),
       yOffset: 0,
-      height: fullH
+      height: finalCanvas.height
     };
   };
 
