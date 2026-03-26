@@ -505,9 +505,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       currY += seg.sh;
     }
 
-    // 处理缩放映射后的最大尺寸优化 (OCR 友好型尺寸)
-    const MAX_WIDTH = 1600;
-    const MAX_HEIGHT = 2400;
+    // 处理缩放映射后的最大尺寸优化 (1800px 高度是 OCR 识别与速度的黄金平衡点)
+    const MAX_WIDTH = 1400;
+    const MAX_HEIGHT = 1800;
     let finalScale = 1;
     
     // 计算缩放比例，同时兼顾宽高限制
