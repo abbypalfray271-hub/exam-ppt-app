@@ -30,10 +30,10 @@ export const Editor = () => {
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   // 左侧缩略图栏宽度（可拖拽调整）
-  const [leftPanelWidth, setLeftPanelWidth] = useState(144);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(280);
 
   const handleLeftResize = useCallback((dx: number) => {
-    setLeftPanelWidth(prev => Math.max(80, Math.min(300, prev + dx)));
+    setLeftPanelWidth(prev => Math.max(140, Math.min(600, prev + dx)));
   }, []);
   const thumbnailRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -93,33 +93,41 @@ export const Editor = () => {
       {isLeftPanelOpen && (
         <>
           <div className="shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col" style={{ width: leftPanelWidth }}>
-            <div className="px-3 py-3 border-b bg-white/50 flex items-center justify-between group/sidebar-header">
-              <div className="flex items-center gap-2">
+            <div className="px-3 py-3 border-b bg-white/50 flex flex-col gap-2 group/sidebar-header">
+              <div className="flex items-center justify-between">
                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                   幻灯片 · {totalSlides}
                 </h3>
+                <button 
+                  onClick={() => setIsLeftPanelOpen(false)}
+                  className="p-1 hover:bg-red-600 rounded-lg shadow-sm text-white bg-red-500 transition-colors"
+                  title="收起幻灯片列表"
+                >
+                  <ChevronLeft className="w-5 h-5" strokeWidth={3} />
+                </button>
+              </div>
+
+              {/* 大尺寸醒目的一键删除按钮 */}
+              <AnimatePresence>
                 {totalSlides > 0 && (
-                  <button
+                  <motion.button
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
                     onClick={() => {
                       if (window.confirm("确定要清空所有已提取的题目吗？该操作不可撤销。")) {
                         setQuestions([]);
                         setCurrentSlideIdx(0);
                       }
                     }}
-                    className="p-1 rounded hover:bg-red-50 text-red-300 hover:text-red-500 transition-all opacity-0 group-hover/sidebar-header:opacity-100"
+                    className="w-full h-20 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl shadow-md flex flex-col items-center justify-center gap-1 transition-all active:scale-[0.98] font-black text-base"
                     title="一键清除所有题目"
                   >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                    <Trash2 className="w-6 h-6" />
+                    一键删除
+                  </motion.button>
                 )}
-              </div>
-              <button 
-                onClick={() => setIsLeftPanelOpen(false)}
-                className="p-1 hover:bg-red-600 rounded shadow-md text-white bg-red-500 transition-colors"
-                title="收起幻灯片列表"
-              >
-                <ChevronLeft className="w-6 h-6" strokeWidth={3} />
-              </button>
+              </AnimatePresence>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-hide">
               {slides.map((slide, idx) => (

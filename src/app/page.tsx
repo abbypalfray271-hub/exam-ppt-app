@@ -89,7 +89,7 @@ export default function Home() {
 
       {/* 终极缓存验证探针：版本号 */}
       <div className="fixed bottom-1 right-2 text-[8px] text-gray-200/50 pointer-events-none z-[9999] select-none font-mono">
-        v202603261325
+        v202603261457
       </div>
     </main>
   );

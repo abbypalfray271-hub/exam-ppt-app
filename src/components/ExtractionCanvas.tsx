@@ -63,9 +63,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
-  const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set(pages.map((_, i) => i)));
+  const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
 
-  const { questions, addQuestion, addQuestions, setQuestions, isProcessing, setProcessing, setView } = useProjectStore();
+  const { questions, addQuestion, addQuestions, setQuestions, isProcessing, setProcessing, setView, setExamPages } = useProjectStore();
 
   // === 自动计算紫色分析区：题目区 - 答案遮挡区 ===
   const autoAnalysisRects = useMemo(() => {
@@ -230,6 +230,55 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         top: scrollRef.current.scrollTop + offsetInContainer - 16,
         behavior: 'smooth',
       });
+    }
+  };
+
+  // === 批量删除选中页面并同步更新 Rects 坐标 ===
+  const handleDeleteSelected = () => {
+    if (selectedPageIndices.size === 0 || isProcessing) return;
+    
+    const count = selectedPageIndices.size;
+    if (!window.confirm(`确定要删除选中的 ${count} 张图片及其上面的所有框选吗？\n删除后不可撤销。`)) return;
+
+    const offsets = getPageOffsets();
+    const deletedIndices = Array.from(selectedPageIndices).sort((a, b) => a - b);
+    
+    // 1. 过滤并平移 Rects
+    const updatedRects: Rect[] = rects
+      .filter(r => {
+        const midY = r.y + r.height / 2;
+        const pageIdx = offsets.findIndex(o => midY >= o.top && midY < o.top + o.height);
+        return !selectedPageIndices.has(pageIdx);
+      })
+      .map(r => {
+        const midY = r.y + r.height / 2;
+        const pageIdx = offsets.findIndex(o => midY >= o.top && midY < o.top + o.height);
+        
+        // 计算其上方被删除页面的总高度
+        let deletedAboveHeight = 0;
+        for (const dIdx of deletedIndices) {
+          if (dIdx < pageIdx) {
+            deletedAboveHeight += offsets[dIdx].height;
+          }
+        }
+        
+        return deletedAboveHeight > 0 ? { ...r, y: r.y - deletedAboveHeight } : r;
+      });
+
+    // 2. 更新图片列表
+    const newPages = pages.filter((_, i) => !selectedPageIndices.has(i));
+    
+    // 3. 执行状态更新
+    setRects(updatedRects);
+    setExamPages(newPages);
+    setSelectedPageIndices(new Set());
+    
+    // 如果全部删除了，回到上传页
+    if (newPages.length === 0) {
+      setView('upload');
+    } else {
+      // 保持 imagesLoaded 能反映新数组，防止因计数不足导致后续逻辑挂起
+      setImagesLoaded(newPages.length);
     }
   };
 
@@ -887,22 +936,40 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧页面导航缩略图 - 移动端（含横屏）彻底隐藏以释放空间 */}
         {pages.length > 1 && (
-          <div className="hidden lg:flex w-48 bg-white border-r flex-col shrink-0">
-            <div className="p-3 border-b bg-gray-50/50 flex items-center justify-between">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
-                <LayoutList className="w-3 h-3" /> 页面导航
-              </span>
-              <button 
-                onClick={() => {
-                  if (selectedPageIndices.size === pages.length) setSelectedPageIndices(new Set());
-                  else setSelectedPageIndices(new Set(pages.map((_, i) => i)));
-                }}
-                className="text-[10px] font-black text-brand-primary hover:underline"
-              >
-                {selectedPageIndices.size === pages.length ? '取消全选' : '全选'}
-              </button>
+          <div className="hidden lg:flex w-[480px] bg-white border-r flex-col shrink-0">
+            <div className="p-4 border-b bg-gray-50/50 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <LayoutList className="w-3.5 h-3.5" /> 页面导航
+                </span>
+                <button 
+                  onClick={() => {
+                    if (selectedPageIndices.size === pages.length) setSelectedPageIndices(new Set());
+                    else setSelectedPageIndices(new Set(pages.map((_, i) => i)));
+                  }}
+                  className="text-[11px] font-black text-brand-primary hover:text-brand-primary/80 transition-colors"
+                >
+                  {selectedPageIndices.size === pages.length ? '取消全选' : '全选'}
+                </button>
+              </div>
+
+              {/* 大尺寸醒目的删除按钮 - 仅在有选中时出现 */}
+              <AnimatePresence>
+                {selectedPageIndices.size > 0 && (
+                  <motion.button
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={handleDeleteSelected}
+                    className="w-full h-24 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl shadow-xl shadow-red-200 flex flex-col items-center justify-center gap-1 transition-all active:scale-[0.98] font-black text-lg"
+                  >
+                    <Trash2 className="w-8 h-8" />
+                    删除已选 ({selectedPageIndices.size})
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-hide">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
               {pages.map((page, idx) => {
                 const rectCount = getPageRectCount(idx);
                 return (
@@ -935,11 +1002,13 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                         setSelectedPageIndices(next);
                       }}
                       className={cn(
-                        "absolute top-2 right-2 p-1 rounded-md shadow-md transition-all active:scale-90 z-10",
-                        selectedPageIndices.has(idx) ? "bg-brand-primary text-white" : "bg-white/80 text-gray-400"
+                        "absolute top-3 right-3 p-2 rounded-xl shadow-lg transition-all active:scale-90 z-10 border-2",
+                        selectedPageIndices.has(idx) 
+                          ? "bg-brand-primary text-white border-brand-primary" 
+                          : "bg-white/90 text-gray-400 border-transparent hover:border-gray-200"
                       )}
                     >
-                      {selectedPageIndices.has(idx) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                      {selectedPageIndices.has(idx) ? <CheckSquare className="w-5 h-5 stroke-[2.5px]" /> : <Square className="w-5 h-5 stroke-[2.5px]" />}
                     </div>
                   </button>
                 );
