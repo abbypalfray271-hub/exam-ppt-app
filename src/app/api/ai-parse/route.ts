@@ -17,12 +17,12 @@ function extractAnalysis(questions: any[]): any[] {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, imageData, images } = body;
-
-    console.log(`[API-DEBUG] Received request for action: ${action}`);
+    const { action, imageData, images, hasManualAnswer, hasManualAnalysis } = body;
+    
+    console.log(`[API-DEBUG] Received request for action: ${action}, manualAnswer: ${hasManualAnswer}, manualAnalysis: ${hasManualAnalysis}`);
 
     if (action === 'parseQuestion') {
-      const result = await parseQuestion(imageData);
+      const result = await parseQuestion(imageData, !!hasManualAnswer, !!hasManualAnalysis);
       return NextResponse.json({ success: true, data: extractAnalysis(result) });
     }
 

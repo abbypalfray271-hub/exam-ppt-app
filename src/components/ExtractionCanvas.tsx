@@ -371,7 +371,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // =================================================================
   // 核心：跨页裁剪 —— 判断矩形覆盖哪些页，分别裁剪后纵向拼接
   // =================================================================
-  const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<string> => {
+  // =================================================================
+  // 核心：跨页裁剪 —— 判断矩形覆盖哪些页，分别裁剪后纵向拼接
+  // 优化：增加图片分片处理，防止大图导致 AI 响应超时
+  // =================================================================
+  interface ImageSlice {
+    base64: string;
+    yOffset: number; // 该片段在题目框(qRect)中的纵向起始位(物理像素)
+    height: number;  // 该片段的物理高度
+  }
+
+  const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<ImageSlice[]> => {
     if (offsets.length === 0) throw new Error('No page offsets - container or refs missing');
 
     const rectTop = rect.y;
@@ -404,7 +414,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
     // 计算每段裁剪参数（物理像素级别）
     const segments: { img: HTMLImageElement; sx: number; sy: number; sw: number; sh: number }[] = [];
-    let totalH = 0;
+    let fullH = 0;
     let outputW = 0;
 
     for (let i = 0; i < overlapping.length; i++) {
@@ -415,52 +425,83 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const sw = (rect.width / offset.imgWidth) * img.naturalWidth;
       const sh = (cH / offset.height) * img.naturalHeight;
       segments.push({ img, sx, sy, sw, sh });
-      totalH += sh;
-      if (i === 0) outputW = sw; // 以第一段的宽度为准
+      fullH += sh;
+      if (i === 0) outputW = sw;
     }
 
-    // 拼接到同一张 Canvas
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas ctx failed');
-    canvas.width = outputW;
-    canvas.height = totalH;
+    // 拼接到 Full Canvas
+    const fullCanvas = document.createElement('canvas');
+    const fullCtx = fullCanvas.getContext('2d');
+    if (!fullCtx) throw new Error('Canvas ctx failed');
+    fullCanvas.width = outputW;
+    fullCanvas.height = fullH;
 
-    let yOff = 0;
+    let currY = 0;
     for (const seg of segments) {
-      ctx.drawImage(seg.img, seg.sx, seg.sy, seg.sw, seg.sh, 0, yOff, outputW, seg.sh);
-      yOff += seg.sh;
+      fullCtx.drawImage(seg.img, seg.sx, seg.sy, seg.sw, seg.sh, 0, currY, outputW, seg.sh);
+      currY += seg.sh;
     }
 
-    // 深度优化方案 2++：极致缩放与黑白化
-    const MAX_WIDTH = 960; // 进一步降低到 960px，足以应付 OCR
-    const finalCanvas = document.createElement('canvas');
-    const finalCtx = finalCanvas.getContext('2d');
-    if (!finalCtx) throw new Error('Final canvas ctx failed');
+    // --- 分片逻辑 ---
+    const MAX_SLICE_H = 1800; // 单片最大高度锚点
+    const OVERLAP_H = 200;    // 重叠区高度
+    const slices: ImageSlice[] = [];
 
-    if (outputW > MAX_WIDTH) {
-      const scale = MAX_WIDTH / outputW;
-      finalCanvas.width = MAX_WIDTH;
-      finalCanvas.height = Math.round(totalH * scale);
-      finalCtx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height);
+    // 处理缩放映射后的最大宽度优化
+    const MAX_WIDTH = 960;
+    const finalScale = outputW > MAX_WIDTH ? MAX_WIDTH / outputW : 1;
+    
+    const createSliceData = (sy: number, sh: number): string => {
+      const sliceCanvas = document.createElement('canvas');
+      const sCtx = sliceCanvas.getContext('2d');
+      if (!sCtx) return '';
+      
+      sliceCanvas.width = Math.round(outputW * finalScale);
+      sliceCanvas.height = Math.round(sh * finalScale);
+      
+      sCtx.drawImage(fullCanvas, 0, sy, outputW, sh, 0, 0, sliceCanvas.width, sliceCanvas.height);
+      
+      // 灰度 & 降噪优化 (Base64 瘦身)
+      const imageData = sCtx.getImageData(0, 0, sliceCanvas.width, sliceCanvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+        data[i] = data[i+1] = data[i+2] = avg;
+      }
+      sCtx.putImageData(imageData, 0, 0);
+      return sliceCanvas.toDataURL('image/jpeg', 0.5);
+    };
+
+    if (fullH <= MAX_SLICE_H + OVERLAP_H) {
+      // 不需要分片
+      slices.push({
+        base64: createSliceData(0, fullH),
+        yOffset: 0,
+        height: fullH
+      });
     } else {
-      finalCanvas.width = canvas.width;
-      finalCanvas.height = canvas.height;
-      finalCtx.drawImage(canvas, 0, 0);
+      // 循环切片
+      let startY = 0;
+      while (startY < fullH) {
+        let endY = Math.min(startY + MAX_SLICE_H, fullH);
+        // 如果剩下的太短了（小于重叠区的 1.5 倍），就直接并入当前片
+        if (fullH - endY < OVERLAP_H * 1.5) {
+          endY = fullH;
+        }
+        
+        const h = endY - startY;
+        slices.push({
+          base64: createSliceData(startY, h),
+          yOffset: startY,
+          height: h
+        });
+
+        if (endY === fullH) break;
+        startY = endY - OVERLAP_H; // 关键：回退重叠区
+      }
     }
 
-    // 应用灰度滤镜：减少 JPEG 编码时的颜色信息熵，大幅瘦身 Base64
-    const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-      data[i] = avg;     // R
-      data[i + 1] = avg; // G
-      data[i + 2] = avg; // B
-    }
-    finalCtx.putImageData(imageData, 0, 0);
-
-    return finalCanvas.toDataURL('image/jpeg', 0.4);
+    return slices;
   };
 
   // === 确认并解析 ===
@@ -486,9 +527,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
 
-      // 并发控制函数 - 深度优化方案 1+
-      const concurrencyLimit = 1; // 强制改为 1 (串行)，极大降低 524 网关排队压力
+      const concurrencyLimit = 1; // 串行执行，降低超时风险
       const tasks = qRects.map((qRect, i) => async () => {
+        // 1. 获取该题目框的分片
+        const slices = await cropRect(qRect, offsets);
+        console.log(`%c[AI解析] 题目 ${i + 1}/${qRects.length} 生成了 ${slices.length} 个分片`, 'color: #3b82f6');
+
         // 寻找所有属于这个题目框的答案框
         const childAnsRects = aRects.filter(ar => {
           const cx = ar.x + ar.width / 2;
@@ -496,93 +540,130 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
         });
 
-        let manualAnswerBox: [number, number, number, number] | undefined = undefined;
-        if (childAnsRects.length > 0) {
-          const ar = childAnsRects[0];
-          manualAnswerBox = [
-            Math.max(0, Math.round((ar.y - qRect.y) / qRect.height * 10000)),
-            Math.max(0, Math.round((ar.x - qRect.x) / qRect.width * 10000)),
-            Math.min(10000, Math.round((ar.y + ar.height - qRect.y) / qRect.height * 10000)),
-            Math.min(10000, Math.round((ar.x + ar.width - qRect.x) / qRect.width * 10000)),
-          ];
-        }
-
-        // 自动计算分析框：从 autoAnalysisRects 中找对应的
-        const autoAnalysis = autoAnalysisRects.find(ar => ar.id === `auto-analysis-${qRect.id}`);
-        let manualAnalysisBox: [number, number, number, number] | undefined = undefined;
-        if (autoAnalysis) {
-          manualAnalysisBox = [
-            Math.max(0, Math.round((autoAnalysis.y - qRect.y) / qRect.height * 10000)),
-            Math.max(0, Math.round((autoAnalysis.x - qRect.x) / qRect.width * 10000)),
-            Math.min(10000, Math.round((autoAnalysis.y + autoAnalysis.height - qRect.y) / qRect.height * 10000)),
-            Math.min(10000, Math.round((autoAnalysis.x + autoAnalysis.width - qRect.x) / qRect.width * 10000)),
-          ];
-        }
-
-        const base64 = await cropRect(qRect, offsets);
-        console.log(`%c[AI解析] 🧩 题目 ${i + 1}/${qRects.length} 开始请求 API... (图片大小: ${Math.round(base64.length / 1024)}KB)`, 'color: #f59e0b');
-        
-        let retryCount = 0;
-        const maxRetries = 1; // 仅重试一次，避免无限循环
-        let result: any = null;
-
-        const performParse = async (): Promise<any> => {
-          const startTime = Date.now();
-          try {
-            const response = await fetch('/api/ai-parse', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'parseQuestion', imageData: base64 })
-            });
-            const data = await response.json();
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-            if (!data.success) {
-              const isTimeout = data.error?.includes('524') || data.error?.includes('超时');
-              if (isTimeout && retryCount < maxRetries) {
-                retryCount++;
-                console.warn(`%c[AI解析] ⚠️ 题目 ${i + 1} 首次超时，准备自动重试 (${retryCount}/${maxRetries})...`, 'color: #f59e0b');
-                await new Promise(r => setTimeout(r, 2000)); // 重试前等待 2s
-                return performParse();
-              }
-              console.error(`%c[AI解析] ❌ 题目 ${i + 1} 解析失败 (${elapsed}s): ${isTimeout ? '网络请求超时 (524)，请点击解析重新开始' : data.error}`, 'color: #ef4444; font-weight: bold');
-            } else {
-              console.log(`%c[AI解析] ✅ 题目 ${i + 1} 解析成功 (${elapsed}s), 拆出 ${data.data?.length || 0} 个子题`, 'color: #22c55e; font-weight: bold');
-            }
-            return data;
-          } catch (err: any) {
-            if (retryCount < maxRetries) {
-              retryCount++;
-              await new Promise(r => setTimeout(r, 2000));
-              return performParse();
-            }
-            throw err;
-          }
+        const getManualBox = (target: Rect | undefined) => {
+          if (!target) return undefined;
+          return [
+            Math.max(0, Math.round((target.y - qRect.y) / qRect.height * 10000)),
+            Math.max(0, Math.round((target.x - qRect.x) / qRect.width * 10000)),
+            Math.min(10000, Math.round((target.y + target.height - qRect.y) / qRect.height * 10000)),
+            Math.min(10000, Math.round((target.x + target.width - qRect.x) / qRect.width * 10000)),
+          ] as [number, number, number, number];
         };
 
-        result = await performParse();
+        const manualAnswerBox = getManualBox(childAnsRects[0]);
+        const autoAnalysis = autoAnalysisRects.find(ar => ar.id === `auto-analysis-${qRect.id}`);
+        const manualAnalysisBox = getManualBox(autoAnalysis);
 
-        if (result && result.success && result.data) {
-          result.data.forEach((q: any, subIdx: number) => {
-            addQuestion({
-              ...q,
-              id: crypto.randomUUID(),
-              image: base64,
-              contentImage: base64,
-              order: i * 10 + subIdx,
-              type: q.type || 'essay',
-              answer_box: manualAnswerBox || q.answer_box || q.answerBox,
-              analysis_box: manualAnalysisBox,
+        // 用于保存该题目框下所有分片的解析结果
+        const allParsedSubQuestions: any[] = [];
+
+        // 2. 依次解析每个分片
+        for (let sIdx = 0; sIdx < slices.length; sIdx++) {
+          const slice = slices[sIdx];
+          let retryCount = 0;
+          const maxRetries = 1;
+
+          const performSliceParse = async (): Promise<any> => {
+            const startTime = Date.now();
+            try {
+            const res = await fetch('/api/ai-parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                action: 'parseQuestion', 
+                imageData: slice.base64,
+                hasManualAnswer: !!manualAnswerBox,
+                hasManualAnalysis: !!manualAnalysisBox
+              })
             });
-          });
+              const data = await res.json();
+              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+              if (!data.success) {
+                const isTimeout = data.error?.includes('524') || data.error?.includes('超时');
+                if (isTimeout && retryCount < maxRetries) {
+                  retryCount++;
+                  await new Promise(r => setTimeout(r, 2000));
+                  return performSliceParse();
+                }
+                console.error(`%c[AI解析] ❌ 题目 ${i + 1} 分片 ${sIdx + 1} 失败: ${data.error}`, 'color: #ef4444');
+                return null;
+              }
+              
+              console.log(`%c[AI解析] ✅ 题目 ${i + 1} 分片 ${sIdx + 1}/${slices.length} 成功 (${elapsed}s)`, 'color: #22c55e');
+              return data.data || [];
+            } catch (err) {
+              if (retryCount < maxRetries) {
+                retryCount++;
+                await new Promise(r => setTimeout(r, 2000));
+                return performSliceParse();
+              }
+              return null;
+            }
+          };
+
+          const sliceResults = await performSliceParse();
+          if (sliceResults) {
+            // 3. 坐标映射还原：分片坐标 -> 题目框坐标
+            const mappedResults = sliceResults.map((sq: any) => {
+              const box = sq.content_box || sq.contentBox;
+              if (!box) return sq;
+
+              // 分片内高度比例 -> 分片内物理像素 -> 题目框内物理像素 -> 题目框内高度比例
+              const [sYmin, sXmin, sYmax, sXmax] = box;
+              const qYmin = Math.round(((sYmin / 10000 * slice.height + slice.yOffset) / (slices[slices.length-1].yOffset + slices[slices.length-1].height)) * 10000);
+              const qYmax = Math.round(((sYmax / 10000 * slice.height + slice.yOffset) / (slices[slices.length-1].yOffset + slices[slices.length-1].height)) * 10000);
+              
+              return {
+                ...sq,
+                content_box: [qYmin, sXmin, qYmax, sXmax] // X轴不需要变，因为分片宽度等于题目框宽度
+              };
+            });
+
+            // 4. 去重逻辑 (针对重叠区)
+            mappedResults.forEach((newSq: any) => {
+              const NS = newSq.content_box;
+              const isDuplicate = allParsedSubQuestions.some(prevSq => {
+                const PS = prevSq.content_box;
+                if (!NS || !PS) return false;
+                // 计算重叠度 (IoU 简化版：中心点距离 + 面积重合度)
+                const overlapY = Math.max(0, Math.min(NS[2], PS[2]) - Math.max(NS[0], PS[0]));
+                const overlapX = Math.max(0, Math.min(NS[3], PS[3]) - Math.max(NS[1], PS[1]));
+                const overlapArea = overlapY * overlapX;
+                const areaN = (NS[2] - NS[0]) * (NS[3] - NS[1]);
+                return overlapArea / areaN > 0.7; // 超过 70% 面积重合视为同一题
+              });
+
+              if (!isDuplicate) {
+                allParsedSubQuestions.push(newSq);
+              }
+            });
+          }
+
+          if (sIdx < slices.length - 1) {
+            await new Promise(r => setTimeout(r, 1000)); // 分片间稍作喘息
+          }
         }
-        
+
+        // 5. 存储最终结果
+        allParsedSubQuestions.forEach((q, subIdx) => {
+          addQuestion({
+            ...q,
+            id: crypto.randomUUID(),
+            image: slices[0].base64, // 默认用第一片，实际预览会根据 box 裁剪
+            contentImage: slices[0].base64,
+            order: i * 100 + subIdx,
+            type: q.type || 'essay',
+            answer_box: manualAnswerBox || q.answer_box,
+            analysis_box: manualAnalysisBox,
+          });
+        });
+
         processed++;
         const realPercent = Math.round((processed / qRects.length) * 100);
         lastProgressRef.current = realPercent;
-        setProgress(prev => Math.max(prev, realPercent));
+        setProgress(realPercent);
 
-        // 串行队列任务间的“呼吸”延迟 - 1.5s
         if (i < qRects.length - 1) {
           await new Promise(r => setTimeout(r, 1500));
         }
