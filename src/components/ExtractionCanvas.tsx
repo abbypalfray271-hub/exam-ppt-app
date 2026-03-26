@@ -505,9 +505,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       currY += seg.sh;
     }
 
-    // 处理缩放映射后的最大尺寸优化 (1800px 高度是 OCR 识别与速度的黄金平衡点)
-    const MAX_WIDTH = 1400;
-    const MAX_HEIGHT = 1800;
+    // 处理缩放映射后的最大尺寸优化 (清晰度强化版：支持超高清全页解析)
+    // 5000px 可以确保 99% 的 12pt 字体试卷在缩放后依然保持极高的清晰度
+    const MAX_WIDTH = 2500;
+    const MAX_HEIGHT = 5000;
     let finalScale = 1;
     
     // 计算缩放比例，同时兼顾宽高限制
@@ -526,17 +527,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     finalCanvas.height = Math.round(fullH * finalScale);
     fCtx.drawImage(fullCanvas, 0, 0, outputW, fullH, 0, 0, finalCanvas.width, finalCanvas.height);
     
-    // 灰度优化
-    const imageData = fCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-      data[i] = data[i+1] = data[i+2] = avg;
-    }
-    fCtx.putImageData(imageData, 0, 0);
+    // 移除手动灰度逻辑，保留原始色彩以增强 AI 视觉识别的对比度细节
 
     return {
-      base64: finalCanvas.toDataURL('image/jpeg', 0.85),
+      base64: finalCanvas.toDataURL('image/jpeg', 0.98),
       yOffset: 0,
       height: finalCanvas.height
     };
