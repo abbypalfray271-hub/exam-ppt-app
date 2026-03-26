@@ -4,9 +4,9 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, CheckCircle2, Loader2, X, Sparkles, CheckSquare, Square, LayoutList } from 'lucide-react';
 // import { parseQuestionAction } from '@/app/actions/ai';
-import { useProjectStore } from '@/store/useProjectStore';
+import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
-import { cropImageByBox } from '@/lib/documentProcessor';
+import { cropImageByBox, compressImage } from '@/lib/documentProcessor';
 
 interface Rect {
   id: string;
@@ -51,7 +51,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [rects, setRects] = useState<Rect[]>([]);
   const [drawingRect, setDrawingRect] = useState<Partial<Rect> | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
@@ -62,7 +61,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set(pages.map((_, i) => i)));
 
-  const { addQuestion, addQuestions, setProcessing, setView } = useProjectStore();
+  const { questions, addQuestion, addQuestions, setQuestions, isProcessing, setProcessing, setView } = useProjectStore();
 
   // === 自动计算紫色分析区：题目区 - 答案遮挡区 ===
   const autoAnalysisRects = useMemo(() => {
@@ -108,7 +107,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const lastProgressRef = useRef(0);
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isAnalyzing) {
+    if (isProcessing) {
       setProgress(2); // 瞬间起步
       lastProgressRef.current = 2;
       interval = setInterval(() => {
@@ -128,7 +127,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       lastProgressRef.current = 0;
     }
     return () => clearInterval(interval);
-  }, [isAnalyzing]);
+  }, [isProcessing]);
 
   // === 首次挂载：滚动到 initialPageIndex ===
   useEffect(() => {
@@ -223,7 +222,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
   // === 鼠标事件：开始绘制 ===
   const startDrawing = (e: React.PointerEvent) => {
-    if (!containerRef.current || isAnalyzing) return;
+    if (!containerRef.current || isProcessing) return;
     // 拦截触摸等事件默认的滚动和双击放大行为
     if (e.pointerType === 'touch') {
       // 在 Safari/iOS 环境中，仅依靠 touch-none 可能不够
@@ -243,7 +242,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
   const startMoving = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
-    if (isAnalyzing) return;
+    if (isProcessing) return;
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
     setSelectedId(id);
@@ -254,7 +253,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
   const startResizing = (e: React.PointerEvent, id: string, handle: string) => {
     e.stopPropagation();
-    if (isAnalyzing) return;
+    if (isProcessing) return;
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
     setSelectedId(id);
@@ -450,7 +449,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     const slices: ImageSlice[] = [];
 
     // 处理缩放映射后的最大宽度优化
-    const MAX_WIDTH = 960;
+    const MAX_WIDTH = 1600;
     const finalScale = outputW > MAX_WIDTH ? MAX_WIDTH / outputW : 1;
     
     const createSliceData = (sy: number, sh: number): string => {
@@ -471,7 +470,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         data[i] = data[i+1] = data[i+2] = avg;
       }
       sCtx.putImageData(imageData, 0, 0);
-      return sliceCanvas.toDataURL('image/jpeg', 0.5);
+      return sliceCanvas.toDataURL('image/jpeg', 0.85);
     };
 
     if (fullH <= MAX_SLICE_H + OVERLAP_H) {
@@ -523,7 +522,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const confirmed = window.confirm(`是否开始对选中的 ${targetIndices.length} 页试卷进行“全自动智能识别”？\n\n系统将智能提取题目、答案并补全解析。`);
       if (!confirmed) return;
 
-      setIsAnalyzing(true);
       setProcessing(true);
       const allResults: any[] = [];
 
@@ -537,52 +535,62 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           
           if (idx > 0) await new Promise(resolve => setTimeout(resolve, 500)); // 注入 500ms 节流
           
-          console.log(`%c[AI分页解析] 正在解析第 ${i + 1} 页 (${idx + 1}/${targetIndices.length})...`, 'color: #a855f7');
-          
-          const res = await fetch('/api/ai-parse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              action: 'parseFullDocument', 
-              images: [pages[i]] 
-            })
-          });
-          
-          const data = await res.json();
-          if (data.success && data.data) {
-            // 为每道题注入物理图片引用 + 自动预览裁剪（实现与手动模式对齐）
-            const pageResults = await Promise.all(data.data.map(async (q: any) => {
-              const box = q.content_box || q.contentBox;
-              let croppedImage = pages[i]; // 默认整页
-              if (box && Math.abs(box[2] - box[0]) > 0) {
-                try {
-                  const crop = await cropImageByBox(pages[i], box);
-                  if (crop) croppedImage = crop;
-                } catch (e) {
-                  console.error('Auto crop failed:', e);
+          try {
+            // 前端二次压缩，防止 PDF 页 Base64 体积过大导致 API 500/413 报错
+            const compressedPage = await compressImage(pages[i], 2000);
+            
+            const res = await fetch('/api/ai-parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                action: 'parseFullDocument', 
+                images: [compressedPage] 
+              })
+            });
+            
+            if (!res.ok) {
+              const errText = await res.text();
+              throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
+            }
+            
+            const data = await res.json();
+            if (data.success && data.data) {
+              // 为每道题注入物理图片引用 + 自动预览裁剪（实现与手动模式对齐）
+              const pageResults = await Promise.all(data.data.map(async (q: any) => {
+                const box = q.content_box || q.contentBox;
+                let croppedImage = pages[i]; // 默认整页
+                if (box && Math.abs(box[2] - box[0]) > 0) {
+                  try {
+                    const crop = await cropImageByBox(pages[i], box);
+                    if (crop) croppedImage = crop;
+                  } catch (e) {
+                    console.error('Auto crop failed:', e);
+                  }
                 }
-              }
-              return {
-                ...q,
-                image: pages[i],          // 原图底图
-                contentImage: croppedImage, // 预览切图
-              };
-            }));
-            allResults.push(...pageResults);
-          } else {
-            console.warn(`第 ${i + 1} 页解析出现警告: ${data.error || '内容为空'}`);
+                return {
+                  ...q,
+                  image: pages[i],          // 原图底图
+                  contentImage: croppedImage, // 预览切图
+                };
+              }));
+              allResults.push(...pageResults);
+            } else {
+              console.warn(`第 ${i + 1} 页解析出现警告: ${data.error || '内容为空'}`);
+            }
+          } catch (pageErr: any) {
+            console.error(`%c[AI分页解析] 第 ${i + 1} 页识别失败: ${pageErr.message}`, 'color: #ef4444');
           }
         }
 
         if (allResults.length > 0) {
-          const questions = allResults.map((q: any, idx: number) => ({
+          const newQuestions = allResults.map((q: any, idx: number) => ({
             ...q,
             id: crypto.randomUUID(),
-            order: idx + 1,
+            order: questions.length + idx + 1,
             type: q.type || 'essay'
           }));
           
-          addQuestions(questions);
+          addQuestions(newQuestions);
           // 修正：先切换全局视图，再通知父组件关闭当前画布
           setView('editor');
           onComplete();
@@ -593,7 +601,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         console.error('Page-by-page parse error:', err);
         alert(`识别过程中发生错误: ${err.message}`);
       } finally {
-        setIsAnalyzing(false);
         setProcessing(false);
         setProgress(0);
       }
@@ -601,7 +608,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     }
 
     // --- 原有：手动选区解析逻辑 ---
-    setIsAnalyzing(true);
     setProcessing(true);
     let processed = 0;
 
@@ -611,8 +617,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
 
-      const concurrencyLimit = 1; // 串行执行，降低超时风险
-      const tasks = qRects.map((qRect, i) => async () => {
+      // 改为顺序执行，以确保题号顺序递增且不覆盖
+      let cumulativeOffset = 0;
+      for (let i = 0; i < qRects.length; i++) {
+        const qRect = qRects[i];
+        
         // 1. 获取该题目框的分片
         const slices = await cropRect(qRect, offsets);
         console.log(`%c[AI解析] 题目 ${i + 1}/${qRects.length} 生成了 ${slices.length} 个分片`, 'color: #3b82f6');
@@ -650,16 +659,23 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           const performSliceParse = async (): Promise<any> => {
             const startTime = Date.now();
             try {
-            const res = await fetch('/api/ai-parse', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                action: 'parseQuestion', 
-                imageData: slice.base64,
-                hasManualAnswer: !!manualAnswerBox,
-                hasManualAnalysis: !!manualAnalysisBox
-              })
-            });
+              const res = await fetch('/api/ai-parse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  action: 'parseQuestion',
+                  imageData: slice.base64,
+                  hasManualAnswer: !!manualAnswerBox,
+                  hasManualAnalysis: !!manualAnalysisBox,
+                  isRetry: sIdx > 0 
+                })
+              });
+
+              if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
+              }
+
               const data = await res.json();
               const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -729,19 +745,23 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           }
         }
 
-        // 5. 存储最终结果
+        // 5. 聚合结果并存储
+        const finalizedQuestions: Question[] = [];
         allParsedSubQuestions.forEach((q, subIdx) => {
-          addQuestion({
+          finalizedQuestions.push({
             ...q,
             id: crypto.randomUUID(),
-            image: slices[0].base64, // 默认用第一片，实际预览会根据 box 裁剪
+            image: slices[0].base64,
             contentImage: slices[0].base64,
-            order: i * 100 + subIdx,
+            order: questions.length + cumulativeOffset + subIdx + 1,
             type: q.type || 'essay',
             answer_box: manualAnswerBox || q.answer_box,
             analysis_box: manualAnalysisBox,
           });
         });
+        
+        addQuestions(finalizedQuestions);
+        cumulativeOffset += finalizedQuestions.length;
 
         processed++;
         const realPercent = Math.round((processed / qRects.length) * 100);
@@ -751,25 +771,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         if (i < qRects.length - 1) {
           await new Promise(r => setTimeout(r, 1500));
         }
-      });
-
-      // 执行并发任务
-      const limit = (fn: () => Promise<void>) => fn();
-      const executeInParallel = async (tasks: (() => Promise<void>)[], limit: number) => {
-        const executing: Promise<void>[] = [];
-        for (const task of tasks) {
-          const p = task().then(() => {
-            executing.splice(executing.indexOf(p), 1);
-          });
-          executing.push(p);
-          if (executing.length >= limit) {
-            await Promise.race(executing);
-          }
-        }
-        await Promise.all(executing);
-      };
-
-      await executeInParallel(tasks, concurrencyLimit);
+      }
 
       setView('editor');
       onComplete();
@@ -778,7 +780,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       const isTimeout = error?.message?.includes('超时') || error?.message?.includes('524');
       alert(isTimeout ? '解析请求超时，请尝试减小框选范围后重试' : '解析失败，请检查网络后重试');
     } finally {
-      setIsAnalyzing(false);
       setProcessing(false);
     }
   };
@@ -798,25 +799,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
       {/* 极简解析遮罩 */}
-      {isAnalyzing && (
-        <div
-          className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center text-center animate-in fade-in duration-300"
-        >
-          <Loader2 className="w-12 h-12 text-brand-primary animate-spin mb-4" />
-          <h3 className="text-2xl font-black text-gray-900 mb-2 tracking-widest">AI 智能分析中...</h3>
-          <div className="flex flex-col items-center gap-3 mt-4">
-            <div className="h-1.5 w-48 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-brand-primary rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${Math.floor(progress)}%` }}
-              />
-            </div>
-            <p className="text-gray-500 text-sm font-bold tracking-wider">
-              识别进度 <span className="text-brand-primary">{Math.floor(progress)}%</span>
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* === 顶部工具栏 === */}
       <div className="flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 bg-white border-b z-20 shadow-sm gap-4">
@@ -911,10 +893,19 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </button>
           <button
             onClick={handleConfirm}
-            disabled={isAnalyzing}
-            className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2 shrink-0"
+            disabled={isProcessing}
+            className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-80 disabled:cursor-not-allowed transition-all flex items-center gap-2 shrink-0 min-w-[100px] justify-center"
           >
-            <CheckCircle2 className="w-5 h-5" /> 解析
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>{Math.floor(progress)}%</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-5 h-5" /> 解析
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -994,7 +985,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               ref={containerRef}
               className={cn(
                 "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300 origin-top-center touch-none",
-                !isAnalyzing ? "cursor-crosshair" : "opacity-50"
+                !isProcessing ? "cursor-crosshair" : "opacity-50"
               )}
               style={{ width: `${zoom * 100}%`, maxWidth: 'none' }}
               onPointerDown={startDrawing}
@@ -1072,7 +1063,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     </div>
 
                     {/* 选中态：8 个缩放手柄 */}
-                    {isSelected && !isAnalyzing && (
+                    {isSelected && !isProcessing && (
                       <>
                         {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(pos => (
                           <div
@@ -1096,7 +1087,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     )}
 
                     {/* 删除按钮 */}
-                    {!isAnalyzing && (
+                    {!isProcessing && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

@@ -39,7 +39,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
       if (!context) throw new Error('Canvas context failed');
 
       // 自动计算目标尺寸，限制最大宽度以节省内存和提高速度
-      const maxWidth = 1200;
+      const maxWidth = 2000;
       let width = viewport.width;
       let height = viewport.height;
       if (width > maxWidth) {
@@ -59,7 +59,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
       }).promise;
 
       // 直接输出中等质量 JPEG，省去二次加载 Image 对象的过程
-      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', 0.6);
+      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', 0.8);
       
       page.cleanup();
       console.log(`Page ${pageNum} rendered and compressed`);
@@ -120,7 +120,7 @@ export async function compressImage(base64: string, maxWidth: number = 1600): Pr
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.6)); // 0.6 质量通常足以进行 OCR，但体积会减小 70%+
+      resolve(canvas.toDataURL('image/jpeg', 0.85)); // 0.85 质量是高清与体积的最佳平衡点
     };
     img.src = base64;
   });
