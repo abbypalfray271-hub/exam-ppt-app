@@ -505,9 +505,18 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       currY += seg.sh;
     }
 
-    // 处理缩放映射后的最大宽度优化
+    // 处理缩放映射后的最大尺寸优化 (OCR 友好型尺寸)
     const MAX_WIDTH = 1600;
-    const finalScale = outputW > MAX_WIDTH ? MAX_WIDTH / outputW : 1;
+    const MAX_HEIGHT = 2400;
+    let finalScale = 1;
+    
+    // 计算缩放比例，同时兼顾宽高限制
+    if (outputW > MAX_WIDTH) {
+      finalScale = MAX_WIDTH / outputW;
+    }
+    if (fullH * finalScale > MAX_HEIGHT) {
+      finalScale = MAX_HEIGHT / fullH;
+    }
     
     const finalCanvas = document.createElement('canvas');
     const fCtx = finalCanvas.getContext('2d');
