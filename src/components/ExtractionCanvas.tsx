@@ -56,6 +56,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
   const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer'>('question');
+  const [progressLabel, setProgressLabel] = useState("");
+  const [errorLogs, setErrorLogs] = useState<{ id: string; msg: string; type: 'error' | 'warn' }[]>([]);
+  const [currentItemIdx, setCurrentItemIdx] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
@@ -108,26 +112,35 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isProcessing) {
-      setProgress(2); // 瞬间起步
-      lastProgressRef.current = 2;
+      setProgress(currentItemIdx > 0 ? (currentItemIdx / totalItems) * 100 : 2);
       interval = setInterval(() => {
         setProgress(prev => {
-          let next = prev;
-          if (prev < 60) next = prev + Math.floor(Math.random() * 5) + 5;
-          else if (prev < 88) next = prev + Math.floor(Math.random() * 2) + 1;
-          else if (prev < 99) next = prev + 0.5;
-          else next = 99;
+          // 核心逻辑：当前进度的“天花板”是 (当前索引 + 0.9) / 总数
+          // 这样进度条永远不会在第一页就冲到 99%，而是随着页码推进
+          const currentBase = totalItems > 0 ? (currentItemIdx / totalItems) * 100 : 0;
+          const nextCap = totalItems > 0 ? ((currentItemIdx + 0.9) / totalItems) * 100 : 99;
           
-          // 如果 real progress 领先了，就跳到 real progress
-          return Math.max(next, lastProgressRef.current);
+          let next = prev;
+          if (prev < nextCap) {
+            // 在当前区段内进行模拟增长
+            const step = (nextCap - currentBase) / 20; // 这里的 20 是调节平滑度的参数
+            next = prev + Math.random() * step;
+          } else {
+            next = nextCap;
+          }
+          
+          return Math.max(next, lastProgressRef.current, currentBase);
         });
-      }, 400);
+      }, 600);
     } else {
       setProgress(0);
       lastProgressRef.current = 0;
+      setProgressLabel("");
+      setCurrentItemIdx(0);
+      setTotalItems(0);
     }
     return () => clearInterval(interval);
-  }, [isProcessing]);
+  }, [isProcessing, currentItemIdx, totalItems]);
 
   // === 首次挂载：滚动到 initialPageIndex ===
   useEffect(() => {
@@ -382,7 +395,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     height: number;  // 该片段的物理高度
   }
 
-  const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<ImageSlice[]> => {
+  const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<ImageSlice> => {
     if (offsets.length === 0) throw new Error('No page offsets - container or refs missing');
 
     const rectTop = rect.y;
@@ -443,66 +456,32 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       currY += seg.sh;
     }
 
-    // --- 分片逻辑 ---
-    const MAX_SLICE_H = 1800; // 单片最大高度锚点
-    const OVERLAP_H = 200;    // 重叠区高度
-    const slices: ImageSlice[] = [];
-
     // 处理缩放映射后的最大宽度优化
     const MAX_WIDTH = 1600;
     const finalScale = outputW > MAX_WIDTH ? MAX_WIDTH / outputW : 1;
     
-    const createSliceData = (sy: number, sh: number): string => {
-      const sliceCanvas = document.createElement('canvas');
-      const sCtx = sliceCanvas.getContext('2d');
-      if (!sCtx) return '';
-      
-      sliceCanvas.width = Math.round(outputW * finalScale);
-      sliceCanvas.height = Math.round(sh * finalScale);
-      
-      sCtx.drawImage(fullCanvas, 0, sy, outputW, sh, 0, 0, sliceCanvas.width, sliceCanvas.height);
-      
-      // 灰度 & 降噪优化 (Base64 瘦身)
-      const imageData = sCtx.getImageData(0, 0, sliceCanvas.width, sliceCanvas.height);
-      const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-        data[i] = data[i+1] = data[i+2] = avg;
-      }
-      sCtx.putImageData(imageData, 0, 0);
-      return sliceCanvas.toDataURL('image/jpeg', 0.85);
-    };
-
-    if (fullH <= MAX_SLICE_H + OVERLAP_H) {
-      // 不需要分片
-      slices.push({
-        base64: createSliceData(0, fullH),
-        yOffset: 0,
-        height: fullH
-      });
-    } else {
-      // 循环切片
-      let startY = 0;
-      while (startY < fullH) {
-        let endY = Math.min(startY + MAX_SLICE_H, fullH);
-        // 如果剩下的太短了（小于重叠区的 1.5 倍），就直接并入当前片
-        if (fullH - endY < OVERLAP_H * 1.5) {
-          endY = fullH;
-        }
-        
-        const h = endY - startY;
-        slices.push({
-          base64: createSliceData(startY, h),
-          yOffset: startY,
-          height: h
-        });
-
-        if (endY === fullH) break;
-        startY = endY - OVERLAP_H; // 关键：回退重叠区
-      }
+    const finalCanvas = document.createElement('canvas');
+    const fCtx = finalCanvas.getContext('2d');
+    if (!fCtx) throw new Error('Final canvas ctx failed');
+    
+    finalCanvas.width = Math.round(outputW * finalScale);
+    finalCanvas.height = Math.round(fullH * finalScale);
+    fCtx.drawImage(fullCanvas, 0, 0, outputW, fullH, 0, 0, finalCanvas.width, finalCanvas.height);
+    
+    // 灰度优化
+    const imageData = fCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      data[i] = data[i+1] = data[i+2] = avg;
     }
+    fCtx.putImageData(imageData, 0, 0);
 
-    return slices;
+    return {
+      base64: finalCanvas.toDataURL('image/jpeg', 0.85),
+      yOffset: 0,
+      height: fullH
+    };
   };
 
   // === 确认并解析 ===
@@ -527,11 +506,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       try {
         console.log(`%c[AI定向解析] 启动分页识别模式 (选中 ${targetIndices.length}/${pages.length} 页)...`, 'color: #8b5cf6; font-weight: bold');
+        setTotalItems(targetIndices.length);
         
         for (let idx = 0; idx < targetIndices.length; idx++) {
           const i = targetIndices[idx];
-          const currentProgress = Math.round(((idx) / targetIndices.length) * 100);
-          setProgress(currentProgress);
+          setCurrentItemIdx(idx);
+          setProgressLabel(`正在识别 第 ${idx + 1}/${targetIndices.length} 页...`);
+          // 更新真实进度锚点，让模拟引擎追赶
+          lastProgressRef.current = Math.round((idx / targetIndices.length) * 100);
           
           if (idx > 0) await new Promise(resolve => setTimeout(resolve, 500)); // 注入 500ms 节流
           
@@ -543,8 +525,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
-                action: 'parseFullDocument', 
-                images: [compressedPage] 
+                action: 'parseQuestion', 
+                imageData: compressedPage,
+                hasManualAnswer: false,
+                hasManualAnalysis: false,
+                isRetry: false
               })
             });
             
@@ -578,11 +563,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               console.warn(`第 ${i + 1} 页解析出现警告: ${data.error || '内容为空'}`);
             }
           } catch (pageErr: any) {
-            console.error(`%c[AI分页解析] 第 ${i + 1} 页识别失败: ${pageErr.message}`, 'color: #ef4444');
+            const errorMsg = `第 ${i + 1} 页识别失败: ${pageErr.message}`;
+            console.error(`%c[AI分页解析] ${errorMsg}`, 'color: #ef4444');
+            setErrorLogs(prev => [{ id: crypto.randomUUID(), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
           }
         }
 
         if (allResults.length > 0) {
+          setProgress(100);
+          lastProgressRef.current = 100;
+          setProgressLabel("解析完成，正在跳转...");
+          await new Promise(r => setTimeout(r, 500));
           const newQuestions = allResults.map((q: any, idx: number) => ({
             ...q,
             id: crypto.randomUUID(),
@@ -618,13 +609,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
 
       // 改为顺序执行，以确保题号顺序递增且不覆盖
+      setTotalItems(qRects.length);
       let cumulativeOffset = 0;
       for (let i = 0; i < qRects.length; i++) {
         const qRect = qRects[i];
+        setCurrentItemIdx(i);
+        setProgressLabel(`解析中 第 ${i + 1}/${qRects.length} 个区域...`);
+        lastProgressRef.current = Math.round((i / qRects.length) * 100);
         
-        // 1. 获取该题目框的分片
-        const slices = await cropRect(qRect, offsets);
-        console.log(`%c[AI解析] 题目 ${i + 1}/${qRects.length} 生成了 ${slices.length} 个分片`, 'color: #3b82f6');
+        // 1. 获取该题目区域的完整图像
+        const slice = await cropRect(qRect, offsets);
+        console.log(`%c[AI解析] 题目 ${i + 1}/${qRects.length} 图像生成完成 (${slice.height}px)`, 'color: #3b82f6');
 
         // 寻找所有属于这个题目框的答案框
         const childAnsRects = aRects.filter(ar => {
@@ -647,121 +642,77 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const autoAnalysis = autoAnalysisRects.find(ar => ar.id === `auto-analysis-${qRect.id}`);
         const manualAnalysisBox = getManualBox(autoAnalysis);
 
-        // 用于保存该题目框下所有分片的解析结果
-        const allParsedSubQuestions: any[] = [];
+        // 2. 发起解析请求
+        let retryCount = 0;
+        const maxRetries = 1;
 
-        // 2. 依次解析每个分片
-        for (let sIdx = 0; sIdx < slices.length; sIdx++) {
-          const slice = slices[sIdx];
-          let retryCount = 0;
-          const maxRetries = 1;
+        const performParse = async (): Promise<any> => {
+          const startTime = Date.now();
+          try {
+            const res = await fetch('/api/ai-parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                action: 'parseQuestion',
+                imageData: slice.base64,
+                hasManualAnswer: !!manualAnswerBox,
+                hasManualAnalysis: !!manualAnalysisBox,
+                isRetry: retryCount > 0
+              })
+            });
 
-          const performSliceParse = async (): Promise<any> => {
-            const startTime = Date.now();
-            try {
-              const res = await fetch('/api/ai-parse', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  action: 'parseQuestion',
-                  imageData: slice.base64,
-                  hasManualAnswer: !!manualAnswerBox,
-                  hasManualAnalysis: !!manualAnalysisBox,
-                  isRetry: sIdx > 0 
-                })
-              });
+            if (!res.ok) {
+              const errText = await res.text();
+              throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
+            }
 
-              if (!res.ok) {
-                const errText = await res.text();
-                throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
-              }
+            const data = await res.json();
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-              const data = await res.json();
-              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-              if (!data.success) {
-                const isTimeout = data.error?.includes('524') || data.error?.includes('超时');
-                if (isTimeout && retryCount < maxRetries) {
-                  retryCount++;
-                  await new Promise(r => setTimeout(r, 2000));
-                  return performSliceParse();
-                }
-                console.error(`%c[AI解析] ❌ 题目 ${i + 1} 分片 ${sIdx + 1} 失败: ${data.error}`, 'color: #ef4444');
-                return null;
-              }
-              
-              console.log(`%c[AI解析] ✅ 题目 ${i + 1} 分片 ${sIdx + 1}/${slices.length} 成功 (${elapsed}s)`, 'color: #22c55e');
-              return data.data || [];
-            } catch (err) {
-              if (retryCount < maxRetries) {
+            if (!data.success) {
+              const isTimeout = data.error?.includes('524') || data.error?.includes('超时');
+              if (isTimeout && retryCount < maxRetries) {
                 retryCount++;
                 await new Promise(r => setTimeout(r, 2000));
-                return performSliceParse();
+                return performParse();
               }
+              const errorMsg = `第 ${i + 1} 个区域解析失败: ${data.error}`;
+              console.error(`%c[AI解析] ❌ ${errorMsg}`, 'color: #ef4444');
+              setErrorLogs(prev => [{ id: crypto.randomUUID(), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
               return null;
             }
-          };
-
-          const sliceResults = await performSliceParse();
-          if (sliceResults) {
-            // 3. 坐标映射还原：分片坐标 -> 题目框坐标
-            const mappedResults = sliceResults.map((sq: any) => {
-              const box = sq.content_box || sq.contentBox;
-              if (!box) return sq;
-
-              // 分片内高度比例 -> 分片内物理像素 -> 题目框内物理像素 -> 题目框内高度比例
-              const [sYmin, sXmin, sYmax, sXmax] = box;
-              const qYmin = Math.round(((sYmin / 10000 * slice.height + slice.yOffset) / (slices[slices.length-1].yOffset + slices[slices.length-1].height)) * 10000);
-              const qYmax = Math.round(((sYmax / 10000 * slice.height + slice.yOffset) / (slices[slices.length-1].yOffset + slices[slices.length-1].height)) * 10000);
-              
-              return {
-                ...sq,
-                content_box: [qYmin, sXmin, qYmax, sXmax] // X轴不需要变，因为分片宽度等于题目框宽度
-              };
-            });
-
-            // 4. 去重逻辑 (针对重叠区)
-            mappedResults.forEach((newSq: any) => {
-              const NS = newSq.content_box;
-              const isDuplicate = allParsedSubQuestions.some(prevSq => {
-                const PS = prevSq.content_box;
-                if (!NS || !PS) return false;
-                // 计算重叠度 (IoU 简化版：中心点距离 + 面积重合度)
-                const overlapY = Math.max(0, Math.min(NS[2], PS[2]) - Math.max(NS[0], PS[0]));
-                const overlapX = Math.max(0, Math.min(NS[3], PS[3]) - Math.max(NS[1], PS[1]));
-                const overlapArea = overlapY * overlapX;
-                const areaN = (NS[2] - NS[0]) * (NS[3] - NS[1]);
-                return overlapArea / areaN > 0.7; // 超过 70% 面积重合视为同一题
-              });
-
-              if (!isDuplicate) {
-                allParsedSubQuestions.push(newSq);
-              }
-            });
+            
+            console.log(`%c[AI解析] ✅ 题目 ${i + 1} 成功 (${elapsed}s)`, 'color: #22c55e');
+            return data.data || [];
+          } catch (err: any) {
+            if (retryCount < maxRetries) {
+              retryCount++;
+              await new Promise(r => setTimeout(r, 2000));
+              return performParse();
+            }
+            const errorMsg = `第 ${i + 1} 个区域网络错误: ${err.message}`;
+            setErrorLogs(prev => [{ id: crypto.randomUUID(), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
+            return null;
           }
+        };
 
-          if (sIdx < slices.length - 1) {
-            await new Promise(r => setTimeout(r, 1000)); // 分片间稍作喘息
-          }
-        }
-
-        // 5. 聚合结果并存储
-        const finalizedQuestions: Question[] = [];
-        allParsedSubQuestions.forEach((q, subIdx) => {
-          finalizedQuestions.push({
+        const parsedQuestions = await performParse();
+        if (parsedQuestions && parsedQuestions.length > 0) {
+          // 3. 聚合结果并存储 (由于移除了分片，此处的 parsedQuestions 已经是最终针对该区域的结果)
+          const finalizedQuestions: Question[] = parsedQuestions.map((q: any, subIdx: number) => ({
             ...q,
             id: crypto.randomUUID(),
-            image: slices[0].base64,
-            contentImage: slices[0].base64,
+            image: slice.base64,
+            contentImage: slice.base64, // 针对单题框选，预览图直接使用全景图
             order: questions.length + cumulativeOffset + subIdx + 1,
             type: q.type || 'essay',
             answer_box: manualAnswerBox || q.answer_box,
             analysis_box: manualAnalysisBox,
-          });
-        });
-        
-        addQuestions(finalizedQuestions);
-        cumulativeOffset += finalizedQuestions.length;
+          }));
+          
+          addQuestions(finalizedQuestions);
+          cumulativeOffset += finalizedQuestions.length;
+        }
 
         processed++;
         const realPercent = Math.round((processed / qRects.length) * 100);
@@ -772,6 +723,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           await new Promise(r => setTimeout(r, 1500));
         }
       }
+
+      setProgress(100);
+      lastProgressRef.current = 100;
+      setProgressLabel("解析完成，正在跳转...");
+      await new Promise(r => setTimeout(r, 500));
 
       setView('editor');
       onComplete();
@@ -798,7 +754,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // ===================== RENDER =====================
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
-      {/* 极简解析遮罩 */}
+      {/* === 全局置顶进度条 === */}
+      {isProcessing && (
+        <div className="absolute top-0 left-0 right-0 h-1.5 z-[100] overflow-hidden bg-gray-100/50 backdrop-blur-sm">
+          <motion.div
+            className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 shadow-[0_0_12px_rgba(59,130,246,0.6)]"
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            transition={{ ease: "linear", duration: 0.5 }}
+          />
+        </div>
+      )}
 
       {/* === 顶部工具栏 === */}
       <div className="flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 bg-white border-b z-20 shadow-sm gap-4">
@@ -897,10 +863,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-80 disabled:cursor-not-allowed transition-all flex items-center gap-2 shrink-0 min-w-[100px] justify-center"
           >
             {isProcessing ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>{Math.floor(progress)}%</span>
-              </>
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span className="text-sm font-black text-white">{Math.floor(progress)}%</span>
+                </div>
+                {progressLabel && (
+                  <span className="text-[11px] font-black text-white animate-pulse mt-0.5 leading-none drop-shadow-sm">
+                    {progressLabel}
+                  </span>
+                )}
+              </div>
             ) : (
               <>
                 <CheckCircle2 className="w-5 h-5" /> 解析
@@ -1144,6 +1117,37 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </div>
         </div>
       </div>
+
+      {/* === 悬浮错误日志面板 === */}
+      {errorLogs.length > 0 && (
+        <div className="absolute bottom-6 right-6 z-[100] flex flex-col gap-2 max-w-[320px] w-full pointer-events-none">
+          <AnimatePresence>
+            {errorLogs.map((log) => (
+              <motion.div
+                key={log.id}
+                initial={{ opacity: 0, x: 50, scale: 0.9 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 20, scale: 0.9 }}
+                className="bg-red-50 border border-red-200 p-3 rounded-xl shadow-xl flex items-start gap-2 pointer-events-auto group"
+              >
+                <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <X className="w-3 h-3 text-red-500" />
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-[11px] font-black text-red-900 leading-tight">解析发生错误</p>
+                  <p className="text-[10px] text-red-600 mt-0.5 break-all line-clamp-2" title={log.msg}>{log.msg}</p>
+                </div>
+                <button
+                  onClick={() => setErrorLogs(prev => prev.filter(l => l.id !== log.id))}
+                  className="text-red-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 };
