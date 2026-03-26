@@ -626,69 +626,93 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               
               {/* 图文混合展示区 (可滚动) */}
               <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
-                 {(() => {
-                   const fullContent = expandedQuestion.content || '';
-                   // 将内容在【解析】标记处分割为题目部分和解析部分
-                   const analysisSplitRegex = /([\r\n]*【(?:解析|详解|分析)】)/;
-                   const splitParts = fullContent.split(analysisSplitRegex);
-                   const questionPart = splitParts[0] || '';
-                   const analysisPart = splitParts.length > 1 ? splitParts.slice(1).join('') : (expandedQuestion.analysis || '');
+                  {(() => {
+                    const fullContent = expandedQuestion.content || '';
+                    // 健壮的分割逻辑：支持 【答案】 和 【解析】 的多级分割
+                    const segments = fullContent.split(/([\r\n]*【(?:答案|参考答案|解析|详解|分析)】)/);
+                    
+                    let questionPart = segments[0] || '';
+                    let answerPart = '';
+                    let analysisPart = '';
 
-                   return (
-                     <div className="w-full flex flex-col gap-2">
-                       <div className="flex items-center justify-between ml-1 text-gray-500 text-sm font-semibold">
-                         <div className="flex items-center gap-2">
-                           <BookOpen className="w-4 h-4" />
-                           <span>题目内容 (选项与正文)</span>
-                         </div>
-                         {editable && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setIsEditingContent(!isEditingContent);
+                    for (let i = 1; i < segments.length; i += 2) {
+                      const tag = segments[i];
+                      const content = segments[i + 1] || '';
+                      if (tag.includes('答案')) {
+                        answerPart = tag + content;
+                      } else if (tag.includes('解析') || tag.includes('分析') || tag.includes('详解')) {
+                        analysisPart = tag + content;
+                      }
+                    }
+                    
+                    if (!analysisPart && expandedQuestion.analysis) {
+                      analysisPart = `\n\n【解析】\n${expandedQuestion.analysis}`;
+                    }
+
+                    return (
+                      <div className="w-full flex flex-col gap-2">
+                        <div className="flex items-center justify-between ml-1 text-gray-500 text-sm font-semibold">
+                          <div className="flex items-center gap-2">
+                            <BookOpen className="w-4 h-4" />
+                            <span>题目内容 (选项与正文)</span>
+                          </div>
+                          {editable && (
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 setIsEditingContent(!isEditingContent);
+                               }}
+                               className={cn(
+                                 "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black transition-all shadow-xl active:scale-95 group border-none",
+                                 isEditingContent 
+                                   ? "bg-brand-primary text-white" 
+                                   : "bg-orange-500 text-white hover:bg-orange-600"
+                               )}
+                             >
+                               <span className="group-hover:-translate-y-0.5 transition-transform">{isEditingContent ? '✅' : '✏️'}</span>
+                               <span>{isEditingContent ? '完成编辑' : '编辑源码'}</span>
+                             </button>
+                           )}
+                        </div>
+                        <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[12em]">
+                          {editable && isEditingContent ? (
+                            <textarea
+                              className="w-full text-xl font-bold text-[#1e293b] leading-loose bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[12em] custom-scrollbar"
+                              value={fullContent}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const newContent = e.target.value;
+                                updateQuestion(expandedQuestion.id, { content: newContent });
+                                setExpandedQuestion({ ...expandedQuestion, content: newContent });
                               }}
-                              className={cn(
-                                "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black transition-all shadow-xl active:scale-95 group border-none",
-                                isEditingContent 
-                                  ? "bg-brand-primary text-white" 
-                                  : "bg-orange-500 text-white hover:bg-orange-600"
+                              placeholder="可以在此补充或修正题目内容... 使用 {{文本}} 语法可以添加可隐现的答案特效"
+                              autoFocus
+                            />
+                          ) : (
+                            <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                              {/* 题目部分：内部 {{}} 在 answer/analysis 状态下可见 */}
+                              {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis')}
+                              
+                              {/* 答案部分：在 answer 或 analysis 状态下可见 */}
+                              {answerPart && (revealState === 'answer' || revealState === 'analysis') && (
+                                <div className="mt-4 pt-4 border-t-2 border-dashed border-brand-primary/10">
+                                  <div className="text-brand-primary whitespace-pre-wrap font-bold">
+                                    {answerPart}
+                                  </div>
+                                </div>
                               )}
-                            >
-                              <span className="group-hover:-translate-y-0.5 transition-transform">{isEditingContent ? '✅' : '✏️'}</span>
-                              <span>{isEditingContent ? '完成编辑' : '编辑源码'}</span>
-                            </button>
+
+                              {/* 解析部分：仅在 analysis 状态下显示 */}
+                              {analysisPart && revealState === 'analysis' && (
+                                <div className="mt-4 pt-4 border-t-2 border-dashed border-purple-200">
+                                  <div className="text-purple-600 whitespace-pre-wrap">
+                                    {analysisPart}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           )}
-                       </div>
-                       <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[12em]">
-                         {editable && isEditingContent ? (
-                           <textarea
-                             className="w-full text-xl font-bold text-[#1e293b] leading-loose bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[12em] custom-scrollbar"
-                             value={fullContent}
-                             onClick={(e) => e.stopPropagation()}
-                             onChange={(e) => {
-                               const newContent = e.target.value;
-                               updateQuestion(expandedQuestion.id, { content: newContent });
-                               setExpandedQuestion({ ...expandedQuestion, content: newContent });
-                             }}
-                             placeholder="可以在此补充或修正题目内容... 使用 {{文本}} 语法可以添加可隐现的答案特效"
-                             autoFocus
-                           />
-                         ) : (
-                           <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                             {/* 题目部分：答案在 answer/analysis 状态下可见 */}
-                             {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis')}
-                             
-                             {/* 解析部分：仅在 analysis 状态下显示 */}
-                             {analysisPart && revealState === 'analysis' && (
-                               <div className="mt-4 pt-4 border-t-2 border-dashed border-purple-200">
-                                 <div className="text-purple-600 whitespace-pre-wrap">
-                                   {analysisPart}
-                                 </div>
-                               </div>
-                             )}
-                           </div>
-                         )}
-                       </div>
+                        </div>
 
                        {/* 交互指引提示：根据当前状态动态切换 */}
                        <div className={cn(

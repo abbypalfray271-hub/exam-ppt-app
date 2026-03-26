@@ -59,7 +59,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
       }).promise;
 
       // 直接输出中等质量 JPEG，省去二次加载 Image 对象的过程
-      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', 0.65);
+      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', 0.6);
       
       page.cleanup();
       console.log(`Page ${pageNum} rendered and compressed`);

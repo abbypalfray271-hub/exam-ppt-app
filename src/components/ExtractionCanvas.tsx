@@ -2,10 +2,11 @@
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, CheckCircle2, Loader2, X, Sparkles } from 'lucide-react';
+import { Trash2, CheckCircle2, Loader2, X, Sparkles, CheckSquare, Square, LayoutList } from 'lucide-react';
 // import { parseQuestionAction } from '@/app/actions/ai';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
+import { cropImageByBox } from '@/lib/documentProcessor';
 
 interface Rect {
   id: string;
@@ -59,8 +60,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // 图片加载完成计数，用于触发首次 scroll-to-page
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
+  const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set(pages.map((_, i) => i)));
 
-  const { addQuestion, setProcessing, setView } = useProjectStore();
+  const { addQuestion, addQuestions, setProcessing, setView } = useProjectStore();
 
   // === 自动计算紫色分析区：题目区 - 答案遮挡区 ===
   const autoAnalysisRects = useMemo(() => {
@@ -506,17 +508,99 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
   // === 确认并解析 ===
   const handleConfirm = async () => {
-    if (rects.length === 0) return;
-
     // 分离题目框、答案框（分析框由 autoAnalysisRects 自动计算）
     const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a, b) => a.y - b.y);
     const aRects = rects.filter(r => r.type === 'answer');
 
+    // --- 新增：无框选全自动补偿逻辑 (分页分治 + 定向选页优化) ---
     if (qRects.length === 0) {
-      alert('请至少框选一道题干区！\n(红色“答案区”或紫色“分析区”必须附属于蓝色的题目区内)');
+      if (selectedPageIndices.size === 0) {
+        alert('请先在左侧侧边栏勾选至少一页需要解析的页面。');
+        return;
+      }
+
+      const targetIndices = Array.from(selectedPageIndices).sort((a, b) => a - b);
+      const confirmed = window.confirm(`是否开始对选中的 ${targetIndices.length} 页试卷进行“全自动智能识别”？\n\n系统将智能提取题目、答案并补全解析。`);
+      if (!confirmed) return;
+
+      setIsAnalyzing(true);
+      setProcessing(true);
+      const allResults: any[] = [];
+
+      try {
+        console.log(`%c[AI定向解析] 启动分页识别模式 (选中 ${targetIndices.length}/${pages.length} 页)...`, 'color: #8b5cf6; font-weight: bold');
+        
+        for (let idx = 0; idx < targetIndices.length; idx++) {
+          const i = targetIndices[idx];
+          const currentProgress = Math.round(((idx) / targetIndices.length) * 100);
+          setProgress(currentProgress);
+          
+          if (idx > 0) await new Promise(resolve => setTimeout(resolve, 500)); // 注入 500ms 节流
+          
+          console.log(`%c[AI分页解析] 正在解析第 ${i + 1} 页 (${idx + 1}/${targetIndices.length})...`, 'color: #a855f7');
+          
+          const res = await fetch('/api/ai-parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'parseFullDocument', 
+              images: [pages[i]] 
+            })
+          });
+          
+          const data = await res.json();
+          if (data.success && data.data) {
+            // 为每道题注入物理图片引用 + 自动预览裁剪（实现与手动模式对齐）
+            const pageResults = await Promise.all(data.data.map(async (q: any) => {
+              const box = q.content_box || q.contentBox;
+              let croppedImage = pages[i]; // 默认整页
+              if (box && Math.abs(box[2] - box[0]) > 0) {
+                try {
+                  const crop = await cropImageByBox(pages[i], box);
+                  if (crop) croppedImage = crop;
+                } catch (e) {
+                  console.error('Auto crop failed:', e);
+                }
+              }
+              return {
+                ...q,
+                image: pages[i],          // 原图底图
+                contentImage: croppedImage, // 预览切图
+              };
+            }));
+            allResults.push(...pageResults);
+          } else {
+            console.warn(`第 ${i + 1} 页解析出现警告: ${data.error || '内容为空'}`);
+          }
+        }
+
+        if (allResults.length > 0) {
+          const questions = allResults.map((q: any, idx: number) => ({
+            ...q,
+            id: crypto.randomUUID(),
+            order: idx + 1,
+            type: q.type || 'essay'
+          }));
+          
+          addQuestions(questions);
+          // 修正：先切换全局视图，再通知父组件关闭当前画布
+          setView('editor');
+          onComplete();
+        } else {
+          alert('AI 未能在选中的页面中识别出有效题目，请确认图片是否清晰，或尝试手动框选。');
+        }
+      } catch (err: any) {
+        console.error('Page-by-page parse error:', err);
+        alert(`识别过程中发生错误: ${err.message}`);
+      } finally {
+        setIsAnalyzing(false);
+        setProcessing(false);
+        setProgress(0);
+      }
       return;
     }
 
+    // --- 原有：手动选区解析逻辑 ---
     setIsAnalyzing(true);
     setProcessing(true);
     let processed = 0;
@@ -771,7 +855,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </div>
 
           <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0">
-            <span className="flex items-center gap-1.5 underline decoration-gray-300 decoration-2 underline-offset-4 shrink-0">{pages.length} 页</span>
+            <span className="flex items-center gap-1.5 underline decoration-gray-300 decoration-2 underline-offset-4 shrink-0">
+              已选 {selectedPageIndices.size}/{pages.length} 页
+            </span>
             <span className="w-px h-4 bg-gray-300 shrink-0" />
             <span className="text-brand-primary flex items-center gap-1.5 shrink-0">
                <span className="w-2 h-2 rounded-full bg-brand-primary" />
@@ -825,7 +911,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </button>
           <button
             onClick={handleConfirm}
-            disabled={rects.filter(r => r.type === 'question' || r.type === undefined).length === 0 || isAnalyzing}
+            disabled={isAnalyzing}
             className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2 shrink-0"
           >
             <CheckCircle2 className="w-5 h-5" /> 解析
@@ -838,8 +924,19 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         {/* 左侧页面导航缩略图 - 移动端（含横屏）彻底隐藏以释放空间 */}
         {pages.length > 1 && (
           <div className="hidden lg:flex w-48 bg-white border-r flex-col shrink-0">
-            <div className="p-3 border-b bg-gray-50/50">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">页面导航</span>
+            <div className="p-3 border-b bg-gray-50/50 flex items-center justify-between">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                <LayoutList className="w-3 h-3" /> 页面导航
+              </span>
+              <button 
+                onClick={() => {
+                  if (selectedPageIndices.size === pages.length) setSelectedPageIndices(new Set());
+                  else setSelectedPageIndices(new Set(pages.map((_, i) => i)));
+                }}
+                className="text-[10px] font-black text-brand-primary hover:underline"
+              >
+                {selectedPageIndices.size === pages.length ? '取消全选' : '全选'}
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-hide">
               {pages.map((page, idx) => {
@@ -853,7 +950,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       "w-full relative rounded-xl overflow-hidden border-2 transition-all aspect-[3/4] bg-gray-50 group",
                       activePageIdx === idx
                         ? "border-brand-primary shadow-lg ring-4 ring-brand-primary/10 scale-[1.02]"
-                        : "border-transparent hover:border-gray-200"
+                        : "border-transparent hover:border-gray-200",
+                      !selectedPageIndices.has(idx) && "opacity-60 grayscale-[0.3]"
                     )}
                   >
                     <img src={page} alt="" className="w-full h-full object-cover" />
@@ -863,11 +961,22 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     )}>
                       {idx + 1}
                     </div>
-                    {rectCount > 0 && (
-                      <div className="absolute top-2 right-2 w-5 h-5 bg-brand-secondary text-white rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
-                        {rectCount}
-                      </div>
-                    )}
+                    {/* 勾选框 */}
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const next = new Set(selectedPageIndices);
+                        if (next.has(idx)) next.delete(idx);
+                        else next.add(idx);
+                        setSelectedPageIndices(next);
+                      }}
+                      className={cn(
+                        "absolute top-2 right-2 p-1 rounded-md shadow-md transition-all active:scale-90 z-10",
+                        selectedPageIndices.has(idx) ? "bg-brand-primary text-white" : "bg-white/80 text-gray-400"
+                      )}
+                    >
+                      {selectedPageIndices.has(idx) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                    </div>
                   </button>
                 );
               })}
