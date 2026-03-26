@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_MODEL_NAME=gemini-3-flash-preview
+        - NEXT_PUBLIC_API_BASE_URL=https://api.devdove.site/v1
     container_name: exam-ppt-app
     restart: always
     ports:
