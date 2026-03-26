@@ -120,10 +120,10 @@ export const Editor = () => {
                         setCurrentSlideIdx(0);
                       }
                     }}
-                    className="w-full h-20 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl shadow-md flex flex-col items-center justify-center gap-1 transition-all active:scale-[0.98] font-black text-base"
+                    className="w-full h-16 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl shadow-md flex flex-col items-center justify-center gap-1 transition-all active:scale-[0.98] font-black text-sm"
                     title="一键清除所有题目"
                   >
-                    <Trash2 className="w-6 h-6" />
+                    <Trash2 className="w-5 h-5" />
                     一键删除
                   </motion.button>
                 )}

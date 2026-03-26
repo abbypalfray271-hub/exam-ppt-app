@@ -947,7 +947,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     if (selectedPageIndices.size === pages.length) setSelectedPageIndices(new Set());
                     else setSelectedPageIndices(new Set(pages.map((_, i) => i)));
                   }}
-                  className="text-[11px] font-black text-brand-primary hover:text-brand-primary/80 transition-colors"
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-[13px] font-black transition-all shadow-sm active:scale-95 flex items-center justify-center min-w-[80px]",
+                    selectedPageIndices.size === pages.length 
+                      ? "bg-gray-200 text-gray-600 hover:bg-gray-300" 
+                      : "bg-brand-primary text-white hover:bg-brand-primary/90 shadow-brand-primary/10"
+                  )}
                 >
                   {selectedPageIndices.size === pages.length ? '取消全选' : '全选'}
                 </button>
@@ -961,9 +966,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={handleDeleteSelected}
-                    className="w-full h-24 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl shadow-xl shadow-red-200 flex flex-col items-center justify-center gap-1 transition-all active:scale-[0.98] font-black text-lg"
+                    className="w-1/2 mx-auto h-16 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl shadow-xl shadow-red-200 flex flex-col items-center justify-center gap-1 transition-all active:scale-[0.98] font-black text-sm"
                   >
-                    <Trash2 className="w-8 h-8" />
+                    <Trash2 className="w-5 h-5" />
                     删除已选 ({selectedPageIndices.size})
                   </motion.button>
                 )}
