@@ -29,12 +29,14 @@ if ! command -v docker-compose &> /dev/null; then
     exit 1
 fi
 
-# 3. 执行容器构建与启动
+# 3. 执行容器构建与启动 (强制深度刷新模式)
+echo "🛑 正在停止旧容器..."
+sudo docker-compose down
+
 echo "🏗️ 正在构建镜像 (无缓存模式)..."
-# 使用 --no-cache 确保代码更新彻底
 sudo docker-compose build --no-cache
 
-echo "🚢 正在启动服务..."
+echo "🚢 正在启动全量服务内容..."
 sudo docker-compose up -d
 
 echo "✅ 部署完成！服务运行在 http://localhost:3004"
