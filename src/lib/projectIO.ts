@@ -9,7 +9,6 @@ interface ProjectJSON {
   projectName: string;
   examImageUrl?: string;
   examPages: string[];
-  examText?: string;
   questions: Question[];
   currentMode: 'quick' | 'deep';
 }
@@ -26,7 +25,6 @@ export function exportProjectJSON() {
     projectName: state.projectName,
     examImageUrl: state.examImageUrl,
     examPages: state.examPages,
-    examText: state.examText,
     questions: state.questions,
     currentMode: state.currentMode,
   };
@@ -74,7 +72,6 @@ export function importProjectJSON(): Promise<boolean> {
         store.setProjectName(data.projectName || '导入的项目');
         if (data.examImageUrl) store.setExamImage(data.examImageUrl);
         store.setExamPages(data.examPages || []);
-        if (data.examText) store.setExamText(data.examText);
         store.setQuestions(data.questions);
         store.setMode(data.currentMode || 'quick');
         store.setView('editor');
