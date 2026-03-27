@@ -38,4 +38,11 @@ echo "🚢 正在启动服务..."
 sudo docker-compose up -d
 
 echo "✅ 部署完成！服务运行在 http://localhost:3004"
-echo "💡 提示: 如果是首次构建，可能需要 2-5 分钟。"
+
+# --- 强制清理 Nginx 缓存 (可选，但建议在出现界面不更新时运行) ---
+echo "🧹 正在尝试清理 Nginx 反向代理缓存..."
+sudo rm -rf /var/cache/nginx/* /tmp/nginx* 2>/dev/null
+sudo nginx -s reload 2>/dev/null || sudo systemctl reload nginx 2>/dev/null
+
+echo "✨ 全部流程完成！请补全功能路径访问，如: https://[您的域名]/editor"
+echo "💡 提示: 如果仍然是旧版，请 Ctrl+F5 强制刷新浏览器。"

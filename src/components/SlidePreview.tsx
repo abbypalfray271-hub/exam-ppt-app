@@ -113,9 +113,36 @@ export const TitleSlide: React.FC<TitleSlideProps> = ({ editable = false }) => {
 // ============================================================
 // 统一模板幻灯片：左素材 + 右侧多题目区块 (极简分割版)
 // ============================================================
+// 工具函数：将常见的 LaTeX 符号转换为 Unicode
+// ============================================================
+const cleanLatexSymbols = (text: string): string => {
+  if (!text) return text;
+  return text
+    .replace(/\\triangle/g, '△')
+    .replace(/\\angle/g, '∠')
+    .replace(/\\perp/g, '⊥')
+    .replace(/\\parallel/g, '//')
+    .replace(/\\circ/g, '°')
+    .replace(/\\degree/g, '°')
+    .replace(/\\pm/g, '±')
+    .replace(/\\times/g, '×')
+    .replace(/\\div/g, '÷')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\leq/g, '≤')
+    .replace(/\\geq/g, '≥')
+    .replace(/\\approx/g, '≈')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\quad/g, ' ')
+    .replace(/\\text\{(\w+)\}/g, '$1')
+    .replace(/\\mathrm\{(\w+)\}/g, '$1')
+    .replace(/\$/g, ''); // 移除 LaTeX 边界符
+};
 
-const renderClozeText = (text: string, show: boolean, diagrams?: string[]) => {
-  if (!text) return null;
+// ============================================================
+
+const renderClozeText = (rawText: string, show: boolean, diagrams?: string[]) => {
+  if (!rawText) return null;
+  const text = cleanLatexSymbols(rawText);
   // 正则匹配 {{内容}} 或 [附图] 或 [表格]
   const parts = text.split(/(\{\{.*?\}\}|\[附图\]|\[表格\])/g);
   let diagramIndex = 0;
