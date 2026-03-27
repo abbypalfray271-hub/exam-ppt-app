@@ -117,7 +117,16 @@ export const TitleSlide: React.FC<TitleSlideProps> = ({ editable = false }) => {
 // ============================================================
 const cleanLatexSymbols = (text: string): string => {
   if (!text) return text;
-  return text
+
+  // === 第一步：保护 {{...}} 答案块，防止被后续正则破坏 ===
+  const preserved: string[] = [];
+  let safed = text.replace(/\{\{[\s\S]*?\}\}/g, (match) => {
+    preserved.push(match);
+    return `__CLOZE_${preserved.length - 1}__`;
+  });
+
+  // === 第二步：执行 LaTeX 符号清理 ===
+  safed = safed
     .replace(/\\triangle/g, '△')
     .replace(/\\angle/g, '∠')
     .replace(/\\perp/g, '⊥')
@@ -135,15 +144,13 @@ const cleanLatexSymbols = (text: string): string => {
     .replace(/\\quad/g, ' ')
     .replace(/\\text\{(\w+)\}/g, '$1')
     .replace(/\\mathrm\{(\w+)\}/g, '$1')
-    .replace(/\$([^$]+)\$/g, '$1') // 移除 LaTeX 边界符 $...$，保留内容
-    .replace(/(?<!\{)\{\{\s*\}\}(?!\})/g, '') // 清除空的 {{ }}
-    .replace(/(?<!\{)\}\}/g, (match, offset, str) => {
-      // 清除孤立的 }}（前面没有对应的 {{）
-      const before = str.substring(0, offset);
-      const opens = (before.match(/\{\{/g) || []).length;
-      const closes = (before.match(/\}\}/g) || []).length;
-      return opens > closes ? match : '';
-    });
+    .replace(/\$([^$]+)\$/g, '$1')  // 移除 $...$ 包裹，保留内容
+    .replace(/\}\}/g, '');           // 清除孤立 }}（真正的答案已被保护）
+
+  // === 第三步：恢复被保护的答案块 ===
+  safed = safed.replace(/__CLOZE_(\d+)__/g, (_, idx) => preserved[parseInt(idx)]);
+
+  return safed;
 };
 
 // ============================================================
