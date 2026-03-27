@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.gitignore
+.env*
+! .env.local
+README.md
+build_error.log
+Dockerfile
+docker-compose.yml
+deploy-aliyun.sh
+*.md
