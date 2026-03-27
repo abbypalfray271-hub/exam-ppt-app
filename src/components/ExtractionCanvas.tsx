@@ -625,11 +625,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     const boxH = dBox[2] - dBox[0];
                     const boxW = dBox[3] - dBox[1];
                     const expandedBox: [number, number, number, number] = [
-                      Math.max(0, dBox[0] - Math.round(boxH * 0.20)),   // ymin 向上扩展 20% (防止几何图形顶点被切)
+                      Math.max(0, dBox[0] - Math.round(boxH * 0.50)),   // ymin 向上极大幅扩展 50%
                       Math.max(0, dBox[1] - Math.round(boxW * 0.08)),   // xmin 向左扩展 8%
-                      Math.min(1000, dBox[2] + Math.round(boxH * 0.10)),// ymax 向下扩展 10% (保证标签完整)
-                      Math.min(1000, dBox[3] + Math.round(boxW * 0.20)),// xmax 向右大幅扩展 20% (防止由于图名偏移导致的截断)
+                      Math.min(1000, dBox[2] + Math.round(boxH * 0.20)),// ymax 向下大幅扩展 20% (保证标签完整)
+                      Math.min(1000, dBox[3] + Math.round(boxW * 0.20)),// xmax 向右大幅扩展 20%
                     ];
+                    console.log(`[Diagram-Crop] AI Box: ${JSON.stringify(dBox)}, Expanded: ${JSON.stringify(expandedBox)}`);
                     const dCrop = await cropImageByBox(pages[i], expandedBox);
                     if (dCrop) diagramImages.push(dCrop);
                   } catch (e) {
