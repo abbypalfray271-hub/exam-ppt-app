@@ -9,35 +9,38 @@ import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExtractionCanvas, NormalizedRect } from './ExtractionCanvas';
-import { pdfToImages, wordToText, compressImage } from '@/lib/documentProcessor';
-// 删掉原本的 Server Action 引用
-// // import { parseFullDocumentAction } from '@/app/actions/ai';
+import { pdfToImages, compressImage } from '@/lib/documentProcessor';
+
 import { importProjectJSON } from '@/lib/projectIO';
+
 
 
 export const UploadZone = () => {
   const { 
     setExamImage, 
     setExamPages, 
-    setExamText, 
     addQuestions,
     isProcessing, 
     setProcessing,
     examPages,
-    examText,
     setView,
     examImageUrl,
     isCanvasOpen,
     setCanvasOpen,
-    resetUpload
+    resetUpload,
+    setFileType,
+    fileType: storeFileType
   } = useProjectStore();
+
   
   const [isDragActive, setIsDragActive] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [pdfPages, setPdfPages] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
-  const [fileType, setFileType] = useState<'image' | 'pdf' | 'word' | null>(null);
+  const [fileType, setLocalFileType] = useState<'image' | 'pdf' | null>(null);
+
   const [fileName, setFileName] = useState<string | null>(null);
+
   const [autoDetectedRects, setAutoDetectedRects] = useState<NormalizedRect[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -45,64 +48,30 @@ export const UploadZone = () => {
   React.useEffect(() => {
     if (examImageUrl && !preview) {
       setPreview(examImageUrl);
-      setFileType('image');
+      setLocalFileType('image');
     } else if (examPages.length > 0 && !preview) {
       setPreview(examPages[0]);
-      setFileType('pdf');
+      setLocalFileType('pdf');
       setPdfPages(examPages);
     }
   }, [examImageUrl, examPages, preview]);
 
-  const handleWordParse = async () => {
-    if (!examText) return;
-    try {
-      setProcessing(true);
-      const response = await fetch('/api/ai-parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'parseFullDocument', images: examText })
-      });
-      const result = await response.json();
-      if (result.success && result.data) {
-        const questions: Question[] = result.data.map((q: any, idx: number) => ({
-          ...q,
-          id: crypto.randomUUID(),
-          order: idx + 1,
-          type: q.type || 'essay'
-        }));
-        addQuestions(questions);
-        setView('editor');
-      } else {
-        throw new Error(result.error || '解析失败');
-      }
-    } catch (error) {
-      console.error('Word parse error:', error);
-      alert('解析过程中发生错误');
-    } finally {
-      setProcessing(false);
-    }
-  };
+  // handleWordParse removed
 
-  const handleFile = async (file: File) => {
-    if (!file) return;
-    setFileName(file.name);
+
+  const handleFiles = async (files: File[]) => {
+    if (!files || files.length === 0) return;
+    
     setProcessing(true);
     try {
-      if (file.type.startsWith('image/')) {
-        const rawBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = () => reject(new Error('文件读取失败'));
-          reader.readAsDataURL(file);
-        });
-        const compressed = await compressImage(rawBase64, 1600);
-        setPreview(compressed);
-        setExamImage(compressed);
-        setFileType('image');
-        setPdfPages([]);
-      } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      // 检查首选处理模式
+      const mainFile = files[0];
+      setFileName(files.length > 1 ? `${mainFile.name} 等 ${files.length} 个文件` : mainFile.name);
+
+      if (mainFile.type === 'application/pdf' || mainFile.name.toLowerCase().endsWith('.pdf')) {
+        setLocalFileType('pdf');
         setFileType('pdf');
-        const images = await pdfToImages(file);
+        const images = await pdfToImages(mainFile);
         setPdfPages(images);
         setExamPages(images);
         if (images.length > 0) {
@@ -110,15 +79,32 @@ export const UploadZone = () => {
           setExamImage(images[0]);
           setCurrentPage(0);
         }
-      } else if (
-        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
-        file.name.endsWith('.docx')
-      ) {
-        setFileType('word');
-        const text = await wordToText(file);
-        setExamText(text);
-        setPreview('word-placeholder');
-        setPdfPages([]);
+      } else {
+        // 处理多个图片文件
+
+        setLocalFileType('image');
+        setFileType('image');
+
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length === 0) return;
+
+        const base64Images: string[] = [];
+        for (const file of imageFiles) {
+          const rawBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = () => reject(new Error('文件读取失败'));
+            reader.readAsDataURL(file);
+          });
+          const compressed = await compressImage(rawBase64, 1600);
+          base64Images.push(compressed);
+        }
+
+        setPdfPages(base64Images);
+        setExamPages(base64Images);
+        setPreview(base64Images[0]);
+        setExamImage(base64Images[0]);
+        setCurrentPage(0);
       }
     } catch (error) {
       console.error('File processing error:', error);
@@ -131,13 +117,13 @@ export const UploadZone = () => {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragActive(false);
-    handleFile(e.dataTransfer.files[0]);
+    handleFiles(Array.from(e.dataTransfer.files));
   };
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFile(file);
+    const files = e.target.files;
+    if (files) {
+      handleFiles(Array.from(files));
       e.target.value = '';
     }
   };
@@ -167,7 +153,9 @@ export const UploadZone = () => {
               ref={fileInputRef}
               type="file"
               className="hidden"
-              accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+              accept="image/*,application/pdf,.pdf"
+
+              multiple
               onChange={onChange}
             />
             
@@ -176,8 +164,8 @@ export const UploadZone = () => {
             </div>
             
             <h2 className="text-2xl font-bold mb-2">上传您的试卷</h2>
-            <p className="text-gray-500 mb-8 max-w-sm">
-              支持高清图片、PDF 或 Word 文档，我们将自动识别题目并为您生成精美的讲解演示稿。
+            <p className="text-gray-500 mb-8 max-w-sm text-center">
+              支持高清图片或 PDF 文档，我们将自动识别题目并为您生成精美的讲解演示稿。
             </p>
 
             <AnimatePresence>
@@ -202,7 +190,6 @@ export const UploadZone = () => {
                     <Sparkles className="w-4 h-4" />
                     <span>
                       {fileType === 'pdf' ? '正在进行高清分页渲染...' : 
-                       fileType === 'word' ? '正在提取考题纯文本...' : 
                        '正在优化图片清晰度...'}
                     </span>
                   </div>
@@ -221,27 +208,17 @@ export const UploadZone = () => {
             exit={{ opacity: 0, scale: 0.95 }}
             className="relative rounded-3xl overflow-hidden glass-panel border shadow-2xl aspect-[3/4] max-h-[70vh] group flex flex-col items-center justify-center"
           >
-            {fileType === 'image' || fileType === 'pdf' ? (
+            {(fileType === 'image' || fileType === 'pdf') && (
               <img 
                 src={preview} 
                 alt="试卷预览" 
                 className="w-full h-full object-contain p-4"
               />
-            ) : (
-              <div className="flex flex-col items-center gap-6 p-12">
-                <div className="w-32 h-32 rounded-3xl bg-blue-50 flex items-center justify-center shadow-2xl">
-                  <FileCode className="w-16 h-16 text-blue-600" />
-                </div>
-                <div className="text-center">
-                  <h3 className="text-xl font-bold text-gray-900 mb-1">{fileName}</h3>
-                  <p className="text-sm text-gray-500 uppercase tracking-widest font-black font-sans">
-                    DOCX 文本识别就绪
-                  </p>
-                </div>
-              </div>
             )}
+
             
-            {fileType === 'pdf' && pdfPages.length > 1 && (
+            {(fileType === 'pdf' || (fileType === 'image' && pdfPages.length > 1)) && pdfPages.length > 1 && (
+
               <div className="absolute top-4 left-4 flex gap-2 z-10">
                 <button 
                   onClick={(e) => {
@@ -278,11 +255,12 @@ export const UploadZone = () => {
             <button 
               onClick={() => { 
                 setPreview(null); 
-                setFileType(null); 
+                setLocalFileType(null); 
                 setPdfPages([]); 
                 setCurrentPage(0); 
                 resetUpload();
               }}
+
               className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors backdrop-blur-md z-10"
             >
               <X className="w-6 h-6" />
@@ -301,16 +279,9 @@ export const UploadZone = () => {
                 </button>
               )}
               
-              {fileType === 'word' && (
-                <button 
-                  className="px-8 py-3 bg-brand-secondary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50"
-                  onClick={handleWordParse}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                  <span>AI 一键解析全文</span>
-                </button>
-              )}
+              {/* Word parse button removed */}
+
+
             </div>
 
             <AnimatePresence>

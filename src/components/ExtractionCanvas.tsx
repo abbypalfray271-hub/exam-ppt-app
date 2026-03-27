@@ -3,7 +3,8 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, CheckCircle2, Loader2, X, Sparkles, CheckSquare, Square, LayoutList } from 'lucide-react';
-// import { parseQuestionAction } from '@/app/actions/ai';
+
+
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { cropImageByBox, compressImage } from '@/lib/documentProcessor';
@@ -46,6 +47,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const imgRefs = useRef<(HTMLImageElement | null)[]>([]); // 每页一个 img ref
   const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
+
   // === State ===
   // 矩形全局扁平数组（坐标基于 containerRef）
   const [rects, setRects] = useState<Rect[]>([]);
@@ -65,7 +67,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
 
-  const { questions, addQuestion, addQuestions, setQuestions, isProcessing, setProcessing, setView, setExamPages } = useProjectStore();
+  const { questions, addQuestion, addQuestions, setQuestions, isProcessing, setProcessing, setView, setExamPages, resetUpload, fileType } = useProjectStore();
+
+
+
 
   // === 自动计算紫色分析区：题目区 - 答案遮挡区 ===
   const autoAnalysisRects = useMemo(() => {
@@ -143,6 +148,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   }, [isProcessing, currentItemIdx, totalItems]);
 
   // === 首次挂载：滚动到 initialPageIndex ===
+
   useEffect(() => {
     if (initialPageIndex > 0 && imagesLoaded >= pages.length) {
       const img = imgRefs.current[initialPageIndex];
@@ -245,6 +251,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     
     // 1. 过滤并平移 Rects
     const updatedRects: Rect[] = rects
+
+
       .filter(r => {
         const midY = r.y + r.height / 2;
         const pageIdx = offsets.findIndex(o => midY >= o.top && midY < o.top + o.height);
@@ -275,8 +283,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     
     // 如果全部删除了，回到上传页
     if (newPages.length === 0) {
-      setView('upload');
+      resetUpload();
     } else {
+
       // 保持 imagesLoaded 能反映新数组，防止因计数不足导致后续逻辑挂起
       setImagesLoaded(newPages.length);
     }
@@ -292,7 +301,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     }
 
     const cr = containerRef.current.getBoundingClientRect();
-    // 考虑缩放率：将真实的物理坐标转换为 1.0 倍率下的基础像素坐标
+    // 考虑缩放率：将真实的物理坐标转换为 1.0 倍率下的“基准尺寸”存储
     const x = (e.clientX - cr.left) / zoom;
     const y = (e.clientY - cr.top) / zoom;
 
@@ -914,6 +923,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             disabled={isProcessing}
             className="px-6 py-2 bg-brand-primary text-white text-sm font-black rounded-full shadow-xl shadow-brand-primary/20 hover:scale-105 active:scale-95 disabled:opacity-80 disabled:cursor-not-allowed transition-all flex items-center gap-2 shrink-0 min-w-[100px] justify-center"
           >
+
+
             {isProcessing ? (
               <div className="flex flex-col items-center">
                 <div className="flex items-center gap-2">
@@ -938,7 +949,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       {/* === 主区域：左侧缩略图 + 右侧连续滚动画布 === */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧页面导航缩略图 - 移动端（含横屏）彻底隐藏以释放空间 */}
-        {pages.length > 1 && (
+        {pages.length >= 1 && (
+
+
           <div className="hidden lg:flex w-[480px] bg-white border-r flex-col shrink-0">
             <div className="p-4 border-b bg-gray-50/50 flex flex-col gap-3">
               <div className="flex items-center justify-between">
@@ -981,6 +994,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               {pages.map((page, idx) => {
                 const rectCount = getPageRectCount(idx);
                 return (
+
                   <button
                     key={idx}
                     ref={el => { thumbRefs.current[idx] = el; }}
@@ -1022,9 +1036,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 );
               })}
             </div>
+
           </div>
         )}
 
+        {/* 右侧：可滚动画布区域，所有页面纵向排列 */}
         {/* 右侧：可滚动画布区域，所有页面纵向排列 */}
         <div
           ref={scrollRef}
@@ -1065,7 +1081,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               {/* === 渲染所有矩形框 === */}
               {rects.map((rect) => {
                 const isQuestion = rect.type === 'question' || rect.type === undefined;
-                const isAnswer = rect.type === 'answer';
                 const isAnalysis = rect.type === 'analysis';
                 const isSelected = selectedId === rect.id;
                 const { x, y, width: w, height: h } = rect;
@@ -1077,7 +1092,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 if (isQuestion) {
                   label = `#${qRects.findIndex(r => r.id === rect.id) + 1}`;
                 } else {
-                  // 判断遮挡/分析框落在哪个题目框内
+                  // 判断遮挡框落在哪个题目框内
                   const cx = x + w / 2;
                   const cy = y + h / 2;
                   const parentIdx = qRects.findIndex(r => cx >= r.x && cx <= r.x + r.width && cy >= r.y - 10 && cy <= r.y + r.height + 20);
@@ -1094,7 +1109,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       isSelected
                         ? "border-brand-secondary bg-brand-secondary/10 z-30 shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),0.3)]"
                         : isQuestion ? "border-brand-primary bg-brand-primary/10 z-20" 
-                        : isAnalysis ? "border-purple-500 border-dashed bg-purple-500/20 z-20"
                         : "border-red-500 border-dashed bg-red-500/20 z-20"
                     )}
                     style={{ 
@@ -1107,7 +1121,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     {/* 序号标签 */}
                     <div className={cn(
                       "absolute -top-6 left-0 text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md whitespace-nowrap",
-                      isQuestion ? "bg-brand-primary" : isAnalysis ? "bg-purple-500" : "bg-red-500"
+                      isQuestion ? "bg-brand-primary" : "bg-red-500"
                     )}>
                       {label}
                     </div>
@@ -1193,6 +1207,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             </div>
           </div>
         </div>
+
       </div>
 
       {/* === 悬浮错误日志面板 === */}

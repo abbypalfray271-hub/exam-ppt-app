@@ -1,4 +1,5 @@
-import mammoth from 'mammoth';
+// Removed mammoth import
+
 
 /**
  * 将 PDF 的每一页转化为 Base64 图片
@@ -86,14 +87,8 @@ export async function pdfToImages(file: File): Promise<string[]> {
   }
 }
 
-/**
- * 提取 Word 文档内容
- */
-export async function wordToText(file: File): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer();
-  const result = await mammoth.extractRawText({ arrayBuffer });
-  return result.value;
-}
+// wordToText removed
+
 
 /**
  * 图像预压缩工具

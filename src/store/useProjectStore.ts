@@ -29,7 +29,7 @@ interface ProjectState {
   projectName: string;
   examImageUrl?: string;
   examPages: string[]; // PDF 各页图像
-  examText?: string;   // Word 提取的文本
+
   questions: Question[];
   currentMode: 'quick' | 'deep';
   isProcessing: boolean;
@@ -37,12 +37,15 @@ interface ProjectState {
   currentSlideIndex: number;  // -- 新增：当前播放页码 --
   currentView: 'upload' | 'editor'; // -- 新增：当前视图 --
   isCanvasOpen: boolean; // -- 新增：框选画布是否打开 --
+  fileType: 'image' | 'pdf' | null; // -- 统一：文件类型 --
+
+
   
   // Actions
   setProjectName: (name: string) => void;
   setExamImage: (url?: string) => void;
   setExamPages: (pages: string[]) => void;
-  setExamText: (text: string) => void;
+
   addQuestion: (question: Question) => void;
   addQuestions: (questions: Question[]) => void;
   setQuestions: (questions: Question[]) => void;
@@ -55,7 +58,10 @@ interface ProjectState {
   setCurrentSlideIndex: (index: number) => void; // -- 新增：切页 --
   setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
   setCanvasOpen: (open: boolean) => void; // -- 新增：控制框选画布 --
+  setFileType: (type: 'image' | 'pdf' | null) => void;
+
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
+
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -68,11 +74,13 @@ export const useProjectStore = create<ProjectState>((set) => ({
   currentSlideIndex: 0,
   currentView: 'upload',
   isCanvasOpen: false,
+  fileType: null,
+
   
   setProjectName: (name) => set({ projectName: name }),
   setExamImage: (url) => set({ examImageUrl: url }),
   setExamPages: (pages) => set({ examPages: pages }),
-  setExamText: (text) => set({ examText: text }),
+
   addQuestion: (q) => set((state) => ({ questions: [...state.questions, q] })),
   addQuestions: (qs) => set((state) => ({ questions: [...state.questions, ...qs] })),
   setQuestions: (qs) => set({ questions: qs }),
@@ -91,12 +99,15 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setCurrentSlideIndex: (index) => set({ currentSlideIndex: index }),
   setView: (view) => set({ currentView: view }),
   setCanvasOpen: (open) => set({ isCanvasOpen: open }),
+  setFileType: (type) => set({ fileType: type }),
   resetUpload: () => set({ 
     examImageUrl: undefined, 
     examPages: [], 
-    examText: undefined, 
     questions: [], 
     isProcessing: false,
-    currentSlideIndex: 0 
+    currentSlideIndex: 0,
+    currentView: 'upload',
+    isCanvasOpen: false,
+    fileType: null,
   }),
 }));
