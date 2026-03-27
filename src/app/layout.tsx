@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EXAM Ai MAKER - AI 试卷讲解演示稿生成器",
-  description: "上传试卷，由 AI 自动切割题目、生成解析、并排版成精美的讲解演示稿。",
+  title: "EXAM Ai MAKER - AI 试卷讲解课件生成器",
+  description: "上传试卷，由 AI 自动切割题目、生成解析、并排版成精美的讲解课件。",
 };
 
 export default function RootLayout({

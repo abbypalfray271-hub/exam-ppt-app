@@ -165,7 +165,7 @@ export const UploadZone = () => {
             
             <h2 className="text-2xl font-bold mb-2">上传您的试卷</h2>
             <p className="text-gray-500 mb-8 max-w-sm text-center">
-              支持高清图片或 PDF 文档，我们将自动识别题目并为您生成精美的讲解演示稿。
+              支持高清图片或 PDF 文档，我们将自动识别题目并为您生成精美的讲解课件。
             </p>
 
             <AnimatePresence>
