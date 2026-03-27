@@ -1,6 +1,6 @@
 {
   "name": "exam-ppt-app",
-  "version": "202603272238",
+  "version": "202603272240",
   "private": true,
   "scripts": {
     "dev": "next dev",
