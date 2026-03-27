@@ -140,10 +140,17 @@ export async function cropImageByBox(base64Image: string, box?: [number, number,
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error('无法创建 Canvas 上下文'));
 
-      const x = (xmin / 1000) * img.naturalWidth;
-      const y = (ymin / 1000) * img.naturalHeight;
-      const w = ((xmax - xmin) / 1000) * img.naturalWidth;
-      const h = ((ymax - ymin) / 1000) * img.naturalHeight;
+      // 添加安全边距 (2%)
+      const padding = 20; // 对应于万分位中的 0.2%
+      const nyMin = Math.max(0, ymin - padding);
+      const nxMin = Math.max(0, xmin - padding);
+      const nyMax = Math.min(10000, ymax + padding * 2); 
+      const nxMax = Math.min(10000, xmax + padding * 2);
+
+      const x = (nxMin / 10000) * img.naturalWidth;
+      const y = (nyMin / 10000) * img.naturalHeight;
+      const w = ((nxMax - nxMin) / 10000) * img.naturalWidth;
+      const h = ((nyMax - nyMin) / 10000) * img.naturalHeight;
 
       // 如果选区过小，忽略
       if (w <= 10 || h <= 10) return resolve('');
