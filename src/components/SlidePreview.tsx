@@ -681,10 +681,12 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     for (let i = 1; i < segments.length; i += 2) {
                       const tag = segments[i];
                       const content = segments[i + 1] || '';
+                      const cleanContent = content.replace(/\{\{(.*?)\}\}/g, '$1'); // 去掉 {{ }} 装饰
+                      
                       if (tag.includes('答案')) {
-                        answerPart = tag + content;
+                        answerPart = tag + cleanContent;
                       } else if (tag.includes('解析') || tag.includes('分析') || tag.includes('详解')) {
-                        analysisPart = tag + content;
+                        analysisPart = tag + cleanContent;
                       }
                     }
                     

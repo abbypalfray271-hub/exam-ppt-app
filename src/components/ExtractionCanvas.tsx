@@ -1123,6 +1123,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               {rects.map((rect) => {
                 const isQuestion = rect.type === 'question' || rect.type === undefined;
                 const isAnalysis = rect.type === 'analysis';
+                const isDiagram = rect.type === 'diagram';
                 const isSelected = selectedId === rect.id;
                 const { x, y, width: w, height: h } = rect;
                 
@@ -1131,14 +1132,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 
                 let label = '';
                 if (isQuestion) {
-                  label = `#${qRects.findIndex(r => r.id === rect.id) + 1}`;
+                  label = `#${qRects.findIndex(r => r.id === rect.id) + 1} 题目`;
                 } else {
-                  // 判断遮挡框落在哪个题目框内
+                  // 判断子框落在哪个题目框内
                   const cx = x + w / 2;
                   const cy = y + h / 2;
                   const parentIdx = qRects.findIndex(r => cx >= r.x && cx <= r.x + r.width && cy >= r.y - 10 && cy <= r.y + r.height + 20);
-                  const suffix = isAnalysis ? ' 分析' : ' 答案';
-                  label = parentIdx >= 0 ? `#${parentIdx + 1}${suffix}` : '未绑定';
+                  const suffix = isAnalysis ? ' 分析' : isDiagram ? ' 图样' : ' 答案';
+                  label = parentIdx >= 0 ? `#${parentIdx + 1}${suffix}` : `未绑定${suffix}`;
                 }
 
                 return (
@@ -1150,6 +1151,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       isSelected
                         ? "border-brand-secondary bg-brand-secondary/10 z-30 shadow-[0_0_20px_rgba(var(--brand-secondary-rgb),0.3)]"
                         : isQuestion ? "border-brand-primary bg-brand-primary/10 z-20" 
+                        : isDiagram ? "border-emerald-500 border-dashed bg-emerald-500/20 z-20"
                         : "border-red-500 border-dashed bg-red-500/20 z-20"
                     )}
                     style={{ 
@@ -1162,7 +1164,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     {/* 序号标签 */}
                     <div className={cn(
                       "absolute -top-6 left-0 text-white text-[10px] font-black px-2 py-0.5 rounded-t-lg shadow-md whitespace-nowrap",
-                      isQuestion ? "bg-brand-primary" : "bg-red-500"
+                      isQuestion ? "bg-brand-primary" : isDiagram ? "bg-emerald-500" : "bg-red-500"
                     )}>
                       {label}
                     </div>
