@@ -15,7 +15,7 @@ interface Rect {
   y: number;
   width: number;
   height: number;
-  type?: 'question' | 'answer' | 'analysis';
+  type?: 'question' | 'answer' | 'analysis' | 'diagram';
 }
 
 // 每页图片在纵向容器中的偏移信息
@@ -57,7 +57,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
-  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer'>('question');
+  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'diagram'>('question');
   const [progressLabel, setProgressLabel] = useState("");
   const [errorLogs, setErrorLogs] = useState<{ id: string; msg: string; type: 'error' | 'warn' }[]>([]);
   const [currentItemIdx, setCurrentItemIdx] = useState(0);
@@ -417,7 +417,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             y: currentRect.height! > 0 ? currentRect.y! : currentRect.y! + currentRect.height!,
             width: Math.abs(currentRect.width!),
             height: Math.abs(currentRect.height!),
-            type: currentRect.type as 'question' | 'answer' | undefined,
+            type: currentRect.type as 'question' | 'answer' | 'diagram',
           };
           setRects(prev => [...prev, normalized]);
           setSelectedId(normalized.id);
@@ -547,9 +547,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
   // === 确认并解析 ===
   const handleConfirm = async () => {
-    // 分离题目框、答案框（分析框由 autoAnalysisRects 自动计算）
-    const qRects = rects.filter(r => r.type === 'question' || r.type === undefined).sort((a, b) => a.y - b.y);
+    // 处理手动框选结果
+    const qRects = rects.filter(r => r.type === 'question' || !r.type).sort((a, b) => a.y - b.y);
     const aRects = rects.filter(r => r.type === 'answer');
+    const dRects = rects.filter(r => r.type === 'diagram');
 
     // --- 新增：无框选全自动补偿逻辑 (分页分治 + 定向选页优化) ---
     if (qRects.length === 0) {
@@ -605,6 +606,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               const pageResults = await Promise.all(data.data.map(async (q: any) => {
                 const box = q.content_box || q.contentBox;
                 let croppedImage = pages[i]; // 默认整页
+                const diagramImages: string[] = [];
+
                 if (box && Math.abs(box[2] - box[0]) > 0) {
                   try {
                     const crop = await cropImageByBox(pages[i], box);
@@ -613,10 +616,23 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     console.error('Auto crop failed:', e);
                   }
                 }
+
+                // --- 核心逻辑：全自动模式图样切割 ---
+                const dBoxes = q.diagram_boxes || [];
+                for (const dBox of dBoxes) {
+                  try {
+                    const dCrop = await cropImageByBox(pages[i], dBox);
+                    if (dCrop) diagramImages.push(dCrop);
+                  } catch (e) {
+                    console.error('Auto diagram crop failed:', e);
+                  }
+                }
+
                 return {
                   ...q,
                   image: pages[i],          // 原图底图
                   contentImage: croppedImage, // 预览切图
+                  diagrams: diagramImages,    // 自动发现的插图
                 };
               }));
               allResults.push(...pageResults);
@@ -703,6 +719,20 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const autoAnalysis = autoAnalysisRects.find(ar => ar.id === `auto-analysis-${qRect.id}`);
         const manualAnalysisBox = getManualBox(autoAnalysis);
 
+        // --- 新增：图样裁剪逻辑 ---
+        const childDiagrams: string[] = [];
+        const diagramRects = dRects.filter(dr => {
+          const cx = dr.x + dr.width / 2;
+          const cy = dr.y + dr.height / 2;
+          // 容差匹配：中心点在题目框内，或垂直方向极其接近
+          return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
+        });
+
+        for (const dr of diagramRects) {
+          const dSlice = await cropRect(dr as Rect, offsets);
+          if (dSlice) childDiagrams.push(dSlice.base64);
+        }
+
         // 2. 发起解析请求
         let retryCount = 0;
         const maxRetries = 1;
@@ -769,6 +799,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             type: q.type || 'essay',
             answer_box: manualAnswerBox || q.answer_box,
             analysis_box: manualAnalysisBox,
+            diagrams: childDiagrams.length > 0 ? childDiagrams : q.diagrams,
           }));
           
           addQuestions(finalizedQuestions);
@@ -861,6 +892,16 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               <div className="w-3 h-3 rounded bg-purple-500/20 border-2 border-purple-500" />
               分析区 <span className="text-[10px] text-purple-400">自动</span>
             </div>
+            <button
+              onClick={() => setActiveDrawMode('diagram')}
+              className={cn(
+                "px-4 py-1.5 rounded-full text-sm font-black transition-all flex items-center gap-2",
+                activeDrawMode === 'diagram' ? "bg-white text-emerald-500 shadow-sm" : "text-gray-400 hover:text-emerald-400"
+              )}
+            >
+              <div className="w-3 h-3 rounded bg-emerald-500/20 border-2 border-emerald-500" />
+              框选图样
+            </button>
           </div>
 
           <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-4 py-2 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0">
@@ -1194,7 +1235,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 <div
                   className={cn(
                     "absolute border-2 border-dashed shadow-inner z-20 pointer-events-none",
-                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : "border-red-500 bg-red-500/20"
+                    activeDrawMode === 'question' ? "border-brand-primary bg-brand-primary/5" : 
+                    activeDrawMode === 'diagram' ? "border-emerald-500 bg-emerald-500/15" :
+                    "border-red-500 bg-red-500/20"
                   )}
                   style={{
                     left: (drawingRect.width! > 0 ? drawingRect.x : (drawingRect.x! + drawingRect.width!))! * zoom,

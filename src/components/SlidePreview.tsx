@@ -114,11 +114,31 @@ export const TitleSlide: React.FC<TitleSlideProps> = ({ editable = false }) => {
 // 统一模板幻灯片：左素材 + 右侧多题目区块 (极简分割版)
 // ============================================================
 
-const renderClozeText = (text: string, show: boolean) => {
+const renderClozeText = (text: string, show: boolean, diagrams?: string[]) => {
   if (!text) return null;
-  // 正则匹配 {{内容}}
-  const parts = text.split(/(\{\{.*?\}\})/g);
-  return parts.map((part, index) => {
+  // 正则匹配 {{内容}} 或 [附图] 或 [表格]
+  const parts = text.split(/(\{\{.*?\}\}|\[附图\]|\[表格\])/g);
+  let diagramIndex = 0;
+
+  const renderedParts = parts.map((part, index) => {
+    // 处理图样占位符
+    if (part === '[附图]' || part === '[表格]') {
+      const imgSrc = diagrams?.[diagramIndex++];
+      if (imgSrc) {
+        return (
+          <div key={`diag-${index}`} className="my-4 flex items-center justify-center w-full">
+            <img 
+              src={imgSrc} 
+              alt="插图" 
+              className="max-w-[80%] max-h-[16em] object-contain rounded-lg shadow-sm border border-gray-100 bg-white mix-blend-multiply" 
+            />
+          </div>
+        );
+      }
+      return <span key={index} className="text-gray-400 italic mx-1 opacity-50">{part}</span>;
+    }
+
+    // 处理 {{答案}} 语法
     if (part.startsWith('{{') && part.endsWith('}}')) {
       const answerText = part.slice(2, -2);
       if (show) {
@@ -135,8 +155,31 @@ const renderClozeText = (text: string, show: boolean) => {
         );
       }
     }
-    return <span key={index}>{part}</span>;
+    return <span key={index} className="whitespace-pre-wrap">{part}</span>;
   });
+
+  // 如果仍有未使用的图样（可能 AI 没给占位符，或者手动框选但未编辑文本），则追加在末尾
+  const remainingDiagrams: React.ReactNode[] = [];
+  if (diagrams && diagramIndex < diagrams.length) {
+    for (let i = diagramIndex; i < diagrams.length; i++) {
+      remainingDiagrams.push(
+        <div key={`rem-diag-${i}`} className="my-4 flex items-center justify-center w-full">
+          <img 
+            src={diagrams[i]} 
+            alt="追加插图" 
+            className="max-w-[80%] max-h-[16em] object-contain rounded-lg shadow-sm border border-gray-100 bg-white mix-blend-multiply" 
+          />
+        </div>
+      );
+    }
+  }
+
+  return (
+    <>
+      {renderedParts}
+      {remainingDiagrams}
+    </>
+  );
 };
 
 const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
@@ -691,7 +734,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                           ) : (
                             <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
                               {/* 题目部分：内部 {{}} 在 answer/analysis 状态下可见 */}
-                              {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis')}
+                              {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis', expandedQuestion.diagrams)}
                               
                               {/* 答案部分：在 answer 或 analysis 状态下可见 */}
                               {answerPart && (revealState === 'answer' || revealState === 'analysis') && (
