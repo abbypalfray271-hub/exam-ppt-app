@@ -135,7 +135,15 @@ const cleanLatexSymbols = (text: string): string => {
     .replace(/\\quad/g, ' ')
     .replace(/\\text\{(\w+)\}/g, '$1')
     .replace(/\\mathrm\{(\w+)\}/g, '$1')
-    .replace(/\$/g, ''); // 移除 LaTeX 边界符
+    .replace(/\$([^$]+)\$/g, '$1') // 移除 LaTeX 边界符 $...$，保留内容
+    .replace(/(?<!\{)\{\{\s*\}\}(?!\})/g, '') // 清除空的 {{ }}
+    .replace(/(?<!\{)\}\}/g, (match, offset, str) => {
+      // 清除孤立的 }}（前面没有对应的 {{）
+      const before = str.substring(0, offset);
+      const opens = (before.match(/\{\{/g) || []).length;
+      const closes = (before.match(/\}\}/g) || []).length;
+      return opens > closes ? match : '';
+    });
 };
 
 // ============================================================
@@ -143,8 +151,8 @@ const cleanLatexSymbols = (text: string): string => {
 const renderClozeText = (rawText: string, show: boolean, diagrams?: string[]) => {
   if (!rawText) return null;
   const text = cleanLatexSymbols(rawText);
-  // 正则匹配 {{内容}} 或 [附图] 或 [表格]
-  const parts = text.split(/(\{\{.*?\}\}|\[附图\]|\[表格\])/g);
+  // 正则匹配 {{内容}} 或 [附图] 或 [表格]（[\s\S] 支持跨换行匹配）
+  const parts = text.split(/(\{\{[\s\S]*?\}\}|\[附图\]|\[表格\])/g);
   let diagramIndex = 0;
 
   const renderedParts = parts.map((part, index) => {

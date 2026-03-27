@@ -621,7 +621,16 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 const dBoxes = q.diagram_boxes || [];
                 for (const dBox of dBoxes) {
                   try {
-                    const dCrop = await cropImageByBox(pages[i], dBox);
+                    // 对图样框加大安全边距（上方+15%，下方+5%，左右+3%），防止截断
+                    const boxH = dBox[2] - dBox[0];
+                    const boxW = dBox[3] - dBox[1];
+                    const expandedBox: [number, number, number, number] = [
+                      Math.max(0, dBox[0] - Math.round(boxH * 0.15)),   // ymin 向上扩展 15%
+                      Math.max(0, dBox[1] - Math.round(boxW * 0.03)),   // xmin 向左扩展 3%
+                      Math.min(1000, dBox[2] + Math.round(boxH * 0.05)),// ymax 向下扩展 5%
+                      Math.min(1000, dBox[3] + Math.round(boxW * 0.03)),// xmax 向右扩展 3%
+                    ];
+                    const dCrop = await cropImageByBox(pages[i], expandedBox);
                     if (dCrop) diagramImages.push(dCrop);
                   } catch (e) {
                     console.error('Auto diagram crop failed:', e);
