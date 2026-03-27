@@ -182,7 +182,14 @@ const renderClozeText = (rawText: string, show: boolean, diagrams?: string[]) =>
 
     // 处理 {{答案}} 语法
     if (part.startsWith('{{') && part.endsWith('}}')) {
-      const answerText = part.slice(2, -2);
+      // 深度清理可能存在的嵌套括号或错误包裹（如 {{{{5}}}} 或 {{$5$）
+      const answerText = part.slice(2, -2)
+        .replace(/^[\{\s\$]+/, '')
+        .replace(/[\}\s\$]+$/, '')
+        .trim();
+      
+      // 如果清理完变空了，不显示
+      if (!answerText) return null;
       if (show) {
         return (
           <span key={index} className="inline-block text-brand-primary font-black border-b-[2px] border-brand-primary pb-[1px] px-1 mx-1 bg-brand-primary/10 rounded-sm">
