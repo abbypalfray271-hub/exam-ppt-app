@@ -628,7 +628,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       Math.max(0, dBox[0] - Math.round(boxH * 0.30)),   // ymin 向上大幅扩展 30% (防止几何图形顶点被切)
                       Math.max(0, dBox[1] - Math.round(boxW * 0.08)),   // xmin 向左扩展 8%
                       Math.min(1000, dBox[2] + Math.round(boxH * 0.10)),// ymax 向下扩展 10% (保证标签完整)
-                      Math.min(1000, dBox[3] + Math.round(boxW * 0.12)),// xmax 向右大幅扩展 12% (防止备用图右侧被切)
+                      Math.min(1000, dBox[3] + Math.round(boxW * 0.15)),// xmax 向右大幅扩展 15% (防止备用图右侧被切)
                     ];
                     const dCrop = await cropImageByBox(pages[i], expandedBox);
                     if (dCrop) diagramImages.push(dCrop);

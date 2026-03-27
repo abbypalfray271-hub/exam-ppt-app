@@ -145,7 +145,8 @@ const cleanLatexSymbols = (text: string): string => {
     .replace(/\\text\{(\w+)\}/g, '$1')
     .replace(/\\mathrm\{(\w+)\}/g, '$1')
     .replace(/\$([^$]+)\$/g, '$1')  // 移除 $...$ 包裹，保留内容
-    .replace(/\}\}/g, '');           // 清除孤立 }}（真正的答案已被保护）
+    .replace(/\{\{/g, '')             // 清除所有孤立 {{（真正的答案已被保护）
+    .replace(/\}\}/g, '');            // 清除所有孤立 }}（真正的答案已被保护）
 
   // === 第三步：恢复被保护的答案块 ===
   safed = safed.replace(/__CLOZE_(\d+)__/g, (_, idx) => preserved[parseInt(idx)]);
