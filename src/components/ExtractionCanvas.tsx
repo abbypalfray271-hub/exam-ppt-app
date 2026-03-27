@@ -188,10 +188,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           const [ymin, xmin, ymax, xmax] = nr.box;
           return {
             id: crypto.randomUUID(),
-            y: offset.top + (ymin / 10000) * offset.height,
-            x: (xmin / 10000) * offset.imgWidth,
-            height: ((ymax - ymin) / 10000) * offset.height,
-            width: ((xmax - xmin) / 10000) * offset.imgWidth
+            y: offset.top + (ymin / 1000) * offset.height,
+            x: (xmin / 1000) * offset.imgWidth,
+            height: ((ymax - ymin) / 1000) * offset.height,
+            width: ((xmax - xmin) / 1000) * offset.imgWidth
           };
         });
         setRects(newRects);
@@ -628,7 +628,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                       Math.max(0, dBox[0] - Math.round(boxH * 0.20)),   // ymin 向上扩展 20% (防止几何图形顶点被切)
                       Math.max(0, dBox[1] - Math.round(boxW * 0.08)),   // xmin 向左扩展 8%
                       Math.min(1000, dBox[2] + Math.round(boxH * 0.10)),// ymax 向下扩展 10% (保证标签完整)
-                      Math.min(1000, dBox[3] + Math.round(boxW * 0.10)),// xmax 向右扩展 10% (防止由于图名偏移导致的截断)
+                      Math.min(1000, dBox[3] + Math.round(boxW * 0.20)),// xmax 向右大幅扩展 20% (防止由于图名偏移导致的截断)
                     ];
                     const dCrop = await cropImageByBox(pages[i], expandedBox);
                     if (dCrop) diagramImages.push(dCrop);
