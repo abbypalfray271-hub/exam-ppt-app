@@ -724,8 +724,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const diagramRects = dRects.filter(dr => {
           const cx = dr.x + dr.width / 2;
           const cy = dr.y + dr.height / 2;
-          // 容差匹配：中心点在题目框内，或垂直方向极其接近
-          return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
+          // 宽松匹配：中心点在题目框范围内（左右扩展100px，上下扩展150px）
+          // 这样可以捕捉到位于题目右侧或紧随其后的“备用图”等插图
+          return (
+            cx >= qRect.x - 100 && 
+            cx <= qRect.x + qRect.width + 100 && 
+            cy >= qRect.y - 50 && 
+            cy <= qRect.y + qRect.height + 200
+          );
         });
 
         for (const dr of diagramRects) {
