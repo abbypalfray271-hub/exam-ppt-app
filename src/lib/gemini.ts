@@ -65,11 +65,20 @@ export async function chatWithGemini(
   }
 }
 
-export async function chatWithReasoningModel(prompt: string): Promise<{ answer: string; analysis: string }> {
+export async function chatWithReasoningModel(prompt: string, imageBase64?: string): Promise<{ answer: string; analysis: string }> {
   const apiKey = process.env.API_KEY;
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
   // Fallback to gemini-pro if not found, but we prefer deepseek
   const model = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
+
+  let userContent: any = prompt;
+  if (imageBase64) {
+    const imageData = imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
+    userContent = [
+      { type: "text", text: prompt },
+      { type: "image_url", image_url: { url: imageData } }
+    ];
+  }
 
   const body: any = {
     model,
@@ -91,7 +100,7 @@ export async function chatWithReasoningModel(prompt: string): Promise<{ answer: 
       },
       {
         role: 'user',
-        content: prompt
+        content: userContent
       }
     ],
     stream: true,
@@ -241,40 +250,36 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
   // 核心路由判断：配置的推理模型是否具备视觉能力 (例如 gemini 系列)
   const isMultimodalReasoning = reasoningModel.toLowerCase().includes('gemini');
 
-  // 如果具备视觉能力，开启单轨“一步到位”模式；否则，视觉阶段退回基础模型
-  const visionModel = (needsReasoning && isMultimodalReasoning) ? reasoningModel : baseVisionModel;
-  
+  // Step 1: 永远使用基础模型 (Flash) 进行不受强推理指令干扰的结构化 OCR 提取
   let instruction = EXAM_PROMPT;
-  // 只有在一步到位模式下，才给视觉模型下达发散性“推理解答”指令
-  if (needsReasoning && isMultimodalReasoning) {
-    instruction += REASONING_INSTRUCTIONS;
-  }
+  console.log(`[Pipeline] 视觉骨架提取启动. 使用模型: ${baseVisionModel}`);
 
-  console.log(`[Pipeline] 题解路由: needsReasoning=${needsReasoning}, multimodal=${isMultimodalReasoning}, visionModel=${visionModel}`);
-
-  // Step 1: 视觉提取 (若为 3.1 Pro 则已在此步完成解题)
   const response = await chatWithGemini(
     [
       { role: 'system', content: instruction },
       { role: 'user', content: '请解析图片内容。' }
     ],
     imageBase64,
-    visionModel
+    baseVisionModel
   );
   const arrayMatch = response.match(/\[[\s\S]*\]/);
   if (!arrayMatch) throw new Error('解析失败');
   
   let result = JSON.parse(arrayMatch[0]);
 
-  // Step 2: 纯文本模型后置推理防线 (专为 DeepSeek-R1 准备的双轨模式)
-  if (needsReasoning && !isMultimodalReasoning) {
-    console.log(`[Pipeline] 启用双轨并发: 纯文本长程推理接力 (引擎: ${reasoningModel})...`);
+  // Step 2: 无论是 3.1 Pro 还是 DeepSeek，全都走长程流式高强度推理通道
+  if (needsReasoning) {
+    console.log(`[Pipeline] 启用并行推理接力通道 (引擎: ${reasoningModel}, 带有视觉: ${isMultimodalReasoning})...`);
     for (let i = 0; i < result.length; i++) {
         const q = result[i];
-        // 确保 OCR 没有偶然自己编造答案
         if (!q.content?.includes('【解析】')) {
            try {
-               const reasoning = await chatWithReasoningModel(`请深度解答这道题目：\n${q.content}`);
+               const reasoningPrompt = `请深度解答这道题目：\n${q.content}`;
+               
+               // 灵魂注入：如果是多模态 3.1 Pro，就带上原图，让它看图解题；如果是盲区 DeepSeek，就不带图凭空推导
+               const attachedImage = isMultimodalReasoning ? imageBase64 : undefined;
+               
+               const reasoning = await chatWithReasoningModel(reasoningPrompt, attachedImage);
                let suffix = '';
                if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
                if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
@@ -298,16 +303,11 @@ export async function parseFullDocument(input: string | string[]) {
   
   const baseVisionModel = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-3-flash-preview';
   const reasoningModel = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
-  const isMultimodalReasoning = reasoningModel.toLowerCase().includes('gemini');
 
-  // 对于全页游侠：如果是多模态，直接一步到位；否则让 Flash 探路兵先上
-  const visionModel = isMultimodalReasoning ? reasoningModel : baseVisionModel;
+  // 对于全页游侠：原封不动用基础提取
   let instruction = FULL_EXAM_PROMPT;
-  if (isMultimodalReasoning) {
-    instruction += REASONING_INSTRUCTIONS;
-  }
 
-  console.log(`[Pipeline] 全文档游侠启动. 多模态: ${isMultimodalReasoning}, 视角引擎: ${visionModel}`);
+  console.log(`[Pipeline] 全文档漫游启动. 视角引擎: ${baseVisionModel}`);
 
   const response = await chatWithGemini(
     [
@@ -315,29 +315,29 @@ export async function parseFullDocument(input: string | string[]) {
       { role: 'user', content: userMsg }
     ],
     images,
-    visionModel
+    baseVisionModel
   );
   const resultText = response.replace(/```json/g, '').replace(/```/g, '').trim();
   let resultJSON = JSON.parse(resultText);
 
-  // 双轨模式巡检防线
-  if (!isMultimodalReasoning) {
-    console.log(`[Pipeline] 启动双轨全卷巡检 (引擎: ${reasoningModel})...`);
-    for (let i = 0; i < resultJSON.length; i++) {
-      const q = resultJSON[i];
-      if (!q.content?.includes('【解析】')) {
-         try {
-             const reasoning = await chatWithReasoningModel(`请深度解答这道题目：\n${q.content}`);
-             let suffix = '';
-             if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
-             if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
-             q.content = `${q.content}${suffix}`;
-         } catch (err: any) {
-             console.error('[Pipeline] 分题巡检异常:', err);
-             const errMsg = err.name === 'AbortError' ? '超时阻断' : '网络异常';
-             q.content = `${q.content}\n\n【说明】深度推理服务被拦截 (${errMsg})。`;
-         }
-      }
+  // 一律走流式后置通道
+  console.log(`[Pipeline] 启动全卷流式后置巡检 (引擎: ${reasoningModel})...`);
+  for (let i = 0; i < resultJSON.length; i++) {
+    const q = resultJSON[i];
+    if (!q.content?.includes('【解析】')) {
+       try {
+           const reasoningPrompt = `请深度解答这道题目：\n${q.content}`;
+           // 由于全文档游侠模式很少使用，且切页复杂，此处推理通道不传图，纯视作最后一道文本兜底防线
+           const reasoning = await chatWithReasoningModel(reasoningPrompt, undefined);
+           let suffix = '';
+           if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
+           if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
+           q.content = `${q.content}${suffix}`;
+       } catch (err: any) {
+           console.error('[Pipeline] 分题巡检异常:', err);
+           const errMsg = err.name === 'AbortError' ? '超时阻断' : '网络异常';
+           q.content = `${q.content}\n\n【说明】深度推理服务被拦截 (${errMsg})。`;
+       }
     }
   }
 
