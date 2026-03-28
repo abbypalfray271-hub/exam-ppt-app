@@ -1005,7 +1005,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           {onClose && (
             <button
               onClick={onClose}
-              className="px-3 py-3 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 active:scale-95 shrink-0 flex items-center justify-center"
+              className="px-4 py-4 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 active:scale-95 shrink-0 flex items-center justify-center border-2 border-white/40"
+              title="关闭并返回上传首屏"
             >
               <X className="w-5 h-5 stroke-[4px]" />
             </button>
@@ -1060,10 +1061,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     else setSelectedPageIndices(new Set(pages.map((_, i) => i)));
                   }}
                   className={cn(
-                    "px-4 py-2 rounded-xl text-[13px] font-black transition-all shadow-sm active:scale-95 flex items-center justify-center min-w-[80px]",
+                    "px-6 py-3 rounded-2xl text-[13px] font-black transition-all shadow-md active:scale-95 flex items-center justify-center min-w-[100px] border-2",
                     selectedPageIndices.size === pages.length 
-                      ? "bg-gray-200 text-gray-600 hover:bg-gray-300" 
-                      : "bg-brand-primary text-white hover:bg-brand-primary/90 shadow-brand-primary/10"
+                      ? "bg-white text-brand-primary border-brand-primary hover:bg-brand-primary/5" 
+                      : "bg-brand-primary text-white border-brand-primary hover:bg-brand-primary/90 shadow-brand-primary/20"
                   )}
                 >
                   {selectedPageIndices.size === pages.length ? '取消全选' : '全选'}

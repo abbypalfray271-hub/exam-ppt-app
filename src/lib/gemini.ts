@@ -65,10 +65,9 @@ export async function chatWithGemini(
   }
 }
 
-export async function chatWithReasoningModel(prompt: string, imageBase64?: string): Promise<{ answer: string; analysis: string }> {
+export async function chatWithReasoningModel(prompt: string, imageBase64?: string, onProgress?: (token: string, think: string) => void): Promise<{ answer: string; analysis: string }> {
   const apiKey = process.env.API_KEY;
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
-  // Fallback to gemini-pro if not found, but we prefer deepseek
   const model = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
 
   let userContent: any = prompt;
@@ -106,87 +105,91 @@ export async function chatWithReasoningModel(prompt: string, imageBase64?: strin
       }
     ],
     stream: true,
-    temperature: 0.2, // Reasoning models benefit from slightly higher temp
+    temperature: 0.2,
   };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 900000); // 终极防御阈值：15 分钟，解放 R1 推演极限
+  const timeoutId = setTimeout(() => controller.abort(), 900000); // 15 分钟超时
+  let lastError = null;
 
-  try {
-    console.log(`[DeepSeek] 启动深度推理 (长链接涓流抵抗CF超时)... (Model: ${model})`);
-    const startTime = Date.now();
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    
-    if (!response.ok) {
-      clearTimeout(timeoutId);
-      const errText = await response.text();
-      throw new Error(`Reasoning Service Error: ${response.status} - ${errText}`);
-    }
-    
-    if (!response.body) {
-      clearTimeout(timeoutId);
-      throw new Error('未接收到完整的流响应结构 (Response body is null)');
-    }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`[DeepSeek] 启动推理尝试 ${attempt}/3 (Model: ${model})...`);
+      const startTime = Date.now();
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    let resultText = '';
-    const reader = (response.body as any).getReader();
-    const decoder = new TextDecoder('utf-8');
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Reasoning Service Error: ${response.status} - ${errText}`);
+      }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n');
-      for (let line of lines) {
-        line = line.trim();
-        if (line.startsWith('data:') && line !== 'data: [DONE]') {
-          try {
-            const data = JSON.parse(line.slice(5).trim());
-            const delta = data.choices?.[0]?.delta;
-            if (delta) {
-              if (delta.reasoning_content) {
-                // [物理防御]: 只要在收 thought 流，Cloudflare 网络层判定活跃便绝不断开连接
+      if (!response.body) {
+        throw new Error('未接收到流响应结构 (Response body is null)');
+      }
+
+      // 处理流式逻辑
+      let resultText = '';
+      const reader = (response.body as any).getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        for (let line of lines) {
+          line = line.trim();
+          if (line.startsWith('data:') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(5).trim());
+              const delta = data.choices?.[0]?.delta;
+              if (delta) {
+                if (delta.reasoning_content) {
+                  onProgress?.('', delta.reasoning_content);
+                }
+                if (delta.content) {
+                  resultText += delta.content;
+                  onProgress?.(delta.content, '');
+                }
               }
-              if (delta.content) {
-                resultText += delta.content; // 将分块回传来的文本慢慢拼接到一起
-              }
-            }
-          } catch(e) {}
+            } catch (e) {}
+          }
         }
       }
+
+      clearTimeout(timeoutId);
+      console.log(`[DeepSeek] 涓流接收完成，耗时: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+      let answer = '';
+      let analysis = '';
+      const ansMatch = resultText.match(/【答案】([\s\S]*?)(?=【解析】|$)/);
+      const analMatch = resultText.match(/【解析】([\s\S]*)/);
+      if (ansMatch) answer = ansMatch[1].trim();
+      if (analMatch) analysis = analMatch[1].trim();
+      if (!ansMatch && !analMatch) analysis = resultText.trim();
+
+      return { answer, analysis };
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Pipeline] 尝试 ${attempt} 失败: ${err.message}`);
+      if (attempt < 3 && (err.name === 'AbortError' || err.message.includes('fetch failed') || err.message.includes('ECONNRESET'))) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      break;
     }
-    
-    clearTimeout(timeoutId);
-    
-    console.log(`[DeepSeek] 涓流接收全部完成，深思耗时: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-    
-    let answer = '';
-    let analysis = '';
-    
-    const ansMatch = resultText.match(/【答案】([\s\S]*?)(?=【解析】|$)/);
-    const analMatch = resultText.match(/【解析】([\s\S]*)/);
-    
-    if (ansMatch) answer = ansMatch[1].trim();
-    if (analMatch) analysis = analMatch[1].trim();
-    
-    if (!ansMatch && !analMatch) {
-      // 如果大模型不听话没生成标签，直接截取全文给解析
-      analysis = resultText.trim();
-    }
-    
-    return { answer, analysis };
-  } catch (error: any) {
-    console.error('[DeepSeek Error]', error);
-    throw error;
   }
+
+  clearTimeout(timeoutId);
+  throw lastError || new Error('推理失败，重试已耗尽');
 }
 
 export const EXAM_PROMPT = `你是一位专业的试题解析工具。请将图片中的每一个题目拆解为独立的 JSON 对象。
@@ -212,7 +215,7 @@ export const EXAM_PROMPT = `你是一位专业的试题解析工具。请将图�
    - content 格式示例：\`题干...\\nA. xxx B. yyy\\n【如果有的话就加分析与答案，没有就不加】\`
 
 5. **符号纯净 (Unicode Only)**：
-   - 严禁使用 $ 符号或 LaTeX 指令。直接输出符号：△, ∠, ⊥, //, °, ², ³ 等。
+   - 严禁使用 $ 符号或 LaTeX 指令。直接输出符号：△, ∠, ⊥, //, °, ² , ³ 等。
 
 6. **视觉转译协议 (Visual-to-Text Translation)**：
    - **核心职责**：如果题目涉及几何图形、动点或函数图像，必须在 \`content\` 字段的对应位置（通常是提到图形的句子末尾或段落之间）插入 **\`[附图]\`** 占位符。
@@ -234,33 +237,18 @@ export const EXAM_PROMPT = `你是一位专业的试题解析工具。请将图�
 
 export const FULL_EXAM_PROMPT = EXAM_PROMPT;
 
-const REASONING_INSTRUCTIONS = `
-### 🧠 深度推理指令：
-- **核心任务**：本题目缺失现成答案，你必须在识别图片的同时，发挥你的逻辑推演能力，直接给出详尽解答。
-- **独立作答**：无视题目图片上可能存在的手写痕迹或已被圈选的错误选项，你必须坚信自己的逐步推导！
-- **选项映射复核**：在给出最终选项字母时，务必对照你的计算结果与题目顶部的选项 A/B/C/D 的具体字面值，确认完全匹配无误后再写下【答案】。
-- **输出位置**：请将解答过程直接写在 \`content\` 字段内，紧跟在 [场景描述] 之后。
-- **解析风格**：
-    1. 逻辑严密，多使用 ∵ (因为) 和 ∴ (所以) 符号进行推导。
-    2. 使用标准几何语言，模拟考卷评分标准（如在步骤后加 ...... 4分）。
-    3. 风格应正式，如同官方标准答案。
-`;
-
 export async function parseQuestion(imageBase64: string, hasManualAnswer?: boolean, hasManualAnalysis?: boolean) {
   const needsReasoning = !hasManualAnswer || !hasManualAnalysis;
   const baseVisionModel = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-3-flash-preview';
   const reasoningModel = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
   
-  // 核心路由判断：配置的推理模型是否具备视觉能力 (例如 gemini 系列)
   const isMultimodalReasoning = reasoningModel.toLowerCase().includes('gemini');
 
-  // Step 1: 永远使用基础模型 (Flash) 进行不受强推理指令干扰的结构化 OCR 提取
-  let instruction = EXAM_PROMPT;
   console.log(`[Pipeline] 视觉骨架提取启动. 使用模型: ${baseVisionModel}`);
 
   const response = await chatWithGemini(
     [
-      { role: 'system', content: instruction },
+      { role: 'system', content: EXAM_PROMPT },
       { role: 'user', content: '请解析图片内容。' }
     ],
     imageBase64,
@@ -271,16 +259,13 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
   
   let result = JSON.parse(arrayMatch[0]);
 
-  // Step 2: 无论是 3.1 Pro 还是 DeepSeek，全都走长程流式高强度推理通道
   if (needsReasoning) {
-    console.log(`[Pipeline] 启用并行推理接力通道 (引擎: ${reasoningModel}, 带有视觉: ${isMultimodalReasoning})...`);
+    console.log(`[Pipeline] 启用推理通道 (引擎: ${reasoningModel})...`);
     for (let i = 0; i < result.length; i++) {
         const q = result[i];
         if (!q.content?.includes('【解析】')) {
            try {
                const reasoningPrompt = `请深度解答这道题目：\n${q.content}`;
-               
-               // 灵魂注入：如果是多模态 3.1 Pro，就带上原图，让它看图解题；如果是盲区 DeepSeek，就不带图凭空推导
                const attachedImage = isMultimodalReasoning ? imageBase64 : undefined;
                
                const reasoning = await chatWithReasoningModel(reasoningPrompt, attachedImage);
@@ -294,16 +279,16 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
                    if (promptDiagramCount > analysisDiagramCount) {
                        const missingCount = promptDiagramCount - analysisDiagramCount;
                        finalAnalysis = '\n' + '[附图]\n'.repeat(missingCount) + finalAnalysis;
-                       console.log(`[Pipeline] 大模型遗漏了图像占位符，已强制托底注入 ${missingCount} 个 [附图] 入口`);
+                       console.log(`[Pipeline] 注入 ${missingCount} 个缺失的 [附图]`);
                    }
                    suffix += `\n【解析】${finalAnalysis}`;
                }
                
                q.content = `${q.content}${suffix}`;
            } catch (err: any) {
-               console.error('[Pipeline] 推理阶段临时异常:', err);
-               const errMsg = err.name === 'AbortError' ? '本地防御超时 (耗时过久被强杀，建议原图重试)' : (err.message || '未知异常');
-               q.content = `${q.content}\n\n【说明】深度推理服务异常 (${errMsg})，未能生成详尽解析。`;
+               console.error('[Pipeline] 推理异常:', err);
+               const errMsg = err.name === 'AbortError' ? '超时阻断' : (err.message || '网络异常');
+               q.content = `${q.content}\n\n【说明】推理引擎异常 (${errMsg})。`;
            }
         }
     }
@@ -319,14 +304,11 @@ export async function parseFullDocument(input: string | string[]) {
   const baseVisionModel = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-3-flash-preview';
   const reasoningModel = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
 
-  // 对于全页游侠：原封不动用基础提取
-  let instruction = FULL_EXAM_PROMPT;
-
-  console.log(`[Pipeline] 全文档漫游启动. 视角引擎: ${baseVisionModel}`);
+  console.log(`[Pipeline] 全文档漫游启动. 模型: ${baseVisionModel}`);
 
   const response = await chatWithGemini(
     [
-      { role: 'system', content: instruction },
+      { role: 'system', content: FULL_EXAM_PROMPT },
       { role: 'user', content: userMsg }
     ],
     images,
@@ -335,14 +317,12 @@ export async function parseFullDocument(input: string | string[]) {
   const resultText = response.replace(/```json/g, '').replace(/```/g, '').trim();
   let resultJSON = JSON.parse(resultText);
 
-  // 一律走流式后置通道
-  console.log(`[Pipeline] 启动全卷流式后置巡检 (引擎: ${reasoningModel})...`);
+  console.log(`[Pipeline] 开启全卷巡检 (引擎: ${reasoningModel})...`);
   for (let i = 0; i < resultJSON.length; i++) {
     const q = resultJSON[i];
     if (!q.content?.includes('【解析】')) {
        try {
            const reasoningPrompt = `请深度解答这道题目：\n${q.content}`;
-           // 由于全文档游侠模式很少使用，且切页复杂，此处推理通道不传图，纯视作最后一道文本兜底防线
            const reasoning = await chatWithReasoningModel(reasoningPrompt, undefined);
            let suffix = '';
            if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
@@ -350,7 +330,6 @@ export async function parseFullDocument(input: string | string[]) {
                let finalAnalysis = reasoning.analysis;
                const promptDiagramCount = (q.content.match(/\[附图\]/g) || []).length;
                const analysisDiagramCount = (finalAnalysis.match(/\[附图\]/g) || []).length;
-               
                if (promptDiagramCount > analysisDiagramCount) {
                    const missingCount = promptDiagramCount - analysisDiagramCount;
                    finalAnalysis = '\n' + '[附图]\n'.repeat(missingCount) + finalAnalysis;
@@ -360,8 +339,7 @@ export async function parseFullDocument(input: string | string[]) {
            q.content = `${q.content}${suffix}`;
        } catch (err: any) {
            console.error('[Pipeline] 分题巡检异常:', err);
-           const errMsg = err.name === 'AbortError' ? '超时阻断' : '网络异常';
-           q.content = `${q.content}\n\n【说明】深度推理服务被拦截 (${errMsg})。`;
+           q.content = `${q.content}\n\n【说明】推理巡检异常。`;
        }
     }
   }
