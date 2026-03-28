@@ -46,15 +46,18 @@ export const UploadZone = () => {
   
   // 初始化预览 (从 Store 恢复)
   React.useEffect(() => {
-    if (examImageUrl && !preview) {
+    if (examPages.length > 0) {
+      setPdfPages(examPages);
+      setLocalFileType('image'); // 开启多页模式
+      if (!preview) {
+        setPreview(examPages[0]);
+        setExamImage(examPages[0]);
+      }
+    } else if (examImageUrl && !preview) {
       setPreview(examImageUrl);
       setLocalFileType('image');
-    } else if (examPages.length > 0 && !preview) {
-      setPreview(examPages[0]);
-      setLocalFileType('pdf');
-      setPdfPages(examPages);
     }
-  }, [examImageUrl, examPages, preview]);
+  }, [examPages, examImageUrl, preview]);
 
   // handleWordParse removed
 
@@ -357,7 +360,7 @@ export const UploadZone = () => {
             className="fixed inset-0 z-[999] bg-white"
           >
             <ExtractionCanvas 
-              pages={pdfPages.length > 0 ? pdfPages : (examPages.length > 0 ? examPages : [preview!])} 
+              pages={examPages.length > 0 ? examPages : (pdfPages.length > 0 ? pdfPages : [preview!])} 
               initialPageIndex={currentPage}
               initialNormalizedRects={autoDetectedRects}
               onComplete={() => {

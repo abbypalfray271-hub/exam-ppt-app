@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, CheckCircle2, Loader2, X, Sparkles, CheckSquare, Square, LayoutList } from 'lucide-react';
+import { Trash2, CheckCircle2, Loader2, X, Sparkles, CheckSquare, Square, LayoutList, Image as ImageIcon } from 'lucide-react';
 
 
 import { useProjectStore, Question } from '@/store/useProjectStore';
@@ -67,7 +67,63 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
 
-  const { questions, addQuestion, addQuestions, setQuestions, isProcessing, setProcessing, setView, setExamPages, resetUpload, fileType } = useProjectStore();
+  const { 
+    questions, 
+    addQuestion, 
+    addQuestions, 
+    setQuestions, 
+    isProcessing, 
+    setProcessing, 
+    setView, 
+    setExamPages, 
+    resetUpload, 
+    fileType,
+    examPages 
+  } = useProjectStore();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // === [NEW] 智能初始化：进入后默认全选所有页面，方便直接一键“解析” ===
+  useEffect(() => {
+    if (pages.length > 0 && selectedPageIndices.size === 0) {
+      setSelectedPageIndices(new Set(pages.map((_, i) => i)));
+    }
+  }, [pages.length]); // 只有在页数变化或初始载入时检查
+
+  // [NEW] 处理侧边栏加页
+  const handleAddPage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setProcessing(true);
+    try {
+      const newBase64s: string[] = [];
+      for (const file of Array.from(files)) {
+        const rawBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = () => reject(new Error('失败'));
+          reader.readAsDataURL(file);
+        });
+        const compressed = await compressImage(rawBase64, 1600);
+        newBase64s.push(compressed);
+      }
+      
+      const updatedPages = [...pages, ...newBase64s];
+      setExamPages(updatedPages);
+      
+      // 并自动勾选新加入的页
+      const nextSelected = new Set(selectedPageIndices);
+      newBase64s.forEach((_, i) => nextSelected.add(pages.length + i));
+      setSelectedPageIndices(nextSelected);
+
+      // 如果有父组件的回调，在此同步（本系统中主要由 Store 驱动渲染）
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
 
 
@@ -1005,11 +1061,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       {/* === 主区域：左侧缩略图 + 右侧连续滚动画布 === */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧页面导航缩略图 - 移动端（含横屏）彻底隐藏以释放空间 */}
+        {/* 左侧页面导航缩略图 - 保持常驻显示，适配多种屏幕 */}
         {pages.length >= 1 && (
-
-
-          <div className="hidden lg:flex w-[480px] bg-white border-r flex-col shrink-0">
+          <div className="flex w-72 md:w-80 lg:w-[380px] bg-white border-r flex-col shrink-0 overflow-hidden">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept="image/*" 
+              multiple 
+              onChange={handleAddPage}
+            />
             <div className="p-4 border-b bg-gray-50/50 flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
@@ -1057,7 +1119,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     ref={el => { thumbRefs.current[idx] = el; }}
                     onClick={() => scrollToPage(idx)}
                     className={cn(
-                      "w-full relative rounded-xl overflow-hidden border-2 transition-all aspect-[3/4] bg-gray-50 group",
+                      "w-full relative rounded-xl overflow-hidden border-2 transition-all aspect-[3/4] bg-gray-50 group shrink-0",
                       activePageIdx === idx
                         ? "border-brand-primary shadow-lg ring-4 ring-brand-primary/10 scale-[1.02]"
                         : "border-transparent hover:border-gray-200",
@@ -1092,6 +1154,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                   </button>
                 );
               })}
+
+              {/* [NEW] 侧边栏底部追加照片按钮 */}
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full aspect-[3/4] border-4 border-dashed border-gray-100 rounded-3xl flex flex-col items-center justify-center gap-3 text-gray-400 hover:border-brand-primary hover:text-brand-primary hover:bg-brand-primary/5 transition-all group shrink-0"
+              >
+                <div className="p-4 bg-gray-50 rounded-2xl group-hover:bg-brand-primary/10">
+                  <ImageIcon className="w-8 h-8" />
+                </div>
+                <span className="text-xs font-black uppercase tracking-widest">添加照片</span>
+              </button>
             </div>
 
           </div>
