@@ -313,18 +313,16 @@ export const UploadZone = () => {
                 </button>
               )}
               
-              {/* [NEW] 允许在预览态继续添加照片（由于 PDF 本身是静态的一般不追加，此处限定为 image 模式或 PDF 各页均显示） */}
-              {fileType === 'image' && (
-                <button 
-                  className="px-6 py-3 bg-white/20 backdrop-blur-md text-white border border-white/30 rounded-full font-bold shadow-xl hover:bg-white/30 transition-all flex items-center gap-2 whitespace-nowrap"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <ImageIcon className="w-5 h-5" /> 继续拍照/添加
-                </button>
-              )}
+              {/* [NEW] 允许在预览态继续添加照片（移除仅限 image 的限制，方便所有模式下补拍） */}
+              <button 
+                className="px-6 py-3 bg-brand-primary text-white border border-white/20 rounded-full font-bold shadow-2xl hover:scale-105 transition-all flex items-center gap-2 whitespace-nowrap z-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+              >
+                <ImageIcon className="w-5 h-5" /> 继续拍照/添加
+              </button>
             </div>
 
             <AnimatePresence>

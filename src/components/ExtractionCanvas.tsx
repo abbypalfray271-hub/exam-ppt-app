@@ -1132,15 +1132,15 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 );
               })}
 
-              {/* [NEW] 侧边栏底部追加照片按钮 */}
+              {/* [NEW] 侧边栏底部追加照片按钮 - 强化对比度防止“不可见” */}
               <button 
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-[3/4] border-4 border-dashed border-gray-100 rounded-3xl flex flex-col items-center justify-center gap-3 text-gray-400 hover:border-brand-primary hover:text-brand-primary hover:bg-brand-primary/5 transition-all group shrink-0"
+                className="w-full aspect-[3/4] border-4 border-dashed border-gray-200 rounded-3xl flex flex-col items-center justify-center gap-3 text-gray-500 hover:border-brand-primary hover:text-brand-primary hover:bg-brand-primary/5 transition-all group shrink-0"
               >
-                <div className="p-4 bg-gray-50 rounded-2xl group-hover:bg-brand-primary/10">
-                  <ImageIcon className="w-8 h-8" />
+                <div className="p-4 bg-gray-100 rounded-2xl group-hover:bg-brand-primary/10 transition-colors">
+                  <ImageIcon className="w-8 h-8 opacity-70" />
                 </div>
-                <span className="text-xs font-black uppercase tracking-widest">添加照片</span>
+                <span className="text-[11px] font-black uppercase tracking-widest">添加新页面</span>
               </button>
             </div>
 
