@@ -90,7 +90,7 @@ export async function chatWithReasoningModel(prompt: string, imageBase64?: strin
 要求：
 - 请分两步返回：先写【答案】（只写简短结果），再写【解析】（包含详细分析）。
 - 【格式强制】：禁止使用 LaTeX 数学公式标签（禁止出现 \\( \\)、\\[ \\]、\\frac 等）。请采用直观纯文本：分数写成 16/5，平方写成 t^2，根号写成 √。
-- 【图像集成】：如果输入的题干中包含 [附图] 占位符，请在解析过程中根据逻辑需要保留或重复使用 [附图] 标记（每个标记对应一张插图，按顺序出现），使解析过程如图文并茂的考卷。
+- 【图像集成】(最高优先级)：如果题干原文中包含 [附图] 占位符，你**必须**在输出的【解析】开头或关键步骤处，原样打印出相同数量的 [附图] 字符串！否则用户的试卷将失去图片！
 - 【解析风格】：
     1. 逻辑严密，多使用 ∵ (因为) 和 ∴ (所以) 符号进行推导。
     2. 使用标准几何语言，如“在 Rt △ABC 中”，“由勾股定理得”，“由对称性可知”等。
@@ -282,7 +282,18 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
                const reasoning = await chatWithReasoningModel(reasoningPrompt, attachedImage);
                let suffix = '';
                if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
-               if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
+               if (reasoning.analysis) {
+                   let finalAnalysis = reasoning.analysis;
+                   const promptDiagramCount = (q.content.match(/\[附图\]/g) || []).length;
+                   const analysisDiagramCount = (finalAnalysis.match(/\[附图\]/g) || []).length;
+                   
+                   if (promptDiagramCount > analysisDiagramCount) {
+                       const missingCount = promptDiagramCount - analysisDiagramCount;
+                       finalAnalysis = '\n' + '[附图]\n'.repeat(missingCount) + finalAnalysis;
+                       console.log(`[Pipeline] 大模型遗漏了图像占位符，已强制托底注入 ${missingCount} 个 [附图] 入口`);
+                   }
+                   suffix += `\n【解析】${finalAnalysis}`;
+               }
                
                q.content = `${q.content}${suffix}`;
            } catch (err: any) {
@@ -331,7 +342,17 @@ export async function parseFullDocument(input: string | string[]) {
            const reasoning = await chatWithReasoningModel(reasoningPrompt, undefined);
            let suffix = '';
            if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
-           if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
+           if (reasoning.analysis) {
+               let finalAnalysis = reasoning.analysis;
+               const promptDiagramCount = (q.content.match(/\[附图\]/g) || []).length;
+               const analysisDiagramCount = (finalAnalysis.match(/\[附图\]/g) || []).length;
+               
+               if (promptDiagramCount > analysisDiagramCount) {
+                   const missingCount = promptDiagramCount - analysisDiagramCount;
+                   finalAnalysis = '\n' + '[附图]\n'.repeat(missingCount) + finalAnalysis;
+               }
+               suffix += `\n【解析】${finalAnalysis}`;
+           }
            q.content = `${q.content}${suffix}`;
        } catch (err: any) {
            console.error('[Pipeline] 分题巡检异常:', err);
