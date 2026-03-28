@@ -9,11 +9,12 @@ export interface GeminiResponse {
 
 export async function chatWithGemini(
   messages: GeminiMessage[],
-  imageBuffer?: Buffer | string | (Buffer | string)[]
+  imageBuffer?: Buffer | string | (Buffer | string)[],
+  modelOverride?: string
 ): Promise<string> {
   const apiKey = process.env.API_KEY;
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
-  const model = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-2.5-flash';
+  const model = modelOverride || process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-2.5-flash';
 
   const body: any = {
     model,
@@ -222,38 +223,68 @@ export const EXAM_PROMPT = `你是一位专业的试题解析工具。请将图�
 
 export const FULL_EXAM_PROMPT = EXAM_PROMPT;
 
-export async function parseQuestion(imageBase64: string, hasManualAnswer?: boolean, hasManualAnalysis?: boolean) {
-  let instruction = EXAM_PROMPT;
+const REASONING_INSTRUCTIONS = `
+### 🧠 深度推理指令：
+- **核心任务**：本题目缺失现成答案，你必须在识别图片的同时，发挥你的逻辑推演能力，直接给出详尽解答。
+- **输出位置**：请将解答过程直接写在 \`content\` 字段内，紧跟在 [场景描述] 之后。
+- **解析风格**：
+    1. 逻辑严密，多使用 ∵ (因为) 和 ∴ (所以) 符号进行推导。
+    2. 使用标准几何语言，模拟考卷评分标准（如在步骤后加 ...... 4分）。
+    3. 风格应正式，如同官方标准答案。
+`;
 
-  // Step 1: 视觉纯净提取 (Gemini)
+export async function parseQuestion(imageBase64: string, hasManualAnswer?: boolean, hasManualAnalysis?: boolean) {
+  const needsReasoning = !hasManualAnswer || !hasManualAnalysis;
+  const baseVisionModel = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-3-flash-preview';
+  const reasoningModel = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
+  
+  // 核心路由判断：配置的推理模型是否具备视觉能力 (例如 gemini 系列)
+  const isMultimodalReasoning = reasoningModel.toLowerCase().includes('gemini');
+
+  // 如果具备视觉能力，开启单轨“一步到位”模式；否则，视觉阶段退回基础模型
+  const visionModel = (needsReasoning && isMultimodalReasoning) ? reasoningModel : baseVisionModel;
+  
+  let instruction = EXAM_PROMPT;
+  // 只有在一步到位模式下，才给视觉模型下达发散性“推理解答”指令
+  if (needsReasoning && isMultimodalReasoning) {
+    instruction += REASONING_INSTRUCTIONS;
+  }
+
+  console.log(`[Pipeline] 题解路由: needsReasoning=${needsReasoning}, multimodal=${isMultimodalReasoning}, visionModel=${visionModel}`);
+
+  // Step 1: 视觉提取 (若为 3.1 Pro 则已在此步完成解题)
   const response = await chatWithGemini(
     [
       { role: 'system', content: instruction },
       { role: 'user', content: '请解析图片内容。' }
     ],
-    imageBase64
+    imageBase64,
+    visionModel
   );
   const arrayMatch = response.match(/\[[\s\S]*\]/);
   if (!arrayMatch) throw new Error('解析失败');
   
   let result = JSON.parse(arrayMatch[0]);
 
-  // Step 2: 按需接入深度推理 (DeepSeek)
-  if (!hasManualAnswer || !hasManualAnalysis) {
-    console.log('[Pipeline] 该题缺失人工框选的答案/解析，移交 DeepSeek 进行深度填补...');
+  // Step 2: 纯文本模型后置推理防线 (专为 DeepSeek-R1 准备的双轨模式)
+  if (needsReasoning && !isMultimodalReasoning) {
+    console.log(`[Pipeline] 启用双轨并发: 纯文本长程推理接力 (引擎: ${reasoningModel})...`);
     for (let i = 0; i < result.length; i++) {
         const q = result[i];
-        try {
-            const reasoning = await chatWithReasoningModel(`请深度解答这道题目：\n${q.content}`);
-            let suffix = '';
-            if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
-            if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
-            
-            q.content = `${q.content}${suffix}`;
-        } catch (err: any) {
-            console.error('[Pipeline] DeepSeek 推理阶段临时异常:', err);
-            const errMsg = err.name === 'AbortError' ? '本地防御超时 (耗时过久被强杀，建议原图重试)' : (err.message || '未知异常');
-            q.content = `${q.content}\n\n【说明】深度推理服务异常 (${errMsg})，未能生成详尽解析。`;
+        // 确保 OCR 没有偶然自己编造答案
+        if (!q.content?.includes('【解析】')) {
+           try {
+               const reasoning = await chatWithReasoningModel(`请深度解答这道题目：\n${q.content}`);
+               let suffix = '';
+               if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
+               if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
+               
+               q.content = `${q.content}${suffix}`;
+           } catch (err: any) {
+               console.error('[Pipeline] 推理阶段临时异常:', err);
+               const errMsg = err.name === 'AbortError' ? '本地防御超时 (耗时过久被强杀，建议原图重试)' : (err.message || '未知异常');
+               q.content = `${q.content}\n\n【说明】深度推理服务异常 (${errMsg})，未能生成详尽解析。`;
+           }
         }
     }
   }
@@ -265,36 +296,48 @@ export async function parseFullDocument(input: string | string[]) {
   const images = typeof input === 'string' ? undefined : input;
   const userMsg = typeof input === 'string' ? input : '请解析图片序列。';
   
-  // 第一段仍然是 Gemini 大范围视觉提取
+  const baseVisionModel = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-3-flash-preview';
+  const reasoningModel = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
+  const isMultimodalReasoning = reasoningModel.toLowerCase().includes('gemini');
+
+  // 对于全页游侠：如果是多模态，直接一步到位；否则让 Flash 探路兵先上
+  const visionModel = isMultimodalReasoning ? reasoningModel : baseVisionModel;
+  let instruction = FULL_EXAM_PROMPT;
+  if (isMultimodalReasoning) {
+    instruction += REASONING_INSTRUCTIONS;
+  }
+
+  console.log(`[Pipeline] 全文档游侠启动. 多模态: ${isMultimodalReasoning}, 视角引擎: ${visionModel}`);
+
   const response = await chatWithGemini(
     [
-      { role: 'system', content: FULL_EXAM_PROMPT },
+      { role: 'system', content: instruction },
       { role: 'user', content: userMsg }
     ],
-    images
+    images,
+    visionModel
   );
   const resultText = response.replace(/```json/g, '').replace(/```/g, '').trim();
   let resultJSON = JSON.parse(resultText);
 
-  // 全文档智能全量推理 (因无法预先人工确认某题是否有答案，检测是否存在解析前置判定)
-  console.log('[Pipeline] 全页解析完毕，进入长程自主推理巡检...');
-  for (let i = 0; i < resultJSON.length; i++) {
-    const q = resultJSON[i];
-    // 如果题目中根本还没包含【解析】，就由 DeepSeek 强行破译
-    if (!q.content?.includes('【解析】')) {
-       try {
-           const reasoning = await chatWithReasoningModel(`请深度解答这道题目：\n${q.content}`);
-           
-           let suffix = '';
-           if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
-           if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
-           
-           q.content = `${q.content}${suffix}`;
-       } catch (err: any) {
-           console.error('[Pipeline] DeepSeek 巡检推理失败:', err);
-           const errMsg = err.name === 'AbortError' ? '本地防御超时 (耗时过久被强杀，建议原图重试)' : (err.message || '未知异常');
-           q.content = `${q.content}\n\n【说明】深度推理服务异常 (${errMsg})，未能生成详尽解析。`;
-       }
+  // 双轨模式巡检防线
+  if (!isMultimodalReasoning) {
+    console.log(`[Pipeline] 启动双轨全卷巡检 (引擎: ${reasoningModel})...`);
+    for (let i = 0; i < resultJSON.length; i++) {
+      const q = resultJSON[i];
+      if (!q.content?.includes('【解析】')) {
+         try {
+             const reasoning = await chatWithReasoningModel(`请深度解答这道题目：\n${q.content}`);
+             let suffix = '';
+             if (reasoning.answer) suffix += `\n\n【答案】${reasoning.answer}`;
+             if (reasoning.analysis) suffix += `\n【解析】${reasoning.analysis}`;
+             q.content = `${q.content}${suffix}`;
+         } catch (err: any) {
+             console.error('[Pipeline] 分题巡检异常:', err);
+             const errMsg = err.name === 'AbortError' ? '超时阻断' : '网络异常';
+             q.content = `${q.content}\n\n【说明】深度推理服务被拦截 (${errMsg})。`;
+         }
+      }
     }
   }
 
