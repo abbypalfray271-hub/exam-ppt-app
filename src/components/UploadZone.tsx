@@ -59,34 +59,48 @@ export const UploadZone = () => {
   // handleWordParse removed
 
 
-  const handleFiles = async (files: File[]) => {
+  const handleFiles = async (files: File[], mode: 'replace' | 'append' = 'replace') => {
     if (!files || files.length === 0) return;
     
     setProcessing(true);
     try {
       // 检查首选处理模式
       const mainFile = files[0];
-      setFileName(files.length > 1 ? `${mainFile.name} 等 ${files.length} 个文件` : mainFile.name);
+      if (mode === 'replace') {
+        setFileName(files.length > 1 ? `${mainFile.name} 等 ${files.length} 个文件` : mainFile.name);
+      }
 
       if (mainFile.type === 'application/pdf' || mainFile.name.toLowerCase().endsWith('.pdf')) {
         setLocalFileType('pdf');
         setFileType('pdf');
         const images = await pdfToImages(mainFile);
-        setPdfPages(images);
-        setExamPages(images);
-        if (images.length > 0) {
+        
+        if (mode === 'append') {
+          const newPages = [...pdfPages, ...images];
+          setPdfPages(newPages);
+          setExamPages(newPages);
+          setCurrentPage(pdfPages.length);
           setPreview(images[0]);
           setExamImage(images[0]);
-          setCurrentPage(0);
+        } else {
+          setPdfPages(images);
+          setExamPages(images);
+          if (images.length > 0) {
+            setPreview(images[0]);
+            setExamImage(images[0]);
+            setCurrentPage(0);
+          }
         }
       } else {
-        // 处理多个图片文件
-
+        // 处理图片文件
         setLocalFileType('image');
         setFileType('image');
 
         const imageFiles = files.filter(f => f.type.startsWith('image/'));
-        if (imageFiles.length === 0) return;
+        if (imageFiles.length === 0) {
+           if (mode === 'replace') setFileName(null);
+           return;
+        }
 
         const base64Images: string[] = [];
         for (const file of imageFiles) {
@@ -100,11 +114,21 @@ export const UploadZone = () => {
           base64Images.push(compressed);
         }
 
-        setPdfPages(base64Images);
-        setExamPages(base64Images);
-        setPreview(base64Images[0]);
-        setExamImage(base64Images[0]);
-        setCurrentPage(0);
+        if (mode === 'append') {
+          const newPages = [...pdfPages, ...base64Images];
+          setPdfPages(newPages);
+          setExamPages(newPages);
+          // 跳转到新添加的第一页
+          setCurrentPage(pdfPages.length);
+          setPreview(base64Images[0]);
+          setExamImage(base64Images[0]);
+        } else {
+          setPdfPages(base64Images);
+          setExamPages(base64Images);
+          setPreview(base64Images[0]);
+          setExamImage(base64Images[0]);
+          setCurrentPage(0);
+        }
       }
     } catch (error) {
       console.error('File processing error:', error);
@@ -154,9 +178,16 @@ export const UploadZone = () => {
               type="file"
               className="hidden"
               accept="image/*,application/pdf,.pdf"
-
               multiple
-              onChange={onChange}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (!files) return;
+                // 如果当前已经在预览模式，则默认为追加模式
+                // 否则为替换模式
+                const mode = preview ? 'append' : 'replace';
+                handleFiles(Array.from(files), mode);
+                e.target.value = '';
+              }}
             />
             
             <div className="bg-brand-primary/10 p-4 rounded-2xl mb-6">
@@ -266,10 +297,10 @@ export const UploadZone = () => {
               <X className="w-6 h-6" />
             </button>
 
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
               {(fileType === 'image' || fileType === 'pdf') && (
                 <button 
-                  className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
+                  className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2 whitespace-nowrap"
                   onClick={() => {
                     setAutoDetectedRects([]);
                     setCanvasOpen(true);
@@ -279,9 +310,18 @@ export const UploadZone = () => {
                 </button>
               )}
               
-              {/* Word parse button removed */}
-
-
+              {/* [NEW] 允许在预览态继续添加照片（由于 PDF 本身是静态的一般不追加，此处限定为 image 模式或 PDF 各页均显示） */}
+              {fileType === 'image' && (
+                <button 
+                  className="px-6 py-3 bg-white/20 backdrop-blur-md text-white border border-white/30 rounded-full font-bold shadow-xl hover:bg-white/30 transition-all flex items-center gap-2 whitespace-nowrap"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <ImageIcon className="w-5 h-5" /> 继续拍照/添加
+                </button>
+              )}
             </div>
 
             <AnimatePresence>
