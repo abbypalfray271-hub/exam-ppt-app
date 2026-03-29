@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExtractionCanvas, NormalizedRect } from './ExtractionCanvas';
 import { pdfToImages, compressImage } from '@/lib/documentProcessor';
+import { createPortal } from 'react-dom';
 
 import { importProjectJSON } from '@/lib/projectIO';
 
@@ -43,9 +44,11 @@ export const UploadZone = () => {
 
   const [autoDetectedRects, setAutoDetectedRects] = useState<NormalizedRect[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
   
   // 初始化预览 (从 Store 恢复)
   React.useEffect(() => {
+    setMounted(true);
     if (examPages.length > 0) {
       setPdfPages(examPages);
       setLocalFileType('image'); // 开启多页模式
@@ -133,9 +136,9 @@ export const UploadZone = () => {
           setCurrentPage(0);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('File processing error:', error);
-      alert('文件处理失败，请检查格式是否正确');
+      alert(`无法处理此文件，建议更新浏览器、换手机尝试，或检查文件是否损坏。\n详细错误: ${error?.message?.slice(0, 40) || '未知异常'}`);
     } finally {
       setProcessing(false);
     }
@@ -352,31 +355,34 @@ export const UploadZone = () => {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {isCanvasOpen && (
-          <motion.div
-            key="extraction-canvas-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[999] bg-white"
-          >
-            <ExtractionCanvas 
-              pages={examPages.length > 0 ? examPages : (pdfPages.length > 0 ? pdfPages : [preview!])} 
-              initialPageIndex={currentPage}
-              initialNormalizedRects={autoDetectedRects}
-              onComplete={() => {
-                setCanvasOpen(false);
-                setAutoDetectedRects([]);
-              }}
-              onClose={() => {
-                setCanvasOpen(false);
-                setAutoDetectedRects([]);
-              }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mounted && typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isCanvasOpen && (
+            <motion.div
+              key="extraction-canvas-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[999] bg-white"
+            >
+              <ExtractionCanvas 
+                pages={examPages.length > 0 ? examPages : (pdfPages.length > 0 ? pdfPages : [preview!])} 
+                initialPageIndex={currentPage}
+                initialNormalizedRects={autoDetectedRects}
+                onComplete={() => {
+                  setCanvasOpen(false);
+                  setAutoDetectedRects([]);
+                }}
+                onClose={() => {
+                  setCanvasOpen(false);
+                  setAutoDetectedRects([]);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       <div className="fixed bottom-6 right-6 z-50 flex items-center gap-4">
         {preview && (

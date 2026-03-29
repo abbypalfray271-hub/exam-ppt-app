@@ -1,6 +1,22 @@
 // Removed mammoth import
 
 
+// 为较旧的浏览器环境 (如 iOS 16-, 微信内置浏览器等) 提供必须的 ES 最新特性 Polyfill，防止 pdf.js 崩溃
+if (typeof Promise.withResolvers === 'undefined') {
+  (Promise as any).withResolvers = function () {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
+if (!(Object as any).hasOwn) {
+  (Object as any).hasOwn = (obj: any, prop: string) => Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
 /**
  * 将 PDF 的每一页转化为 Base64 图片
  */
@@ -9,7 +25,8 @@ export async function pdfToImages(file: File): Promise<string[]> {
   
   let pdfjsLib;
   try {
-    const mod = await import('pdfjs-dist');
+    // @ts-ignore
+    const mod = await import('pdfjs-dist/legacy/build/pdf.min.mjs');
     pdfjsLib = mod.default || mod;
   } catch (err) {
     console.error('Critical: Failed to load PDF.js library:', err);
@@ -26,8 +43,8 @@ export async function pdfToImages(file: File): Promise<string[]> {
     console.log(`Document opened: ${pdf.numPages} pages found`);
     const imageUrls: string[] = new Array(pdf.numPages);
 
-    // 并发控制器
-    const concurrencyLimit = 3;
+    // 并发控制器 (移动端为求稳，降为 2)
+    const concurrencyLimit = 2;
     const pageIndices = Array.from({ length: pdf.numPages }, (_, i) => i + 1);
     
     const renderPage = async (pageNum: number) => {

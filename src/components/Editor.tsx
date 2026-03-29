@@ -37,6 +37,25 @@ export const Editor = () => {
   }, []);
   const thumbnailRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // --- 移动端手势响应：滑动隐藏左侧抽屉逻辑 ---
+  const touchStartX = useRef<number | null>(null);
+  
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX.current - touchEndX;
+
+    // 如果向左滑动超过 50px，且在手机屏幕下，则收起左侧浮动抽屉
+    if (diff > 50 && window.innerWidth < 768) {
+      setIsLeftPanelOpen(false);
+    }
+    touchStartX.current = null;
+  };
+
   // 根据题目数据构建幻灯片序列 (原子分割后自动按素材分组)
   const slides = buildSlides(questions);
   const totalSlides = slides.length;
@@ -85,14 +104,19 @@ export const Editor = () => {
 
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-gray-50/50 p-4 gap-3 relative">
+    <div className="flex flex-1 h-full w-full overflow-hidden bg-gray-50/50 p-2 md:p-4 gap-2 md:gap-3 relative">
       
       {/* ============================== */}
       {/* 左侧：幻灯片缩略图列表 */}
       {/* ============================== */}
       {isLeftPanelOpen && (
         <>
-          <div className="shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col" style={{ width: leftPanelWidth }}>
+          <div 
+            className="shrink-0 glass-panel rounded-2xl border border-white overflow-hidden flex flex-col absolute md:relative z-[60] md:z-auto top-4 bottom-4 left-4 md:top-auto md:bottom-auto md:left-auto shadow-2xl md:shadow-none" 
+            style={{ width: leftPanelWidth }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             <div className="px-3 py-3 border-b bg-white/50 flex flex-col gap-2 group/sidebar-header">
               <div className="flex items-center justify-between">
                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -137,7 +161,13 @@ export const Editor = () => {
                 >
                   <SlideFrame
                     selected={idx === currentSlideIdx}
-                    onClick={() => setCurrentSlideIdx(idx)}
+                    onClick={() => {
+                      setCurrentSlideIdx(idx);
+                      // 移动端选择后自动收起左侧悬浮抽屉
+                      if (window.innerWidth < 768) {
+                        setIsLeftPanelOpen(false);
+                      }
+                    }}
                     label={`${idx + 1}`}
                     className="w-full"
                     onDelete={slide.type === 'unified' ? () => {
@@ -161,8 +191,10 @@ export const Editor = () => {
             </div>
           </div>
     
-          {/* 左侧缩略图 ↔ 中间编辑区 可拖拽分隔条 */}
-          <ResizableHandle onDrag={handleLeftResize} />
+          {/* 左侧缩略图 ↔ 中间编辑区 可拖拽分隔条 (移动端隐藏，因为此时左侧是悬浮层) */}
+          <div className="hidden md:block">
+            <ResizableHandle onDrag={handleLeftResize} />
+          </div>
         </>
       )}
 
@@ -179,10 +211,7 @@ export const Editor = () => {
         </div>
       )}
 
-      {/* ============================== */}
-      {/* 中间：当前幻灯片放大编辑区 */}
-      {/* ============================== */}
-      <div className="flex-1 flex flex-col items-center justify-center relative">
+      <div className="flex-1 flex flex-col items-center justify-center relative min-h-0 w-full overflow-hidden">
         {/* 顶部工具栏 */}
         <div className="w-full flex items-center justify-between px-4 mb-3">
           <div className="flex items-center gap-3">
@@ -210,9 +239,9 @@ export const Editor = () => {
               transition={{ duration: 0.15 }}
               className="w-full h-full flex items-center justify-center"
             >
-              {/* 利用 max-h-full 和 max-w-full 以及 aspect-video 确保在不溢出的情况下放到最大 */}
-              <div className="w-full max-h-full aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white shadow-brand-primary/10">
-                <div className="w-full h-full relative">
+              {/* 利用 md:aspect-video 确保在电脑端维持 PPT 比例，但在手机端 (竖屏) 则直接撑满全部剩余空间 */}
+              <div className="w-full h-full md:max-h-full md:aspect-[16/9] rounded-2xl overflow-hidden flex flex-col shadow-2xl border border-gray-200 bg-white shadow-brand-primary/10">
+                <div className="w-full flex-1 relative min-h-0">
                   {renderSlideContent(currentSlide, true)}
                 </div>
               </div>
@@ -220,10 +249,10 @@ export const Editor = () => {
           </AnimatePresence>
         </div>
 
-        {/* 底部导航栏 */}
-        <div className="w-full flex items-center justify-between px-4 py-3">
-          {/* 左侧留空，保持居中平衡 */}
-          <div className="w-[200px]" />
+        {/* 底部导航栏：移动端采用竖向堆叠（翻页器上，按钮下），PC端采用水平分布 */}
+        <div className="w-full flex flex-col md:flex-row items-center justify-between px-2 md:px-4 py-2 md:py-3 gap-3 md:gap-0 shrink-0">
+          {/* 左侧留空，仅 PC 端保持居中平衡 */}
+          <div className="hidden md:block md:w-[200px] shrink-0" />
           
           {/* 居中翻页器 */}
           <div className="flex items-center gap-4">
@@ -261,25 +290,25 @@ export const Editor = () => {
             </button>
           </div>
 
-          {/* 右侧操作按钮 */}
-          <div className="flex items-center gap-4 w-[320px] justify-end">
+          {/* 右侧操作按钮：移动端铺满，PC 端居右靠齐 */}
+          <div className="flex flex-row flex-nowrap items-center gap-3 w-full md:w-[320px] justify-center md:justify-end shrink-0 pb-4 md:pb-0 pt-1">
             <button
               onClick={() => {
                 setView('upload');
                 setCanvasOpen(true);
               }}
-              className="w-[140px] h-12 bg-orange-500 text-white rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-orange-500/20 hover:bg-orange-600 hover:scale-105 transition-all active:scale-95 group"
+              className="flex-1 min-w-0 h-12 md:h-12 bg-orange-500 text-white rounded-xl font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] hover:bg-orange-600 hover:scale-[1.02] transition-all active:scale-95 group"
             >
-              <FileSearch className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-              返回解析
+              <FileSearch className="w-5 h-5 shrink-0 group-hover:-translate-y-0.5 transition-transform" />
+              <span className="truncate">返回</span>
             </button>
 
             <button
               onClick={() => exportProjectJSON()}
-              className="w-[140px] h-12 bg-gray-900 text-white rounded-2xl font-black text-xs tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-gray-800 hover:scale-105 transition-all active:scale-95 group"
+              className="flex-1 min-w-0 h-12 md:h-12 bg-gray-900 text-white rounded-xl font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-[0_8px_20px_-6px_rgba(17,24,39,0.5)] hover:bg-black hover:scale-[1.02] transition-all active:scale-95 group"
             >
-              <Save className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-              存档
+              <Save className="w-5 h-5 shrink-0 group-hover:-translate-y-0.5 transition-transform" />
+              <span className="truncate">存档</span>
             </button>
           </div>
         </div>

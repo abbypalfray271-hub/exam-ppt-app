@@ -419,15 +419,22 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const hasMaterialImage = !!firstQ?.materialImage;
 
   return (
-    <div ref={slideContainerRef} className="w-full h-full bg-white grid overflow-hidden relative" style={{ gridTemplateColumns: isRightPanelOpen ? `${materialRatio}% auto minmax(0, 1fr)` : '1fr' }}>
-      {/* 左侧素材区：宽度强制受 Grid 控制，就算内置图片一万像素，也休想挤破屏幕边界！ */}
-      <div className="h-full bg-[#f8fafc] flex flex-col p-[1.5%] border-r border-gray-100 min-w-0 overflow-hidden relative">
+    <div 
+      ref={slideContainerRef} 
+      className={cn(
+        "w-full h-full bg-white overflow-hidden relative",
+        isRightPanelOpen ? "flex flex-col md:grid" : "block"
+      )} 
+      style={{ gridTemplateColumns: isRightPanelOpen ? `${materialRatio}% auto minmax(0, 1fr)` : '1fr' }}
+    >
+      {/* 左侧素材区：手机端占据上半部分，电脑端占据左半部分 */}
+      <div className="flex-[4] md:flex-none md:h-full bg-[#f8fafc] flex flex-col p-2 md:p-[1.5%] border-b md:border-b-0 md:border-r border-gray-100 min-h-0 md:min-w-0 overflow-hidden relative">
         <div 
-          className="flex items-center gap-2 mb-[3%] p-1 -ml-1 rounded self-start"
+          className="flex items-center gap-2 mb-1 md:mb-[3%] p-1 -ml-1 rounded self-start"
         >
           <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b]" />
           <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase flex items-center gap-1">
-            原文切片(整个切片)
+            原文切片
           </span>
         </div>
         
@@ -500,12 +507,12 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         </div>
       </div>
 
-      {/* 素材区 ↔ 题目区 可拖拽分隔条 */}
-      {isRightPanelOpen && <ResizableHandle onDrag={handleMaterialResize} />}
+      {/* 素材区 ↔ 题目区 可拖拽分隔条 (移动端隐藏此横向拖拽条) */}
+      {isRightPanelOpen && <div className="hidden md:flex"><ResizableHandle onDrag={handleMaterialResize} /></div>}
 
-      {/* 右侧题目聚合区：自动占满后续 Grid */}
+      {/* 右侧题目聚合区：自动占满后续 */}
       {isRightPanelOpen ? (
-        <div className="h-full flex flex-col p-[3%] gap-[3%] overflow-y-auto custom-scrollbar bg-white min-w-0 overflow-x-hidden relative pt-10">
+        <div className="flex-[6] md:flex-none md:h-full flex flex-col p-4 md:p-[4%] gap-6 md:gap-[4%] overflow-y-auto custom-scrollbar bg-gray-50/50 min-h-0 min-w-0 overflow-x-hidden relative w-full items-center">
           {editable && (
             <button
               onClick={() => setIsRightPanelOpen(false)}
@@ -517,76 +524,80 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
           )}
           
           {questions.map((q, qIdx) => (
-          <div key={q.id} className="flex flex-col shrink-0">
-            {/* 题干卡片 (点击展开看大图 + OCR文字) - 使用 div + role 避免 button 嵌套 */}
+          <div key={q.id} className="flex flex-col shrink-0 w-full max-w-xl mx-auto my-auto md:my-0">
+            {/* 题干高亮卡片 (点击展开看大图 + OCR文字) */}
             <div
               role="button"
               tabIndex={0}
               onClick={() => {
                 if (q.contentImage) {
-                setExpandedQuestion(q);
+                  setExpandedQuestion(q);
                   setRevealState('hidden');
-                  setIsEditingContent(false); // 每次打开弹窗默认显示特效模式
+                  setIsEditingContent(false);
                 }
               }}
               className={cn(
-                "w-full text-left flex items-start gap-[3%] p-[3%] rounded-xl transition-all duration-200 border",
+                "w-full text-left flex flex-col items-center justify-center gap-3 p-5 md:p-6 rounded-3xl transition-all duration-300 border bg-white shadow-xl hover:shadow-2xl",
                 q.contentImage 
-                  ? "border-gray-100 hover:border-brand-primary/30 hover:bg-brand-primary/5 hover:shadow-md cursor-pointer group" 
-                  : "border-transparent cursor-default"
+                  ? "border-brand-primary/20 hover:border-brand-primary/50 hover:-translate-y-1 cursor-pointer group" 
+                  : "border-gray-200 cursor-default"
               )}
             >
-              <div className="flex-1 overflow-hidden flex flex-col">
-                <div className="flex items-center gap-2">
-                  <div className="bg-[#1e293b] text-white px-2 py-0.5 rounded shadow-sm shrink-0">
-                    <span className="text-[0.7em] font-black italic tracking-tighter">题{qIdx + 1}</span>
+              <div className="flex flex-col w-full">
+                <div className="flex items-center justify-center gap-3 w-full border-b border-gray-100 pb-3">
+                  <div className="bg-[#1e293b] text-white px-3 md:px-4 py-1 rounded-full shadow-md shrink-0">
+                    <span className="text-sm md:text-base font-black italic tracking-tighter">题 {qIdx + 1}</span>
                   </div>
                   {editable ? (
                     <input
-                      className="w-12 shrink-0 text-[1.05em] font-black text-[#1e293b] bg-transparent border-none outline-none hover:bg-white focus:bg-white rounded px-1 transition-colors"
+                      className="flex-1 min-w-0 text-lg md:text-xl font-black text-center text-[#1e293b] bg-transparent border-none outline-none hover:bg-gray-50 focus:bg-gray-50 rounded px-2 transition-colors"
                       value={q.title}
                       onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
                       onClick={(e) => e.stopPropagation()}
+                      placeholder="修改题号..."
                     />
                   ) : (
-                    <h3 className="shrink-0 text-[1.1em] font-black text-[#1e293b] leading-tight whitespace-nowrap">
+                    <h3 className="flex-1 min-w-0 text-lg md:text-xl font-black text-[#1e293b] leading-tight text-center">
                       {q.title || '题目'}
                     </h3>
                   )}
-                  {/* 内容摘要紧跟标题，同一行 */}
-                  {q.content && (
-                    <p className="flex-1 text-[0.85em] text-gray-600 font-bold truncate">
-                      {q.content.replace(/\n/g, ' ')}
-                    </p>
+
+                  {/* 删除按钮 */}
+                  {q.contentImage && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('确定要删除这道题目吗？')) {
+                          removeQuestion(q.id);
+                        }
+                      }}
+                      className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all shrink-0 ml-1"
+                      title="删除题目"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                   )}
                 </div>
                 
+                {/* 内容摘要 */}
+                {q.content && (
+                  <p className="w-full text-center text-[13px] md:text-sm text-gray-500 font-bold line-clamp-2 md:line-clamp-3 mt-3 px-2">
+                    {q.content.replace(/\n/g, ' ')}
+                  </p>
+                )}
+
+                {/* 切片大图 - 显著放大且居中 */}
                 {q.contentImage && (
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {/* 补充被遗漏的题目切片图 */}
+                  <div className="mt-4 w-full flex flex-col items-center justify-center relative rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 p-2 md:p-4 group-hover:bg-brand-primary/5 transition-colors">
                     <img 
                       src={q.contentImage} 
                       alt="题目内容" 
-                      className="w-full h-auto max-h-32 object-contain rounded-md bg-white mix-blend-darken shadow-sm border border-gray-100 pointer-events-none" 
+                      className="w-full h-auto max-h-48 md:max-h-64 object-contain rounded-xl mix-blend-darken shadow-sm pointer-events-none" 
                     />
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity px-1">
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span className="text-[10px] font-black tracking-wider uppercase">点击全屏大图</span>
-                      </div>
-                      
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm('确定要删除这道题目吗？')) {
-                            removeQuestion(q.id);
-                          }
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                        title="删除题目"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 rounded-2xl pointer-events-none">
+                       <span className="bg-brand-primary text-white text-xs font-black px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+                         <Maximize2 className="w-4 h-4" /> 点击全屏查看
+                       </span>
                     </div>
                   </div>
                 )}
@@ -685,6 +696,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   ? "w-screen h-screen rounded-none" 
                   : "max-w-5xl w-full max-h-[90vh] rounded-2xl"
               )}
+              style={isDetailFullScreen ? { paddingTop: 'max(56px, env(safe-area-inset-top, 56px))' } : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 // 3-state cycle: hidden → answer → analysis → hidden
@@ -692,29 +704,29 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               }} // 点击弹窗内部空白区，触发 3 阶段切换
             >
               {/* 弹窗头部栏 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-gray-50/50 gap-2">
+                <h3 className="text-base md:text-lg font-black text-gray-800 tracking-tight flex-1 truncate">
+                  题目详情：{expandedQuestion.title}
+                </h3>
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => setIsDetailFullScreen(!isDetailFullScreen)}
-                    className="p-2 hover:bg-brand-primary/10 rounded-lg transition-colors group"
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-primary text-white rounded-xl font-black text-sm shadow-lg shadow-brand-primary/20 hover:bg-brand-primary/90 active:scale-95 transition-all"
                     title={isDetailFullScreen ? "还原窗口" : "全屏显示"}
                   >
                     {isDetailFullScreen ? (
-                      <Minimize2 className="w-5 h-5 text-brand-primary group-hover:scale-110 transition-transform" />
+                      <><Minimize2 className="w-5 h-5" /> 缩小</>
                     ) : (
-                      <Maximize2 className="w-5 h-5 text-brand-primary group-hover:scale-110 transition-transform" />
+                      <><Maximize2 className="w-5 h-5" /> 全屏</>
                     )}
                   </button>
-                  <h3 className="text-lg font-black text-gray-800 tracking-tight flex-1 truncate pr-4">
-                    题目详情：{expandedQuestion.title}
-                  </h3>
+                  <button
+                    onClick={() => setExpandedQuestion(null)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl font-black text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 transition-all"
+                  >
+                    <X className="w-5 h-5" /> 关闭
+                  </button>
                 </div>
-                <button
-                  onClick={() => setExpandedQuestion(null)}
-                  className="p-2 bg-gray-200 text-gray-600 rounded-full hover:bg-red-500 hover:text-white transition-all active:scale-95"
-                >
-                  <X className="w-5 h-5" />
-                </button>
               </div>
               
               {/* 图文混合展示区 (可滚动) */}

@@ -57,7 +57,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
-  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'diagram'>('question');
+  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'diagram' | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
   const [errorLogs, setErrorLogs] = useState<{ id: string; msg: string; type: 'error' | 'warn' }[]>([]);
   const [currentItemIdx, setCurrentItemIdx] = useState(0);
@@ -67,6 +67,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(380);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const { 
     questions, 
@@ -244,7 +245,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           const offset = offsets[nr.pageIdx];
           const [ymin, xmin, ymax, xmax] = nr.box;
           return {
-            id: crypto.randomUUID(),
+            id: (Date.now().toString(36) + Math.random().toString(36).substring(2)),
             y: offset.top + (ymin / 1000) * offset.height,
             x: (xmin / 1000) * offset.imgWidth,
             height: ((ymax - ymin) / 1000) * offset.height,
@@ -351,6 +352,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // === 鼠标事件：开始绘制 ===
   const startDrawing = (e: React.PointerEvent) => {
     if (!containerRef.current || isProcessing) return;
+    
+    // 如果没有选中任何画笔，直接允许浏览器原生行为（无需调用截断等）
+    if (!activeDrawMode) return;
+
     // 拦截触摸等事件默认的滚动和双击放大行为
     if (e.pointerType === 'touch') {
       // 在 Safari/iOS 环境中，仅依靠 touch-none 可能不够
@@ -363,7 +368,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     const y = (e.clientY - cr.top) / zoom;
 
     setSelectedId(null);
-    setDrawingRect({ id: crypto.randomUUID(), x, y, width: 0, height: 0, type: activeDrawMode });
+    setDrawingRect({ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), x, y, width: 0, height: 0, type: activeDrawMode });
     setIsDrawing(true);
     interactionRef.current = 'drawing';
   };
@@ -474,7 +479,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const currentRect = drawingRectRef.current;
         if (currentRect && Math.abs(currentRect.width || 0) > 10 && Math.abs(currentRect.height || 0) > 10) {
           const normalized: Rect = {
-            id: crypto.randomUUID(), // 使用全新 ID，与 drawingRect 的 ID 彻底分离
+            id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), // 使用全新 ID，与 drawingRect 的 ID 彻底分离
             x: currentRect.width! > 0 ? currentRect.x! : currentRect.x! + currentRect.width!,
             y: currentRect.height! > 0 ? currentRect.y! : currentRect.y! + currentRect.height!,
             width: Math.abs(currentRect.width!),
@@ -715,7 +720,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           } catch (pageErr: any) {
             const errorMsg = `第 ${i + 1} 页识别失败: ${pageErr.message}`;
             console.error(`%c[AI分页解析] ${errorMsg}`, 'color: #ef4444');
-            setErrorLogs(prev => [{ id: crypto.randomUUID(), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
+            setErrorLogs(prev => [{ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
           }
         }
 
@@ -726,7 +731,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           await new Promise(r => setTimeout(r, 500));
           const newQuestions = allResults.map((q: any, idx: number) => ({
             ...q,
-            id: crypto.randomUUID(),
+            id: (Date.now().toString(36) + Math.random().toString(36).substring(2)),
             order: questions.length + idx + 1,
             type: q.type || 'essay'
           }));
@@ -848,7 +853,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               }
               const errorMsg = `第 ${i + 1} 个区域解析失败: ${data.error}`;
               console.error(`%c[AI解析] ❌ ${errorMsg}`, 'color: #ef4444');
-              setErrorLogs(prev => [{ id: crypto.randomUUID(), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
+              setErrorLogs(prev => [{ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
               return null;
             }
             
@@ -861,7 +866,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               return performParse();
             }
             const errorMsg = `第 ${i + 1} 个区域网络错误: ${err.message}`;
-            setErrorLogs(prev => [{ id: crypto.randomUUID(), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
+            setErrorLogs(prev => [{ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
             return null;
           }
         };
@@ -871,7 +876,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           // 3. 聚合结果并存储 (由于移除了分片，此处的 parsedQuestions 已经是最终针对该区域的结果)
           const finalizedQuestions: Question[] = parsedQuestions.map((q: any, subIdx: number) => ({
             ...q,
-            id: crypto.randomUUID(),
+            id: (Date.now().toString(36) + Math.random().toString(36).substring(2)),
             image: slice.base64,
             contentImage: slice.base64, // 针对单题框选，预览图直接使用全景图
             order: questions.length + cumulativeOffset + subIdx + 1,
@@ -945,45 +950,52 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           {/* 模式切换滑轨 */}
           <div className="flex bg-gray-100 p-1 rounded-full shrink-0">
             <button
-              onClick={() => setActiveDrawMode('question')}
+              onClick={() => setActiveDrawMode(prev => prev === 'question' ? null : 'question')}
               className={cn(
                 "px-5 py-2.5 rounded-full text-sm font-black transition-all flex items-center gap-2 whitespace-nowrap",
-                activeDrawMode === 'question' ? "bg-white text-brand-primary shadow-sm" : "text-gray-400 hover:text-gray-600"
+                activeDrawMode === 'question' 
+                  ? "bg-brand-primary text-white shadow-md shadow-brand-primary/30" 
+                  : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
               )}
             >
-              <div className="w-3.5 h-3.5 rounded bg-brand-primary/20 border-2 border-brand-primary" />
+              <div className={cn("w-3.5 h-3.5 rounded border-2 transition-colors", activeDrawMode === 'question' ? "bg-white/20 border-white" : "bg-brand-primary/20 border-brand-primary")} />
               题目
             </button>
             <button
-              onClick={() => setActiveDrawMode('answer')}
+              onClick={() => setActiveDrawMode(prev => prev === 'answer' ? null : 'answer')}
               className={cn(
                 "px-5 py-2.5 rounded-full text-sm font-black transition-all flex items-center gap-2 whitespace-nowrap",
-                activeDrawMode === 'answer' ? "bg-white text-red-500 shadow-sm" : "text-gray-400 hover:text-gray-600"
+                activeDrawMode === 'answer' 
+                  ? "bg-red-500 text-white shadow-md shadow-red-500/30" 
+                  : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
               )}
             >
-              <div className="w-3.5 h-3.5 rounded bg-red-500/20 border-2 border-red-500" />
+              <div className={cn("w-3.5 h-3.5 rounded border-2 transition-colors", activeDrawMode === 'answer' ? "bg-white/20 border-white" : "bg-red-500/20 border-red-500")} />
               答案掩码
             </button>
             <div
-              className="px-5 py-2.5 rounded-full text-sm font-black flex items-center gap-2 text-purple-500 opacity-80 cursor-default whitespace-nowrap"
+              className="px-5 py-2.5 rounded-full text-sm font-black flex items-center gap-2 text-purple-600/60 cursor-default whitespace-nowrap"
             >
-              <div className="w-3.5 h-3.5 rounded bg-purple-500/20 border-2 border-purple-500" />
+              <div className="w-3.5 h-3.5 rounded bg-purple-500/10 border-2 border-purple-500/30" />
               分析 <span className="text-[10px] text-purple-400">自动</span>
             </div>
             <button
-              onClick={() => setActiveDrawMode('diagram')}
+              onClick={() => setActiveDrawMode(prev => prev === 'diagram' ? null : 'diagram')}
               className={cn(
                 "px-5 py-2.5 rounded-full text-sm font-black transition-all flex items-center gap-2 whitespace-nowrap",
-                activeDrawMode === 'diagram' ? "bg-white text-emerald-500 shadow-sm" : "text-gray-400 hover:text-emerald-400"
+                activeDrawMode === 'diagram' 
+                  ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30" 
+                  : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
               )}
             >
-              <div className="w-3.5 h-3.5 rounded bg-emerald-500/20 border-2 border-emerald-500" />
+              <div className={cn("w-3.5 h-3.5 rounded border-2 transition-colors", activeDrawMode === 'diagram' ? "bg-white/20 border-white" : "bg-emerald-500/20 border-emerald-500")} />
               插图
             </button>
           </div>
 
+          {/* （移除了原挤在顶端右侧的页面管理入口，已转移至底栏） */}
           {/* 统计信息药丸 */}
-          <div className="flex items-center justify-center gap-4 bg-gray-100/80 px-5 py-2.5 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0 whitespace-nowrap">
+          <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-5 py-2.5 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0 whitespace-nowrap">
             <span className="flex items-center gap-1.5 underline decoration-gray-300 decoration-2 underline-offset-4">
               {selectedPageIndices.size}/{pages.length} 页
             </span>
@@ -1019,7 +1031,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           )}
         </div>
 
-        <div className="flex flex-nowrap items-center gap-3 w-full md:w-auto md:ml-auto">
+        <div className="hidden md:flex flex-nowrap items-center gap-3 w-auto ml-auto">
           <button
             onClick={() => setView('editor')}
             className="flex-1 md:flex-none px-6 py-2.5 bg-orange-500 text-white text-[13px] font-black rounded-full border border-orange-600 shadow-lg active:scale-95 whitespace-nowrap"
@@ -1044,27 +1056,49 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       </div>
 
       {/* === 主区域：左侧缩略图 + 右侧连续滚动画布 === */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* 左侧页面导航缩略图 - 保持常驻显示，适配多种屏幕 */}
         {pages.length >= 1 && (
-          <div 
-            className="flex bg-white flex-col shrink-0 overflow-hidden relative"
-            style={{ width: `${sidebarWidth}px` }}
-          >
-            {/* 拖拽调整宽度的把手 */}
+          <>
+            {/* 移动端遮罩层 */}
+            {isMobileSidebarOpen && (
+              <div 
+                className="fixed inset-0 bg-black/50 z-[60] md:hidden backdrop-blur-sm"
+                onClick={() => setIsMobileSidebarOpen(false)}
+              />
+            )}
             <div 
-              className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-brand-primary active:bg-brand-primary/80 transition-colors z-50 pointer-events-auto"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                interactionRef.current = 'resizing-sidebar';
-                document.body.style.cursor = 'col-resize';
-              }}
-            />
-            {/* 右侧边框线 - 单独一层以免跟背景冲突 */}
-            <div className="absolute top-0 right-0 w-px h-full bg-gray-200 pointer-events-none z-40" />
+              className={cn(
+                "flex bg-white flex-col shrink-0 overflow-hidden transition-transform duration-300",
+                "fixed inset-y-0 left-0 z-[70] md:relative md:z-auto h-full max-w-[85vw] md:max-w-none",
+                isMobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"
+              )}
+              style={{ width: `${sidebarWidth}px` }}
+            >
+              {/* 移动端顶栏（带关闭按钮） */}
+              <div className="md:hidden flex items-center justify-between p-4 border-b bg-white">
+                <span className="text-sm font-black text-gray-800 flex items-center gap-2">
+                  <LayoutList className="w-5 h-5" /> 页面管理
+                </span>
+                <button onClick={() => setIsMobileSidebarOpen(false)} className="p-2 bg-gray-100 rounded-full active:scale-95 text-gray-500 hover:text-gray-800 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            <input 
+              {/* 拖拽调整宽度的把手 (仅桌面端显示) */}
+              <div 
+                className="hidden md:block absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-brand-primary active:bg-brand-primary/80 transition-colors z-[50] pointer-events-auto"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  interactionRef.current = 'resizing-sidebar';
+                  document.body.style.cursor = 'col-resize';
+                }}
+              />
+              {/* 右侧边框线 - 单独一层以免跟背景冲突 */}
+              <div className="absolute top-0 right-0 w-px h-full bg-gray-200 pointer-events-none z-40" />
+
+              <input 
               type="file" 
               ref={fileInputRef} 
               className="hidden" 
@@ -1166,8 +1200,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 <span className="text-xs font-black uppercase tracking-widest">添加照片</span>
               </button>
             </div>
-
+            {/* 底部安全防挡占位符 */}
+            <div className="h-20 w-full shrink-0 md:hidden" />
           </div>
+          </>
         )}
 
         {/* 右侧：可滚动画布区域，所有页面纵向排列 */}
@@ -1180,11 +1216,17 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             <div
               ref={containerRef}
               className={cn(
-                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300 origin-top-center touch-none",
-                !isProcessing ? "cursor-crosshair" : "opacity-50"
+                "relative shadow-2xl border border-gray-200 rounded-sm bg-white inline-flex flex-col transition-opacity duration-300 origin-top-center",
+                activeDrawMode ? "touch-none" : "touch-auto",
+                !isProcessing 
+                  ? (activeDrawMode ? "cursor-crosshair" : "cursor-grab") 
+                  : "opacity-50"
               )}
               style={{ width: `${zoom * 100}%`, maxWidth: 'none' }}
-              onPointerDown={startDrawing}
+              onPointerDown={(e) => {
+                if (selectedId) setSelectedId(null);
+                else startDrawing(e);
+              }}
             >
               {/* === 纵向排列所有页面图片 === */}
               {pages.map((page, idx) => (
@@ -1265,7 +1307,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                           <div
                             key={pos}
                             className={cn(
-                              "absolute w-3 h-3 bg-white border-2 rounded-full z-40 shadow-sm",
+                              "absolute w-3 h-3 bg-white border-2 rounded-full z-[60] shadow-sm flex items-center justify-center pointer-events-auto",
                               isQuestion ? "border-brand-secondary" : "border-red-500",
                               pos === 'nw' && "-left-1.5 -top-1.5 cursor-nw-resize",
                               pos === 'n' && "left-1/2 -ml-1.5 -top-1.5 cursor-n-resize",
@@ -1277,7 +1319,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                               pos === 'w' && "-left-1.5 top-1/2 -mt-1.5 cursor-w-resize"
                             )}
                             onPointerDown={(e) => startResizing(e, rect.id, pos)}
-                          />
+                          >
+                            {/* 隐形扩大点击热区 (Fat Finger 优化) */}
+                            <div className="absolute inset-[-15px] bg-transparent" />
+                          </div>
                         ))}
                       </>
                     )}
@@ -1285,18 +1330,21 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     {/* 删除按钮 */}
                     {!isProcessing && (
                       <button
+                        onPointerDown={(e) => e.stopPropagation()} // 防止误触底下的画布事件导致取消选取
                         onClick={(e) => {
                           e.stopPropagation();
                           setRects(prev => prev.filter(r => r.id !== rect.id));
                           setSelectedId(null);
                         }}
                         className={cn(
-                          "absolute -top-3 -right-3 text-white p-1.5 rounded-full shadow-lg z-50 transition-transform hover:scale-110 active:scale-90",
+                          "absolute -top-4 -right-4 text-white p-2 rounded-full shadow-lg z-[70] transition-transform hover:scale-110 active:scale-90 flex items-center justify-center",
                           isSelected ? "block" : "hidden group-hover:block",
                           isQuestion ? "bg-red-500" : "bg-gray-800"
                         )}
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5 md:w-3 md:h-3" />
+                        {/* 隐形扩大点击热区，确保其在 z-[70] 能优先于下面的手柄抢到事件 */}
+                        <div className="absolute inset-[-15px] bg-transparent" />
                       </button>
                     )}
                   </div>
@@ -1374,6 +1422,39 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </AnimatePresence>
         </div>
       )}
+
+      {/* === 移动端底部悬浮操作栏 (Fixed Bottom Bar) === */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 pb-safe bg-white/95 backdrop-blur-md border-t z-[80] shadow-[0_-10px_20px_rgba(0,0,0,0.05)] flex items-center justify-between gap-2.5">
+        
+        {/* 新增：一触即达的全局页面抽屉按钮 */}
+        <button
+          onClick={() => setIsMobileSidebarOpen(true)}
+          className="flex flex-col items-center justify-center gap-1 w-[68px] h-[52px] bg-indigo-50 text-indigo-600 rounded-xl active:scale-95 transition-transform shrink-0"
+        >
+          <LayoutList className="w-5 h-5" /> 
+          <span className="text-[10px] font-black leading-none">{selectedPageIndices.size}/{pages.length}页</span>
+        </button>
+
+        <button
+          onClick={() => setView('editor')}
+          className="flex-1 h-[52px] bg-orange-500 text-white font-black text-[15px] rounded-xl shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] active:scale-95 transition-all flex items-center justify-center shrink-0 hover:bg-orange-600"
+        >
+          跳过
+        </button>
+
+        <button
+          onClick={handleConfirm}
+          disabled={isProcessing}
+          className="flex-[1.5] h-[52px] bg-brand-primary text-white font-black text-[15px] rounded-xl shadow-[0_8px_20px_-6px_rgba(59,130,246,0.5)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-80 transition-all flex items-center justify-center gap-2 shrink-0 border-none"
+        >
+          {isProcessing ? (
+            <><Loader2 className="w-5 h-5 animate-spin" /> {Math.floor(progress)}%</>
+          ) : (
+            <><CheckCircle2 className="w-5 h-5" /> 立即解析</>
+          )}
+        </button>
+      </div>
+
     </div>
   );
 };

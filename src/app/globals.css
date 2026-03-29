@@ -57,3 +57,16 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* 核心防翻车：全局禁用双击放大，只允许单指滚动平移（彻底模拟原生 App） */
+* {
+  touch-action: pan-x pan-y;
+}
+
+/* iOS 安全区避让工具类：防止内容被刘海/灵动岛/底部横条遮挡 */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

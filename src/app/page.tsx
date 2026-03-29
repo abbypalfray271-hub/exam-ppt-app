@@ -6,6 +6,7 @@ import { Editor } from '@/components/Editor';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Presentation, Sparkles, Wand2 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
+import { cn } from '@/lib/utils';
 
 
 
@@ -23,10 +24,10 @@ export default function Home() {
   }, [currentView]);
 
   return (
-    <main className="min-h-screen bg-[#F8FAFC] overflow-hidden relative">
+    <main className="h-[100dvh] bg-[#F8FAFC] overflow-hidden flex flex-col relative">
       {/* 背景装饰 */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-brand-primary/5 blur-[120px] rounded-full" />
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-brand-secondary/5 blur-[120px] rounded-full" />
+      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-brand-primary/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-brand-secondary/5 blur-[120px] rounded-full pointer-events-none" />
 
       <nav className="relative z-10 px-8 py-6 flex justify-between items-center max-w-7xl mx-auto">
         <div className="flex items-center gap-2">
@@ -43,7 +44,7 @@ export default function Home() {
 
       </nav>
 
-      <section className="relative z-10 pt-4 pb-20">
+      <section className={cn("relative z-10 flex flex-col flex-1 min-h-0", currentView === 'upload' ? "pt-4 pb-20 overflow-y-auto" : "")}>
         <AnimatePresence mode="wait">
           {currentView === 'upload' ? (
             <motion.div
@@ -79,7 +80,7 @@ export default function Home() {
               key="editor"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="w-full"
+              className="w-full flex-1 flex flex-col min-h-0 relative"
             >
               <Editor />
             </motion.div>
@@ -87,8 +88,8 @@ export default function Home() {
         </AnimatePresence>
       </section>
 
-      {/* 终极缓存验证探针：版本号 */}
-      <div className="fixed bottom-1 right-2 text-[8px] text-gray-200/50 pointer-events-none z-[9999] select-none font-mono">
+      {/* 终极缓存验证探针：版本号 移至顶部防止遮挡 */}
+      <div className="fixed top-1 right-2 text-[8px] text-gray-200/50 pointer-events-none z-[9999] select-none font-mono">
         v202603280046
       </div>
     </main>

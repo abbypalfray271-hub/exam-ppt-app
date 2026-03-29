@@ -17,6 +17,17 @@ export const metadata: Metadata = {
   description: "上传试卷，由 AI 自动切割题目、生成解析、并排版成精美的讲解课件。",
 };
 
+import type { Viewport } from "next";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#ffffff",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
