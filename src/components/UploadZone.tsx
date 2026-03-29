@@ -342,10 +342,10 @@ export const UploadZone = () => {
                   className="absolute inset-0 bg-brand-secondary/10 backdrop-blur-md z-[45] flex flex-col items-center justify-center p-12 text-center"
                 >
                   <Loader2 className="w-16 h-16 text-brand-secondary animate-spin mb-6" />
-                  <h3 className="text-2xl font-black text-gray-900 mb-3">AI 正在深度解析文档</h3>
+                  <h3 className="text-2xl font-black text-gray-900 mb-3">正在处理文档</h3>
                   <div className="space-y-2">
                     <p className="text-gray-500 text-sm max-w-sm mx-auto">
-                      正在提取题目、解析与解题思路...
+                      正在转换页面为高清图片，请稍候...
                     </p>
                   </div>
                 </motion.div>
@@ -385,19 +385,6 @@ export const UploadZone = () => {
       )}
 
       <div className="fixed bottom-6 right-6 z-50 flex items-center gap-4">
-        {preview && (
-          <button
-            onClick={() => {
-              setAutoDetectedRects([]);
-              setCanvasOpen(true);
-            }}
-            className="flex items-center gap-2 px-8 py-3.5 bg-orange-500 text-white rounded-2xl text-sm font-black shadow-xl hover:bg-orange-600 transition-all active:scale-95 group border-none"
-          >
-            <Wand2 className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-            返回预处理
-          </button>
-        )}
-
         <button
           onClick={() => importProjectJSON()}
           className="flex items-center gap-2 px-8 py-3.5 bg-gray-900 text-white rounded-2xl text-sm font-black shadow-xl hover:bg-black transition-all active:scale-95 group border-none"

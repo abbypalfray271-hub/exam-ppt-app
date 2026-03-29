@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -85,12 +85,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // === [NEW] 智能初始化：进入后默认全选所有页面，方便直接一键“解析” ===
-  useEffect(() => {
-    if (pages.length > 0 && selectedPageIndices.size === 0) {
-      setSelectedPageIndices(new Set(pages.map((_, i) => i)));
-    }
-  }, [pages.length]); // 只有在页数变化或初始载入时检查
+  // No default select-all: user picks pages manually
+
 
   // [NEW] 处理侧边栏加页
   const handleAddPage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1394,7 +1390,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       {/* === 悬浮错误日志面板 === */}
       {errorLogs.length > 0 && (
-        <div className="absolute bottom-6 right-6 z-[100] flex flex-col gap-2 max-w-[320px] w-full pointer-events-none">
+        <div className="absolute bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 z-[100] flex flex-col gap-2 md:max-w-[320px] w-auto">
           <AnimatePresence>
             {errorLogs.map((log) => (
               <motion.div
@@ -1402,7 +1398,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 initial={{ opacity: 0, x: 50, scale: 0.9 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 20, scale: 0.9 }}
-                className="bg-red-50 border border-red-200 p-3 rounded-xl shadow-xl flex items-start gap-2 pointer-events-auto group"
+                onClick={() => setErrorLogs(prev => prev.filter(l => l.id !== log.id))}
+                className="bg-red-50 border border-red-200 p-3 rounded-xl shadow-xl flex items-start gap-2 cursor-pointer active:scale-95 transition-transform"
               >
                 <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
                   <X className="w-3 h-3 text-red-500" />
@@ -1411,12 +1408,9 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                   <p className="text-[11px] font-black text-red-900 leading-tight">解析发生错误</p>
                   <p className="text-[10px] text-red-600 mt-0.5 break-all line-clamp-2" title={log.msg}>{log.msg}</p>
                 </div>
-                <button
-                  onClick={() => setErrorLogs(prev => prev.filter(l => l.id !== log.id))}
-                  className="text-red-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+                <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                  <X className="w-4 h-4" />
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
