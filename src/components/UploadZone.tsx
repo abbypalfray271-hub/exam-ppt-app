@@ -157,6 +157,24 @@ export const UploadZone = () => {
 
   return (
     <div className="w-full max-w-2xl mx-auto p-6">
+      {/* 始终挂载的文件输入控件，确保 preview 切换时 fileInputRef 不为 null */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*,application/pdf,.pdf"
+        multiple
+        onChange={(e) => {
+          const files = e.target.files;
+          if (!files) return;
+          // 如果当前已经在预览模式，则默认为追加模式
+          // 否则为替换模式
+          const mode = preview ? 'append' : 'replace';
+          handleFiles(Array.from(files), mode);
+          e.target.value = '';
+        }}
+      />
+      
       <AnimatePresence mode="wait">
         {!preview ? (
           <motion.div
@@ -176,22 +194,6 @@ export const UploadZone = () => {
               fileInputRef.current?.click();
             }}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              accept="image/*,application/pdf,.pdf"
-              multiple
-              onChange={(e) => {
-                const files = e.target.files;
-                if (!files) return;
-                // 如果当前已经在预览模式，则默认为追加模式
-                // 否则为替换模式
-                const mode = preview ? 'append' : 'replace';
-                handleFiles(Array.from(files), mode);
-                e.target.value = '';
-              }}
-            />
             
             <div className="bg-brand-primary/10 p-4 rounded-2xl mb-6">
               <Upload className="w-12 h-12 text-brand-primary" />
@@ -313,16 +315,18 @@ export const UploadZone = () => {
                 </button>
               )}
               
-              {/* [NEW] 允许在预览态继续添加照片（移除仅限 image 的限制，方便所有模式下补拍） */}
-              <button 
-                className="px-6 py-3 bg-brand-primary text-white border border-white/20 rounded-full font-bold shadow-2xl hover:scale-105 transition-all flex items-center gap-2 whitespace-nowrap z-50"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-              >
-                <ImageIcon className="w-5 h-5" /> 继续拍照/添加
-              </button>
+              {/* [NEW] 允许在预览态继续添加照片（由于 PDF 本身是静态的一般不追加，此处限定为 image 模式或 PDF 各页均显示） */}
+              {fileType === 'image' && (
+                <button 
+                  className="px-6 py-3 bg-gray-900 text-white border border-gray-700 rounded-full font-bold shadow-xl hover:bg-black transition-all flex items-center gap-2 whitespace-nowrap"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <ImageIcon className="w-5 h-5" /> 继续拍照/添加
+                </button>
+              )}
             </div>
 
             <AnimatePresence>

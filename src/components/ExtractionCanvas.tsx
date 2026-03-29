@@ -66,6 +66,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); // 缩放倍率，默认为 1.0 (100%)
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
+  const [sidebarWidth, setSidebarWidth] = useState(380);
 
   const { 
     questions, 
@@ -162,7 +163,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     return result;
   }, [rects]);
 
-  const interactionRef = useRef<'none' | 'drawing' | 'moving' | 'resizing'>('none');
+  const interactionRef = useRef<'none' | 'drawing' | 'moving' | 'resizing' | 'resizing-sidebar'>('none');
   const startPosRef = useRef({ x: 0, y: 0 });
   const initialRectRef = useRef<Rect | null>(null);
   // 镜像 drawingRect 的 ref，用于 handleMouseUp 中读取最新值，避免嵌套 setState 导致重复 key
@@ -460,6 +461,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           return r;
         }));
       }
+      else if (interactionRef.current === 'resizing-sidebar') {
+        const newWidth = e.clientX;
+        // 限制侧边栏宽度在 200px 到 屏幕宽度的一半之间，且最大不超过 800px
+        setSidebarWidth(Math.max(200, Math.min(newWidth, window.innerWidth * 0.5, 800)));
+      }
     };
 
     const handleMouseUp = () => {
@@ -486,6 +492,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       setResizeHandle(null);
       initialRectRef.current = null;
       setIsDrawing(false);
+      document.body.style.cursor = '';
     };
 
     window.addEventListener('pointermove', handleMouseMove);
@@ -1005,8 +1012,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           {onClose && (
             <button
               onClick={onClose}
-              className="px-4 py-4 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 active:scale-95 shrink-0 flex items-center justify-center border-2 border-white/40"
-              title="关闭并返回上传首屏"
+              className="px-3 py-3 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 active:scale-95 shrink-0 flex items-center justify-center"
             >
               <X className="w-5 h-5 stroke-[4px]" />
             </button>
@@ -1041,7 +1047,23 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧页面导航缩略图 - 保持常驻显示，适配多种屏幕 */}
         {pages.length >= 1 && (
-          <div className="flex w-72 md:w-80 lg:w-[380px] bg-white border-r flex-col shrink-0 overflow-hidden">
+          <div 
+            className="flex bg-white flex-col shrink-0 overflow-hidden relative"
+            style={{ width: `${sidebarWidth}px` }}
+          >
+            {/* 拖拽调整宽度的把手 */}
+            <div 
+              className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-brand-primary active:bg-brand-primary/80 transition-colors z-50 pointer-events-auto"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                interactionRef.current = 'resizing-sidebar';
+                document.body.style.cursor = 'col-resize';
+              }}
+            />
+            {/* 右侧边框线 - 单独一层以免跟背景冲突 */}
+            <div className="absolute top-0 right-0 w-px h-full bg-gray-200 pointer-events-none z-40" />
+
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -1061,10 +1083,10 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     else setSelectedPageIndices(new Set(pages.map((_, i) => i)));
                   }}
                   className={cn(
-                    "px-6 py-3 rounded-2xl text-[13px] font-black transition-all shadow-md active:scale-95 flex items-center justify-center min-w-[100px] border-2",
+                    "px-4 py-2 rounded-xl text-[13px] font-black transition-all shadow-sm active:scale-95 flex items-center justify-center min-w-[80px]",
                     selectedPageIndices.size === pages.length 
-                      ? "bg-white text-brand-primary border-brand-primary hover:bg-brand-primary/5" 
-                      : "bg-brand-primary text-white border-brand-primary hover:bg-brand-primary/90 shadow-brand-primary/20"
+                      ? "bg-gray-200 text-gray-600 hover:bg-gray-300" 
+                      : "bg-brand-primary text-white hover:bg-brand-primary/90 shadow-brand-primary/10"
                   )}
                 >
                   {selectedPageIndices.size === pages.length ? '取消全选' : '全选'}
@@ -1133,15 +1155,15 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                 );
               })}
 
-              {/* [NEW] 侧边栏底部追加照片按钮 - 强化对比度防止“不可见” */}
+              {/* [NEW] 侧边栏底部追加照片按钮 */}
               <button 
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-[3/4] border-4 border-dashed border-gray-200 rounded-3xl flex flex-col items-center justify-center gap-3 text-gray-500 hover:border-brand-primary hover:text-brand-primary hover:bg-brand-primary/5 transition-all group shrink-0"
+                className="w-full aspect-[3/4] border-4 border-dashed border-gray-100 rounded-3xl flex flex-col items-center justify-center gap-3 text-gray-400 hover:border-brand-primary hover:text-brand-primary hover:bg-brand-primary/5 transition-all group shrink-0"
               >
-                <div className="p-4 bg-gray-100 rounded-2xl group-hover:bg-brand-primary/10 transition-colors">
-                  <ImageIcon className="w-8 h-8 opacity-70" />
+                <div className="p-4 bg-gray-50 rounded-2xl group-hover:bg-brand-primary/10">
+                  <ImageIcon className="w-8 h-8" />
                 </div>
-                <span className="text-[11px] font-black uppercase tracking-widest">添加新页面</span>
+                <span className="text-xs font-black uppercase tracking-widest">添加照片</span>
               </button>
             </div>
 
