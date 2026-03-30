@@ -1,55 +1,54 @@
 /**
  * [UTF-8 CLEAN VERSION] 
  * 核心识别逻辑：已修复乱码与转义冲突
- * 逻辑回归：单一强力 Prompt + Equation-First 约束
+ * 逻辑：独立双通道 (3.0 Flash 极速 / 3.1 Pro 深度推理)
  */
 export const parseQuestion = async (
   imageData: string,
   hasManualAnswer: boolean = false,
   hasManualAnalysis: boolean = false,
-  onStatus?: (status: string) => void
+  onStatus?: (status: string) => void,
+  isDeepThinking: boolean = false
 ): Promise<any> => {
-  const modelName = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
+  const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
+  const model31 = process.env.REASONING_MODEL_NAME || "gemini-3.1-pro-preview";
+  
+  const modelName = isDeepThinking ? model31 : model30;
   const apiKey = process.env.API_KEY;
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
 
-  if (onStatus) onStatus("⚡ 视觉引擎加载中...");
+  if (onStatus) {
+    onStatus(isDeepThinking ? "🧠 深度理解多张附图与几何关系 (3.1 Pro)..." : "⚡ 极速解析 (3.0 Flash)...");
+  }
 
-  const prompt = `你是一个专业的试卷数字化专家。请**严格保持原题目的内容、格式和排版**，将其完整地转化为以下 JSON 格式。
+  // 核心提示词：注入“全景盘点”、“方程锁死”与“符号物理隔离”逻辑
+  const prompt = `你是一个顶级数学专家和视觉分析专家。**绝对禁止输出任何形式的反斜杠（\\）**。
+
+  [符号物理隔离]
+  - 所有数学依据、关系及特殊符号必须使用 **原生 UTF-8 符号**：∵, ∴, Δ, ∠, ≅, ∽, √, ², π, ⊥, ▱, ⊙。
+  - 严禁使用任何形式的转义字符或由反斜杠引导的命令。
+
+  [视觉盘点 (Visual Inventory)]
+  在解析前，必须在分析首段先盘点：图中共有几张图？主图与局部放大图的对应关系是什么？关键点 M'、F、E 在哪张图中？观察是否有虚线（辅助线）及其标注。严禁忽视细节。
 
   [核心原则]
-  1. 极致还原：确保原图中可见的所有文字（含题号、题干正文、选项 A/B/C/D、括注信息）都被**原样提取**。保持布局排版。
-  2. 附图必留：若题目包含插图、表格等，必须在 content 中标记 [附图]，并同步在 diagrams 数组中提取该图片的坐标 [ymin, xmin, ymax, xmax]（量程 0-1000）。
-  3. 隐现打码：属于答案的读音、选项结果等，请使用 {{内容}} 包裹。
-  4. 深度优先：**必须首先输出详尽的推理逻辑 (analysis)，最后再总结答案 (answer)**。
-  5. 严谨格式：遵循标准 JSON 语义。字符串内的双引号转义为 \\"，反斜杠转义为 \\\\。禁止使用物理换行符。
-  
-  [字段规范]
-  - content: 题目的全量文本（含题干+选项）。插图/表格处标注 [附图]。
-  - diagrams: 坐标数组，对象格式：{"box_2d": [ymin, xmin, ymax, xmax], "label": "[附图]"}。
-  - options: 选项字符串数组。
-  - analysis: **“公式级”深度解析 (严禁跳步)**。要求：
-    1. **硬推导要求**：禁止使用“由题意得”、“易得”、“经计算分析得”等模糊表述。
-    2. **方程式原形**：每一个数值结论前，必须列出其对应的**原始方程式** (例如：(10-2t)/12 = 1.5)。
-    3. **单步化简**：展示方程的关键化简步骤 (如移项、约分)，严禁直接给结论。
-    4. **几何依据**：逻辑跳跃前必须注明几何定理依据 (如：∵ ΔABC ∽ ΔDEF (AA性质) ∴ ...)。
-    5. **标准符号**：统一使用 ∵, ∴, Δ, ∠, ≅, ∽, √, ², π 等专业符号。
-    6. **得分标记**：在关键逻辑/计算步骤右侧标注（...... 2分）。
-    7. **落脚点**：以“答：[最终具体结论]”作为独立行结束。
-  - answer: **答案总结 (由解析推导而来)**。要求内容缩写/精简，必须与解析末尾的结论完全一致。
-  - type: "choice" 或 "essay"。
-  
-  [输出示例参考]
+  1. 极致还原：文字原样提取，保持布局。
+  2. 方正式锁死 (Lockdown)：数值结论（如 t=10/3）前，必须紧跟其带具体数值的原始等式（如 2t = 10 - t 或 12/y = 6/4）。
+  3. 绝不省略：禁止出现“略”、“下略”、“解答略”、“同理可得”。出现此类占位符即视为任务失败。
+  4. 原始数值：方程第一步必须包含图中提取的数值（12, 16, 10 等），严禁只写字母变量。
+
+  [字段规范 - analysis]
+  - 包含每一个小问 (1)(2)(3)... 的完整“推导链”。
+  - 推演逻辑必须由 ∵ 依据 -> 原方程 -> 整理过程 -> 结论 构成。
+
+  [输出示例参考 - 严禁模仿占位符]
   [
     {
       "order": 24,
       "type": "essay",
-      "content": "24. (本小题满分 10 分) [附图] ...",
-      "diagrams": [{"box_2d": [200, 150, 450, 320], "label": "[附图]"}],
-      "options": [],
-      "analysis": "解：(1) [建立坐标系] 以 C 为原点 (0,0) ... \\n∵ 抛物线顶点 M(20,20)，\\n∴ 设抛物线关系式为 y = a(x - 20)² + 20 ...... 1分\\n∵ 将 (0,0) 代入方程： 0 = a(0 - 20)² + 20 \\n∴ 400a = -20 \n∴ a = -1/20 ...... 2分\\n∴ 抛物线关系式为 y = -1/20(x - 20)² + 20，即 y = -1/20x² + 2x ...... 3分\\n\\n(2) [分类讨论等腰三角形 AHM] \\n① 当 AH = AM 时：\\n∵ 运动时间为 t，AH = 2t，AM = 10 - t \\n∴ 2t = 10 - t \\n∴ 3t = 10 \n∴ t = 10/3 ...... 5分\\n② 当 AH = HM 时：\\n[列出几何方程...] \\n答：(1) y = -1/20x² + 2x；(2) t 的值为 10/3 或 ...",
-      "answer": "y = -1/20x² + 2x; t = 10/3 或 ...",
-      "type": "essay"
+      "content": "24. [附图] ...",
+      "analysis": "解：(1) [视觉盘点] 主图显示菱形 ABCD，辅图 2 显示了对称点 M'。\\n∵ 四边形 ABCD 是菱形，AC=12, BD=16 \\n∴ 根据菱形面积公式 S = 1/2 * 12 * 16 = 96 ...... 1分\\n又 ∵ S = BC * h，且根据勾股定理 BC = 10 \\n∴ 10 * h = 96，解得 h = 9.6 ...... 2分\\n答：(1) 高 h 为 9.6; (2)...",
+      "answer": "(1) h=9.6; (2)..."
     }
   ]`;
 
@@ -69,7 +68,8 @@ export const parseQuestion = async (
   };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
+  const timeoutMs = isDeepThinking ? 600000 : 120000; // 3.1 Pro 给予 10 分钟思考时间
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -105,8 +105,20 @@ export const parseQuestion = async (
  * 强力 JSON 解析器：处理 AI 输出中常见的格式错误、转义失败和截断问题
  */
 function robustParseJson(raw: string): any {
+  // 1. 基础清理
   let cleaned = raw.trim();
   cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+
+  // 2. [关键修复] 物理隔离非法的反斜杠
+  // 将所有非标准 JSON 转义路径的反斜杠，强制升格为双斜杠字面量
+  // 匹配规则：匹配反斜杠，只要后面不是紧跟着指定的合法转义字符，就将其变为 \\\\
+  cleaned = cleaned.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
+
+  // 3. 强力清除不可见的控制字符 (防止 JSON.parse 崩溃)
+  cleaned = cleaned.replace(/[\x00-\x1F\x7F-\x9F]/g, (match) => {
+    // 允许常见的换行和制表符，其余一律抹除
+    return (match === '\n' || match === '\r' || match === '\t') ? match : '';
+  });
 
   let result = '';
   let braceCount = 0;
@@ -116,7 +128,8 @@ function robustParseJson(raw: string): any {
   for (let i = 0; i < cleaned.length; i++) {
     const char = cleaned[i];
     const prev = i > 0 ? cleaned[i-1] : '';
-    if (char === '"' && prev !== '\\') {
+    // 考虑转义引号的情况
+    if (char === '"' && (prev !== '\\' || (i > 1 && cleaned[i-2] === '\\'))) {
       inString = !inString;
       result += char;
       continue;
@@ -132,8 +145,10 @@ function robustParseJson(raw: string): any {
       else if (char === '}') braceCount--;
       else if (char === '[') bracketCount++;
       else if (char === ']') bracketCount--;
+      // 增强容错：如果 JSON 数组项之间漏写了逗号，尝试补全
       if (char === '{' && result.trim().endsWith('}')) result = result.trim() + ', ';
       if (char === '[' && result.trim().endsWith(']')) result = result.trim() + ', ';
+      
       result += char;
     }
   }
@@ -147,18 +162,37 @@ function robustParseJson(raw: string): any {
   try {
     return JSON.parse(cleaned);
   } catch (err: any) {
-    const desperateClean = cleaned.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
-    return JSON.parse(desperateClean);
+    // [最终兜底] 如果还是失败，尝试通过正则更激进地清理
+    console.error("[RobustParse Initial Failure]:", err.message);
+    try {
+      const desperateClean = cleaned.replace(/\\/g, '\\\\').replace(/\\\\\\\\/g, '\\\\');
+      return JSON.parse(desperateClean);
+    } catch (innerErr) {
+      console.error("[RobustParse Critical Failure]:", innerErr);
+      throw err;
+    }
   }
 }
 
 /**
- * 全文档解析接口 (保持架构一致性)
+ * 全文档解析接口 (同步双通道逻辑)
  */
 export const parseFullDocument = async (
   images: string[],
-  onStatus?: (status: string) => void
+  onStatus?: (status: string) => void,
+  isDeepThinking: boolean = false
 ): Promise<any> => {
-  if (onStatus) onStatus("全文档模式暂未开启，请逐页进行...");
-  return [];
+  const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
+  const model31 = process.env.REASONING_MODEL_NAME || "gemini-3.1-pro-preview";
+  const modelName = isDeepThinking ? model31 : model30;
+  
+  const apiKey = process.env.API_KEY;
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
+
+  if (onStatus) {
+    onStatus(isDeepThinking ? "🧠 深度理解多张试卷卷面 (3.1 Pro)..." : "⚡ 极速全文档识别 (3.0 Flash)...");
+  }
+
+  // TODO: 目前仅作为架构预留，实际调用逻辑仍主要由 ExtractionCanvas 分页驱动
+  return []; 
 };

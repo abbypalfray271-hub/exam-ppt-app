@@ -66,6 +66,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDeepThinking, setIsDeepThinking] = useState(false);
   
   // [NEW] 失败项面板数据
   const [parsingFailures, setParsingFailures] = useState<{ id: string; label: string; error: string }[]>([]);
@@ -581,7 +582,11 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             const res = await fetch('/api/ai-parse', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'parseQuestion', imageData: compressedPage })
+              body: JSON.stringify({ 
+                action: 'parseQuestion', 
+                imageData: compressedPage,
+                isDeepThinking 
+              })
             });
             if (!res.body) throw new Error('ReadableStream not supported');
             const reader = res.body.getReader();
@@ -687,7 +692,13 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         const res = await fetch('/api/ai-parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'parseQuestion', imageData: slice.base64, hasManualAnswer: !!manualAnswerBox, hasManualAnalysis: !!manualAnalysisBox })
+          body: JSON.stringify({ 
+            action: 'parseQuestion', 
+            imageData: slice.base64, 
+            hasManualAnswer: !!manualAnswerBox, 
+            hasManualAnalysis: !!manualAnalysisBox,
+            isDeepThinking 
+          })
         });
 
         if (!res.body) throw new Error('ReadableStream not supported');
@@ -705,7 +716,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               try {
                 const payload = JSON.parse(line.slice(6));
                 if (payload.type === 'status') {
-                  setProgressLabel(`项 ${i + 1}/${qRects.length}: ${payload.msg}`);
+                  setProgressLabel(`第 ${i + 1}/${qRects.length} 项: ${payload.msg}`);
                 } else if (payload.type === 'data') {
                   parsedQuestions = payload.data;
                 } else if (payload.type === 'error') {
@@ -881,7 +892,30 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           </div>
         </div>
 
-        <div className="hidden md:flex flex-nowrap items-center gap-3 w-auto ml-auto">
+        <div className="hidden md:flex flex-nowrap items-center gap-4 w-auto ml-auto">
+          {/* 深度思考 (Independent Channel 3.1 Pro) */}
+          <button
+            onClick={() => setIsDeepThinking(!isDeepThinking)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all active:scale-95 shadow-sm",
+              isDeepThinking 
+                ? "bg-purple-600 border-purple-700 text-white" 
+                : "bg-white border-gray-200 text-gray-500 hover:border-brand-primary/30"
+            )}
+          >
+            {isDeepThinking ? <Brain className="w-4 h-4 animate-pulse" /> : <Zap className="w-4 h-4" />}
+            <span className="text-[12px] font-black uppercase tracking-tight">深度思考 (3.1 Pro)</span>
+            <div className={cn(
+              "w-8 h-4 rounded-full relative transition-colors ml-1",
+              isDeepThinking ? "bg-white/20" : "bg-gray-200"
+            )}>
+              <div className={cn(
+                "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+                isDeepThinking ? "left-[18px]" : "left-[2px]"
+              )} />
+            </div>
+          </button>
+
           <button
             onClick={() => setView('editor')}
             className="flex-1 md:flex-none px-6 py-2.5 bg-orange-500 text-white text-[13px] font-black rounded-full border border-orange-600 shadow-lg active:scale-95 whitespace-nowrap"
@@ -984,6 +1018,18 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         >
           <LayoutList className="w-5 h-5" /> 
           <span className="text-[10px] font-black leading-none">{selectedPageIndices.size}/{pages.length}页</span>
+        </button>
+
+        {/* 深度思考 (Mobile) */}
+        <button
+          onClick={() => setIsDeepThinking(!isDeepThinking)}
+          className={cn(
+            "flex flex-col items-center justify-center gap-1 w-[68px] h-[52px] rounded-xl active:scale-95 transition-all shrink-0 shadow-sm border",
+            isDeepThinking ? "bg-purple-600 text-white border-purple-700" : "bg-gray-50 text-gray-400 border-gray-200"
+          )}
+        >
+          {isDeepThinking ? <Brain className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+          <span className="text-[9px] font-black leading-none">深度思考</span>
         </button>
 
         <button

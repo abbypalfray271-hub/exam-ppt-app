@@ -22,19 +22,20 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
 
-      // [心跳监控]: 每 10 秒发送一个空格，穿透 Cloudflare/网关的超时死线 (ECONNRESET 防御)
+      // [心跳监控]: 每 5 秒发送一个空格，穿透 Cloudflare/网关的超时死线 (ECONNRESET 防御)
       const keepaliveInterval = setInterval(() => {
         try {
           // 使用注释格式的心跳，不会被 JSON.parse 干扰
           controller.enqueue(encoder.encode(': heartbeat\n\n')); 
         } catch (e) {}
-      }, 10000);
+      }, 5000);
 
       try {
         const body = await request.json();
-        const { action, imageData, images, hasManualAnswer, hasManualAnalysis } = body;
+        const { action, imageData, images, hasManualAnswer, hasManualAnalysis, isDeepThinking } = body;
         
-        console.log(`[API-STREAM] Action: ${action} (Ultra-Speed Heartbeat Mode Enabled)`);
+        console.log(`[API-STREAM] Action: ${action} (DeepThinking: ${!!isDeepThinking}) (Ultra-Speed Heartbeat Mode Enabled)`);
+        console.log(`[SSE] 正在以 5s 频率持续注入心跳包，抗击 3.1 Pro 的长时间推演...`);
 
         const onStatus = (msg: string) => {
           // 局部失败信号转发：将 FAILURE_ITEM 映射为 SSE 的错误消息
@@ -46,10 +47,16 @@ export async function POST(request: NextRequest) {
         };
 
         if (action === 'parseQuestion') {
-          const result = await parseQuestion(imageData, !!hasManualAnswer, !!hasManualAnalysis, onStatus);
+          const result = await parseQuestion(
+            imageData, 
+            !!hasManualAnswer, 
+            !!hasManualAnalysis, 
+            onStatus,
+            !!isDeepThinking
+          );
           send({ type: 'data', data: extractAnalysis(result) });
         } else if (action === 'parseFullDocument') {
-          const result = await parseFullDocument(images, onStatus);
+          const result = await parseFullDocument(images, onStatus, !!isDeepThinking);
           send({ type: 'data', data: extractAnalysis(result) });
         } else {
           send({ type: 'error', error: 'Invalid action' });
