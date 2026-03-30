@@ -82,12 +82,12 @@ export const Editor = () => {
   }, [totalSlides]);
 
   /** 渲染一张幻灯片内容（不含外框） */
-  const renderSlideContent = (slide: SlideData, editable: boolean) => {
+  const renderSlideContent = (slide: SlideData, editable: boolean, forceMask: boolean = false) => {
     switch (slide.type) {
       case 'title':
         return <TitleSlide editable={editable} />;
       case 'unified':
-        return <UnifiedSlide questions={slide.questions} editable={editable} />;
+        return <UnifiedSlide questions={slide.questions} editable={editable} forceMask={forceMask} />;
     }
   };
 
@@ -181,9 +181,9 @@ export const Editor = () => {
                       }
                     } : undefined}
                   >
-                    {/* 缩略图使用 pointer-events-none 防止交互 */}
+                    {/* 缩略图强制打码：forceMask=true */}
                     <div className="pointer-events-none select-none">
-                      {renderSlideContent(slide, false)}
+                      {renderSlideContent(slide, false, true)}
                     </div>
                   </SlideFrame>
                 </div>
@@ -242,7 +242,7 @@ export const Editor = () => {
               {/* 利用 md:aspect-video 确保在电脑端维持 PPT 比例，但在手机端 (竖屏) 则直接撑满全部剩余空间 */}
               <div className="w-full h-full md:max-h-full md:aspect-[16/9] rounded-2xl overflow-hidden flex flex-col shadow-2xl border border-gray-200 bg-white shadow-brand-primary/10">
                 <div className="w-full flex-1 relative min-h-0">
-                  {renderSlideContent(currentSlide, true)}
+                  {renderSlideContent(currentSlide, true, false)}
                 </div>
               </div>
             </motion.div>

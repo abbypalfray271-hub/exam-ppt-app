@@ -14,7 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Monitor,
-  EyeOff
+  EyeOff,
+  CheckSquare,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -127,10 +129,42 @@ const cleanLatexSymbols = (text: string): string => {
 
   // === 第二步：执行 LaTeX 符号清理 ===
   safed = safed
+    // === 第一步：高优先级结构化指令解析 (必须最先运行) ===
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (match, p1, p2) => {
+       // 智能规则：如果分子或分母包含运算符（+ - * /）或空格，则添加括号，否则直接输出
+       const wrapIfComplex = (s: string) => {
+         const needsWrap = /[\+\-\s\/\*]/.test(s.trim());
+         return needsWrap ? `(${s})` : s;
+       };
+       return `${wrapIfComplex(p1)}/${wrapIfComplex(p2)}`;
+    })
+    .replace(/\\frac\s*(\d+)\s*(\d+)/g, '$1/$2')
+    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+    .replace(/\\sqrt/g, '√')
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+    .replace(/\\pi/g, 'π')
+    
+    .replace(/\\overset\{\\frown\}\{([^}]+)\}/g, '⌒$1')
+    .replace(/\\frown\{([^}]+)\}/g, '⌒$1')
+    .replace(/\\alpha/g, 'α')
+    .replace(/\\beta/g, 'β')
+    .replace(/\\gamma/g, 'γ')
+    .replace(/\\delta/g, 'δ')
+    .replace(/\\theta/g, 'θ')
+    .replace(/\\rho/g, 'ρ')
+    .replace(/\\sigma/g, 'σ')
+    .replace(/\\phi/g, 'φ')
+    .replace(/\\omega/g, 'ω')
+    .replace(/\\lambda/g, 'λ')
+    .replace(/\^\\circ/g, '°') 
+    .replace(/\^°/g, '°')
+    
+    // === 第二步：常用几何与数学符号映射 ===
     .replace(/\\triangle/g, '△')
     .replace(/\\angle/g, '∠')
     .replace(/\\perp/g, '⊥')
-    .replace(/\\parallel/g, '//')
+    .replace(/\\parallel/g, '∥')
     .replace(/\\circ/g, '°')
     .replace(/\\degree/g, '°')
     .replace(/\\pm/g, '±')
@@ -142,11 +176,29 @@ const cleanLatexSymbols = (text: string): string => {
     .replace(/\\approx/g, '≈')
     .replace(/\\infty/g, '∞')
     .replace(/\\quad/g, ' ')
-    .replace(/\\text\{(\w+)\}/g, '$1')
-    .replace(/\\mathrm\{(\w+)\}/g, '$1')
-    .replace(/\$([^$]+)\$/g, '$1')  // 移除 $...$ 包裹，保留内容
-    .replace(/\{\{/g, '')             // 清除所有孤立 {{（真正的答案已被保护）
-    .replace(/\}\}/g, '');            // 清除所有孤立 }}（真正的答案已被保护）
+    .replace(/\\cdot/g, '·')
+    .replace(/\\le/g, '≤')
+    .replace(/\\ge/g, '≥')
+    
+    // === 第三步：处理数学指数 (Unicode 上标) ===
+    .replace(/\^\{?(-?[0-9]+)\}?/g, (match, digits) => {
+      const superscripts: Record<string, string> = {
+        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', 
+        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+        '-': '⁻'
+      };
+      return digits.split('').map((d: string) => superscripts[d] || d).join('');
+    })
+    
+    // === 第四步：兜底清理排版残留 ===
+    .replace(/\\t/g, '    ')         // 制表符转 4 格空格
+    .replace(/\$/g, '')              // 全量剥离 $
+    .replace(/\\{2,}/g, '\n')        // 将双反斜杠 \\ 转换为换行符
+    .replace(/\\/g, '')              // 移除孤立反斜杠
+    .replace(/\{/g, '')              // 清除残余 {
+    .replace(/\}/g, '')              // 清除残余 }
+    .replace(/\{\{/g, '')            // 清除孤立 {{
+    .replace(/\}\}/g, '');           // 清除孤立 }}
 
   // === 第三步：恢复被保护的答案块 ===
   safed = safed.replace(/__CLOZE_(\d+)__/g, (_, idx) => preserved[parseInt(idx)]);
@@ -154,20 +206,57 @@ const cleanLatexSymbols = (text: string): string => {
   return safed;
 };
 
-// ============================================================
-
-const renderClozeText = (rawText: string, show: boolean, diagrams?: string[]) => {
+/**
+ * 渲染规范化文本：对“解：”、“关键步骤”、“答：”等进行视觉强化
+ */
+const renderStandardizedText = (rawText: string) => {
   if (!rawText) return null;
   const text = cleanLatexSymbols(rawText);
-  // 正则匹配 {{内容}} 或 [附图] 或 [表格]（[\s\S] 支持跨换行匹配）
-  const parts = text.split(/(\{\{[\s\S]*?\}\}|\[附图\]|\[表格\])/g);
+  
+  // 匹配标记词：解、证明、答、因为、由于、所以、则、综上所述
+  // 必须是出现在行首或紧跟在换行符后的关键字，或者带冒号的结尾
+  const parts = text.split(/(解：|证明：|答：|因为|由于|所以|则|综上所述)/g);
+
+  return parts.map((part, index) => {
+    const isKeyword = /^(解：|证明：|答：|因为|由于|所以|则|综上所述)$/.test(part);
+    if (isKeyword) {
+      const isConclusion = part === '答：' || part === '综上所述';
+      return (
+        <span 
+          key={index} 
+          className={cn(
+            "font-black mr-1",
+            isConclusion ? "text-[#1e293b] text-[1.1em] border-l-4 border-brand-primary pl-2" : "text-purple-700"
+          )}
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
+// ============================================================
+
+const renderClozeText = (rawText: string, show: boolean, diagrams?: string[], forceMask: boolean = false) => {
+  if (!rawText) return null;
+  const showAnswer = show && !forceMask;
+  const text = cleanLatexSymbols(rawText);
+  
+  // 正则增强 V2：优先捕获整个圆括号块（即使内部含有 {{}}），其次捕获独立的 {{内容}}
+  // 模式解释：
+  // 1. [\(（][^()（）]*\{\{[\s\S]*?\}\}[^()（）]*[\)）] -> 捕获包含打码标记的完整括号
+  // 2. \{\{[\s\S]*?\}\} -> 捕获独立的打码标记
+  // 3. [\(（][^()（）]{1,12}[\)）] -> 捕获普通短括号（用于猜测打码）
+  const parts = text.split(/(\[\附图\]|\[表格\]|[\(（][^()（）]*?\{\{[\s\S]*?\}\}[^()（）]*?[\)）]|\{\{[\s\S]*?\}\}|[\(（][^()（）]{1,12}[\)）])/g);
   let diagramIndex = 0;
 
   const renderedParts = parts.map((part, index) => {
-    // 处理图样占位符
+    // 1. 处理图样占位符
     if (part === '[附图]' || part === '[表格]') {
       const imgSrc = diagrams?.[diagramIndex++];
-      if (imgSrc) {
+      if (imgSrc && typeof imgSrc === 'string' && imgSrc.startsWith('data:image')) {
         return (
           <div key={`diag-${index}`} className="my-4 flex items-center justify-center w-full">
             <img 
@@ -178,33 +267,70 @@ const renderClozeText = (rawText: string, show: boolean, diagrams?: string[]) =>
           </div>
         );
       }
-      return <span key={index} className="text-gray-400 italic mx-1 opacity-50">{part}</span>;
+      // 如果数据异常（如 AI 返回了坐标但裁切失败），显示占位符而非破碎图标
+      return <span key={index} className="text-gray-400 italic mx-1 opacity-50 flex flex-col items-center gap-1 border border-dashed border-gray-200 p-4 rounded-lg my-2"><ImageIcon className="w-5 h-5" /> 插图加载中或不可用</span>;
     }
 
-    // 处理 {{答案}} 语法
-    if (part.startsWith('{{') && part.endsWith('}}')) {
-      // 深度清理可能存在的嵌套括号或错误包裹（如 {{{{5}}}} 或 {{$5$）
-      const answerText = part.slice(2, -2)
-        .replace(/^[\{\s\$]+/, '')
-        .replace(/[\}\s\$]+$/, '')
-        .trim();
-      
-      // 如果清理完变空了，不显示
+    // 2. 处理显式打码语法 {{答案}} (包含被包裹在括号内的完整块)
+    // 如果匹配项是以括号开头结尾且内部含有 {{}}，或者直接是 {{}}
+    const isExplicitCloze = part.startsWith('{{') && part.endsWith('}}');
+    const isParenWithCloze = (part.startsWith('(') || part.startsWith('（')) && (part.endsWith(')') || part.endsWith('）')) && part.includes('{{');
+
+    if (isExplicitCloze || isParenWithCloze) {
+      // 提取核心答案文本用于占位计算
+      const answerText = part.replace(/\{\{/g, '').replace(/\}\}/g, '').replace(/[\(（\)）]/g, '').trim();
       if (!answerText) return null;
-      if (show) {
+
+      if (showAnswer) {
+        // 显示态：如果是括号包裹型，还原括号并高亮内部
+        const displayContent = part.replace(/\{\{|\}\}/g, '');
         return (
-          <span key={index} className="inline-block text-brand-primary font-black border-b-[2px] border-brand-primary pb-[1px] px-1 mx-1 bg-brand-primary/10 rounded-sm">
-            {answerText}
+          <span key={index} className="inline-block text-brand-primary font-black border-b-[2px] border-brand-primary pb-[1px] px-1 mx-1 bg-brand-primary/10 rounded-sm scale-110 transition-transform">
+            {cleanLatexSymbols(displayContent)}
           </span>
         );
       } else {
+        // 隐藏态：遮盖整个匹配块长度
         return (
-          <span key={index} className="inline-block min-w-[3em] text-transparent border-b-[2px] border-gray-400 pb-[1px] px-1 mx-1 select-none">
-            {answerText}
+          <span key={index} className="inline-block min-w-[5em] text-transparent border-b-[2.5px] border-gray-400/50 pb-[1px] px-2 mx-1 select-none relative bg-gray-100/50 rounded-sm">
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 font-bold tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">答案已隐藏</span>
+            {cleanLatexSymbols(part.replace(/\{\{|\}\}/g, ''))}
           </span>
         );
       }
     }
+
+    // 3. 智能语义遮挡：捕获普通的 (yì) 或 (1) 这种括号内容
+    const parenMatch = part.match(/^[\(（](.+)[\)）]$/);
+    if (parenMatch) {
+      const inner = parenMatch[1].trim();
+      // 启发式规则：如果括号内是 1-8 个字符，且看起来像拼音（含音调）或字母/选项
+      const isLikelyAnswer = inner.length <= 10 && (
+        /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/.test(inner) || // 含拼音音调
+        /^[a-zA-Z√×\s\/\\]{1,8}$/.test(inner) ||      // 纯字母、对错符号或分隔符
+        /^[\u4e00-\u9fa5]{1,2}$/.test(inner)        // 1-2个汉字候选词
+      ) && !/^\d+$/.test(inner); // 排除纯数字如 (1) (2)
+
+      if (isLikelyAnswer && !showAnswer) {
+        return (
+          <span key={index} className="inline-block transition-all duration-300">
+            {part[0]}
+            <span className="inline-block min-w-[2.5em] text-transparent border-b-2 border-dashed border-brand-primary/30 mx-0.5 select-none relative bg-brand-primary/5 rounded-sm">
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] text-brand-primary/40 font-black opacity-0 group-hover:opacity-100 transition-opacity scale-75">?</span>
+                {inner}
+            </span>
+            {part[part.length - 1]}
+          </span>
+        );
+      } else if (isLikelyAnswer && showAnswer) {
+        return (
+          <span key={index} className="inline-block text-brand-primary font-black scale-110 transition-transform">
+            {part[0]}{inner}{part[part.length - 1]}
+          </span>
+        );
+      }
+    }
+
     return <span key={index} className="whitespace-pre-wrap">{part}</span>;
   });
 
@@ -321,9 +447,10 @@ const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
 interface UnifiedSlideProps {
   questions: Question[];
   editable?: boolean;
+  forceMask?: boolean; // [NEW] 全局打码状态，用于侧边栏预览
 }
 
-export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable = false }) => {
+export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable = false, forceMask = false }) => {
   const { 
     updateQuestion, 
     removeQuestion,
@@ -579,10 +706,14 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   )}
                 </div>
                 
-                {/* 内容摘要 */}
+                {/* 内容摘要 - [MASKED] */}
                 {q.content && (
-                  <p className="w-full text-center text-[13px] md:text-sm text-gray-500 font-bold line-clamp-2 md:line-clamp-3 mt-3 px-2">
-                    {q.content.replace(/\n/g, ' ')}
+                  <p className="w-full text-center text-[13px] md:text-sm text-gray-400 font-bold line-clamp-2 md:line-clamp-3 mt-3 px-2">
+                    {cleanLatexSymbols(q.content.replace(/\{\{.*?\}\}/g, ' ________ '))
+                      .replace(/\n/g, ' ')
+                      .replace(/【答案】.*/g, '') // 摘要中彻底移除【答案】文本
+                      .replace(/【解析】.*/g, '') // 摘要中彻底移除【解析】文本
+                    }
                   </p>
                 )}
 
@@ -797,14 +928,18 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                             />
                           ) : (
                             <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                              {/* 题目部分：内部 {{}} 在 answer/analysis 状态下可见 */}
-                              {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis', expandedQuestion.diagrams)}
+                              {/* 题目部分：在 answer/analysis 状态下可见内部答案，缩略图(forceMask)下强制隐藏 */}
+                              {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis', expandedQuestion.diagrams, forceMask)}
                               
                               {/* 答案部分：在 answer 或 analysis 状态下可见 */}
-                              {answerPart && (revealState === 'answer' || revealState === 'analysis') && (
-                                <div className="mt-4 pt-4 border-t-2 border-dashed border-brand-primary/10">
-                                  <div className="text-brand-primary whitespace-pre-wrap font-bold">
-                                    {answerPart}
+                              {(answerPart || expandedQuestion.answer) && (revealState === 'answer' || revealState === 'analysis') && (
+                                <div className="mt-4 pt-4 border-t-2 border-dashed border-brand-primary/10 flex flex-col gap-2">
+                                  <div className="flex items-center gap-2 text-brand-primary">
+                                    <CheckSquare className="w-5 h-5" />
+                                    <span className="text-sm font-black uppercase tracking-widest">答案：</span>
+                                  </div>
+                                  <div className="text-brand-primary whitespace-pre-wrap font-bold text-2xl pl-2">
+                                    {cleanLatexSymbols(answerPart ? answerPart.replace(/【.*?答案.*?】/, '').trim() : (expandedQuestion.answer || '无'))}
                                   </div>
                                 </div>
                               )}
@@ -813,7 +948,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                               {analysisPart && revealState === 'analysis' && (
                                 <div className="mt-4 pt-4 border-t-2 border-dashed border-purple-200">
                                   <div className="text-purple-600 whitespace-pre-wrap">
-                                    {analysisPart}
+                                    {cleanLatexSymbols(analysisPart)}
                                   </div>
                                 </div>
                               )}
