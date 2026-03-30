@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -68,6 +68,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [parsingFailures, setParsingFailures] = useState<{ id: string; label: string; error: string }[]>([]);
 
   const { 
     questions, 
@@ -633,6 +634,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       try {
         console.log(`%c[AI定向解析] 启动分页识别模式 (选中 ${targetIndices.length}/${pages.length} 页)...`, 'color: #8b5cf6; font-weight: bold');
         setTotalItems(targetIndices.length);
+        setParsingFailures([]); // 清空上次记录
         
         for (let idx = 0; idx < targetIndices.length; idx++) {
           const i = targetIndices[idx];
@@ -664,10 +666,39 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
             }
             
-            const data = await res.json();
-            if (data.success && data.data) {
+            // --- SSE 流式读取逻辑 ---
+            if (!res.body) throw new Error('ReadableStream not supported');
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let pageData: any = null;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const payload = JSON.parse(line.slice(6));
+                    if (payload.type === 'status') {
+                      setProgressLabel(`第 ${idx + 1}/${targetIndices.length} 页: ${payload.msg}`);
+                    } else if (payload.type === 'data') {
+                      pageData = payload.data;
+                    } else if (payload.type === 'error') {
+                      throw new Error(payload.error);
+                    }
+                  } catch (e) {
+                    console.error('SSE JSON parse error:', e);
+                  }
+                }
+              }
+            }
+            
+            if (pageData) {
               // 为每道题注入物理图片引用 + 自动预览裁剪（实现与手动模式对齐）
-              const pageResults = await Promise.all(data.data.map(async (q: any) => {
+              const pageResults = await Promise.all(pageData.map(async (q: any) => {
                 const box = q.content_box || q.contentBox;
                 let croppedImage = pages[i]; // 默认整页
                 const diagramImages: string[] = [];
@@ -711,12 +742,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               }));
               allResults.push(...pageResults);
             } else {
-              console.warn(`第 ${i + 1} 页解析出现警告: ${data.error || '内容为空'}`);
+              console.warn(`第 ${i + 1} 页解析完成，但未识别出有效题目内容`);
             }
           } catch (pageErr: any) {
             const errorMsg = `第 ${i + 1} 页识别失败: ${pageErr.message}`;
             console.error(`%c[AI分页解析] ${errorMsg}`, 'color: #ef4444');
-            setErrorLogs(prev => [{ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
+            const failureId = (Date.now().toString(36) + Math.random().toString(36).substring(2));
+            setParsingFailures(prev => [...prev, { id: failureId, label: `第 ${i + 1} 页`, error: pageErr.message || '未知错误' }]);
+            setErrorLogs(prev => [{ id: failureId, msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
           }
         }
 
@@ -755,6 +788,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
     try {
       console.log(`%c[AI解析] 开始解析 ${qRects.length} 道题目 (答案框: ${aRects.length}, 自动分析框: ${autoAnalysisRects.length})`, 'color: #3b82f6; font-weight: bold');
+      setParsingFailures([]); // 清空上次记录
 
       const offsets = getPageOffsets();
       if (offsets.length === 0) throw new Error('无法获取页面结构，请稍后重试');
@@ -837,24 +871,48 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
             }
 
-            const data = await res.json();
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            // --- SSE 流式读取逻辑 (手动模式) ---
+            if (!res.body) throw new Error('ReadableStream not supported');
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let parsedQuestions: any = null;
 
-            if (!data.success) {
-              const isTimeout = data.error?.includes('524') || data.error?.includes('超时');
-              if (isTimeout && retryCount < maxRetries) {
-                retryCount++;
-                await new Promise(r => setTimeout(r, 2000));
-                return performParse();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const payload = JSON.parse(line.slice(6));
+                    if (payload.type === 'status') {
+                      setProgressLabel(`第 ${i + 1}/${qRects.length} 个区域: ${payload.msg}`);
+                    } else if (payload.type === 'data') {
+                      parsedQuestions = payload.data;
+                    } else if (payload.type === 'error') {
+                      throw new Error(payload.error);
+                    }
+                  } catch (e) {
+                    console.error('SSE JSON parse error:', e);
+                  }
+                }
               }
-              const errorMsg = `第 ${i + 1} 个区域解析失败: ${data.error}`;
+            }
+            
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            if (!parsedQuestions) {
+              const errorMsg = `第 ${i + 1} 个区域解析未返回有效数据`;
               console.error(`%c[AI解析] ❌ ${errorMsg}`, 'color: #ef4444');
-              setErrorLogs(prev => [{ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
+              const failureId = (Date.now().toString(36) + Math.random().toString(36).substring(2));
+              setParsingFailures(prev => [...prev, { id: failureId, label: `第 ${i + 1} 个区域`, error: '未返回有效题目内容' }]);
+              setErrorLogs(prev => [{ id: failureId, msg: errorMsg, type: 'error' as const }, ...prev].slice(0, 5));
               return null;
             }
             
             console.log(`%c[AI解析] ✅ 题目 ${i + 1} 成功 (${elapsed}s)`, 'color: #22c55e');
-            return data.data || [];
+            return parsedQuestions;
           } catch (err: any) {
             if (retryCount < maxRetries) {
               retryCount++;
@@ -928,14 +986,35 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
       {/* === 全局置顶进度条 === */}
       {isProcessing && (
-        <div className="absolute top-0 left-0 right-0 h-1.5 z-[100] overflow-hidden bg-gray-100/50 backdrop-blur-sm">
-          <motion.div
-            className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 shadow-[0_0_12px_rgba(59,130,246,0.6)]"
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ ease: "linear", duration: 0.5 }}
-          />
-        </div>
+        <>
+          <div className="absolute top-0 left-0 right-0 h-1.5 z-[100] overflow-hidden bg-gray-100/50 backdrop-blur-sm">
+            <motion.div
+              className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 shadow-[0_0_12px_rgba(59,130,246,0.6)]"
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ ease: "linear", duration: 0.5 }}
+            />
+          </div>
+          {/* === 悬浮状态文字 (Premium Glassmorphism) === */}
+          <div className="absolute top-4 left-0 right-0 flex justify-center z-[100] pointer-events-none">
+            <AnimatePresence mode="wait">
+              {progressLabel && (
+                <motion.div
+                  key={progressLabel}
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="px-6 py-2 bg-white/70 backdrop-blur-md border border-white/40 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.1)] flex items-center gap-3"
+                >
+                  <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+                  <span className="text-[13px] font-black text-red-600 tracking-wide uppercase">
+                    {progressLabel}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </>
       )}
 
       {/* === 顶部工具栏：适配移动端横向滑轨 === */}
@@ -1449,6 +1528,57 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         </button>
       </div>
 
+      {/* === 解析失败报告总结 (Parsed Failure Summary) === */}
+      <AnimatePresence>
+        {!isProcessing && parsingFailures.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, x: 200 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed top-24 right-6 w-80 md:w-96 max-h-[70vh] flex flex-col bg-white/80 backdrop-blur-xl border border-red-200 rounded-3xl shadow-2xl z-[150] overflow-hidden"
+          >
+            <div className="p-5 bg-gradient-to-r from-red-500 to-rose-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                <span className="font-black text-sm tracking-tight">解析任务诊断报告</span>
+              </div>
+              <button 
+                onClick={() => setParsingFailures([])}
+                className="p-1.5 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              <p className="text-[11px] font-black text-red-500 uppercase tracking-widest px-1">以下项目处理异常，建议重试</p>
+              {parsingFailures.map((failure, idx) => (
+                <div key={failure.id} className="p-3 bg-red-50 border border-red-100 rounded-xl flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-black text-gray-800">{failure.label}</span>
+                    <span className="text-[10px] text-red-400 font-mono">#{idx + 1}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 leading-relaxed truncate hover:text-clip hover:overflow-visible hover:whitespace-normal">
+                    {failure.error}
+                  </p>
+                </div>
+              ))}
+            </div>
+            
+            <div className="p-4 border-t border-red-100 bg-white/50 flex flex-col gap-2">
+              <p className="text-[10px] text-gray-400 text-center leading-relaxed px-2">
+                系统已跳过失败项，其余已处理成功。您可以根据上述提示跳转至对应页码进行手动补录。
+              </p>
+              <button
+                onClick={() => setParsingFailures([])}
+                className="w-full py-2.5 bg-red-500 hover:bg-red-600 text-white text-[13px] font-black rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
+              >
+                确认并继续
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

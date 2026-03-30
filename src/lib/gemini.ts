@@ -248,7 +248,12 @@ const REASONING_INSTRUCTIONS = `
     3. 风格应正式，如同官方标准答案。
 `;
 
-export async function parseQuestion(imageBase64: string, hasManualAnswer?: boolean, hasManualAnalysis?: boolean) {
+export async function parseQuestion(
+  imageBase64: string, 
+  hasManualAnswer?: boolean, 
+  hasManualAnalysis?: boolean,
+  onStatus?: (msg: string) => void
+) {
   const needsReasoning = !hasManualAnswer || !hasManualAnalysis;
   const baseVisionModel = process.env.NEXT_PUBLIC_MODEL_NAME || 'gemini-3-flash-preview';
   const reasoningModel = process.env.REASONING_MODEL_NAME || 'deepseek-r1';
@@ -258,7 +263,9 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
 
   // Step 1: 永远使用基础模型 (Flash) 进行不受强推理指令干扰的结构化 OCR 提取
   let instruction = EXAM_PROMPT;
-  console.log(`[Pipeline] 视觉骨架提取启动. 使用模型: ${baseVisionModel}`);
+  const initStatus = `正在提取视觉结构骨架...`;
+  console.log(`[Pipeline] ${initStatus}`);
+  onStatus?.(initStatus);
 
   const response = await chatWithGemini(
     [
@@ -275,11 +282,15 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
 
   // Step 2: 无论是 3.1 Pro 还是 DeepSeek，全都走长程流式高强度推理通道
   if (needsReasoning) {
-    console.log(`[Pipeline] 启用并行推理接力通道 (引擎: ${reasoningModel}, 带有视觉: ${isMultimodalReasoning})...`);
+    const reasoningStatus = `启动并行推理接力解析...`;
+    console.log(`[Pipeline] ${reasoningStatus}`);
+    onStatus?.(reasoningStatus);
     for (let i = 0; i < result.length; i++) {
         const q = result[i];
         if (!q.content?.includes('【解析】')) {
            try {
+               const stepStatus = `[${i + 1}/${result.length}] 正在进行深度逻辑推演...`;
+               onStatus?.(stepStatus);
                const reasoningPrompt = `请深度解答这道题目：\n${q.content}`;
                
                // 灵魂注入：如果是多模态 3.1 Pro，就带上原图，让它看图解题；如果是盲区 DeepSeek，就不带图凭空推导
@@ -314,7 +325,10 @@ export async function parseQuestion(imageBase64: string, hasManualAnswer?: boole
   return result;
 }
 
-export async function parseFullDocument(input: string | string[]) {
+export async function parseFullDocument(
+  input: string | string[],
+  onStatus?: (msg: string) => void
+) {
   const images = typeof input === 'string' ? undefined : input;
   const userMsg = typeof input === 'string' ? input : '请解析图片序列。';
   
@@ -324,7 +338,9 @@ export async function parseFullDocument(input: string | string[]) {
   // 对于全页游侠：原封不动用基础提取
   let instruction = FULL_EXAM_PROMPT;
 
-  console.log(`[Pipeline] 全文档漫游启动. 视角引擎: ${baseVisionModel}`);
+  const roamingStatus = `全文档漫游正在启动...`;
+  console.log(`[Pipeline] ${roamingStatus}`);
+  onStatus?.(roamingStatus);
 
   const response = await chatWithGemini(
     [
@@ -338,11 +354,15 @@ export async function parseFullDocument(input: string | string[]) {
   let resultJSON = JSON.parse(resultText);
 
   // 一律走流式后置通道
-  console.log(`[Pipeline] 启动全卷流式后置巡检 (引擎: ${reasoningModel})...`);
+  const inspectionStatus = `启动全卷流式后置核验...`;
+  console.log(`[Pipeline] ${inspectionStatus}`);
+  onStatus?.(inspectionStatus);
   for (let i = 0; i < resultJSON.length; i++) {
     const q = resultJSON[i];
     if (!q.content?.includes('【解析】')) {
        try {
+           const stepStatus = `[${i + 1}/${resultJSON.length}] 正在核验并补全解析...`;
+           onStatus?.(stepStatus);
            const reasoningPrompt = `请深度解答这道题目：\n${q.content}`;
            // 由于全文档游侠模式很少使用，且切页复杂，此处推理通道不传图，纯视作最后一道文本兜底防线
            const reasoning = await chatWithReasoningModel(reasoningPrompt, undefined);
