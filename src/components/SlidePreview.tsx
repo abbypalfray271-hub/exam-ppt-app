@@ -16,7 +16,8 @@ import {
   Monitor,
   EyeOff,
   CheckSquare,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Zap // [NEW] AI 几何作图引擎图标
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -950,6 +951,19 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                                   <div className="text-purple-600 whitespace-pre-wrap">
                                     {cleanLatexSymbols(analysisPart)}
                                   </div>
+                                  
+                                  {/* AI 渲染的 SVG 辅助配图 */}
+                                  {expandedQuestion.auxiliary_svg && (
+                                    <div className="w-full flex flex-col items-center gap-3 mt-6 bg-purple-50/50 rounded-2xl p-4 border border-purple-100">
+                                      <div className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-1.5 self-start">
+                                        <Zap className="w-4 h-4 fill-purple-400" /> AI 几何作图引擎
+                                      </div>
+                                      <div 
+                                        className="w-full max-w-sm aspect-square bg-white rounded-xl shadow-inner border border-purple-100/50 flex items-center justify-center p-2 overflow-hidden"
+                                        dangerouslySetInnerHTML={{ __html: expandedQuestion.auxiliary_svg }}
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

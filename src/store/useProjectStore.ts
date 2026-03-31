@@ -10,6 +10,7 @@ export interface Question {
   content: string;
   answer?: string;
   analysis?: string;
+  auxiliary_svg?: string; // [NEW] AI 生成的 SVG 辅助线配图
   steps?: string[];
   summary?: string;
   type: 'choice' | 'fill' | 'essay';

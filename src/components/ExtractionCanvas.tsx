@@ -904,7 +904,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             )}
           >
             {isDeepThinking ? <Brain className="w-4 h-4 animate-pulse" /> : <Zap className="w-4 h-4" />}
-            <span className="text-[12px] font-black uppercase tracking-tight">深度思考 (3.1 Pro)</span>
+            <span className="text-[12px] font-black uppercase tracking-tight">深度思考</span>
             <div className={cn(
               "w-8 h-4 rounded-full relative transition-colors ml-1",
               isDeepThinking ? "bg-white/20" : "bg-gray-200"
@@ -1015,19 +1015,28 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                   { n: 'se', cursor: 'nwse-resize', style: { bottom: -4, right: -4 } },
                 ];
 
+                const typeInfo = {
+                  question: { label: '题目', color: 'bg-brand-primary', border: 'border-brand-primary', bg: 'bg-brand-primary/5' },
+                  answer: { label: '答案遮挡', color: 'bg-red-500', border: 'border-red-500', bg: 'bg-red-500/5' },
+                  diagram: { label: '插图', color: 'bg-emerald-500', border: 'border-emerald-500', bg: 'bg-emerald-500/5' },
+                  analysis: { label: '分析', color: 'bg-purple-500', border: 'border-purple-500', bg: 'bg-purple-500/5' }
+                }[rect.type || 'question'] || { label: '题目', color: 'bg-brand-primary', border: 'border-brand-primary', bg: 'bg-brand-primary/5' };
+
                 return (
                   <div 
                     key={rect.id} 
                     onPointerDown={(e) => startMoving(e, rect.id)} 
                     className={cn(
                       "absolute border-2 z-20 group transition-colors", 
-                      isSelected ? "border-brand-secondary bg-brand-secondary/10 shadow-[0_0_15px_rgba(234,88,12,0.3)]" : "border-brand-primary bg-brand-primary/5 hover:border-brand-secondary/50",
+                      isSelected ? "border-brand-secondary bg-brand-secondary/10 shadow-[0_0_15px_rgba(234,88,12,0.3)]" : `${typeInfo.border} ${typeInfo.bg} hover:border-brand-secondary/50`,
                       "cursor-move"
                     )} 
                     style={{ left: rect.x * zoom, top: rect.y * zoom, width: rect.width * zoom, height: rect.height * zoom }}
                   >
-                    <div className="absolute -top-6 left-0 bg-brand-primary text-white text-[10px] px-2 py-0.5 rounded-t-md font-black">
-                      #{rects.filter(r => r.type === 'question' || !r.type).findIndex(r => r.id === rect.id) + 1} 题目
+                    <div className={cn("absolute -top-6 left-0 text-white text-[10px] px-2 py-0.5 rounded-t-md font-black whitespace-nowrap", typeInfo.color)}>
+                      {(!rect.type || rect.type === 'question') 
+                        ? `#${rects.filter(r => r.type === 'question' || !r.type).findIndex(r => r.id === rect.id) + 1} 题目` 
+                        : typeInfo.label}
                     </div>
                     <button 
                       onClick={(e) => { 

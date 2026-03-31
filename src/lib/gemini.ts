@@ -21,25 +21,40 @@ export const parseQuestion = async (
     onStatus(isDeepThinking ? "🧠 正在深度分析图像与逻辑关系..." : "⚡ 正在快速识别题目内容...");
   }
 
-  // 核心提示词：注入“全景盘点”、“方程锁死”与“符号物理隔离”逻辑
+  // 核心提示词：注入“全景盘点”、“方程锁死”、“符号物理隔离”、“平面几何降维”以及“SVG重绘”逻辑
   const prompt = `你是一个顶级数学专家和视觉分析专家。**绝对禁止输出任何形式的反斜杠（\\）**。
+
+  [解题流派定调 (Methodology Constraint)]
+  1. 强制纯几何推导优先：针对几何与动点问题，即使题目背景是在直角坐标系或抛物线中，在处理线段长度、角度、面积、相似全等推导时，必须严格优先使用纯平面几何方法（如：构造垂线、相似比、全等、勾股定理、三角函数等）构建逻辑链，极力避免陷入复杂的“直线方程联立求解”、“两点距离公式”等繁琐的坐标死算中。
+  2. 严禁代数泥潭：遇到坐标系题目时，计算初始坐标点应适可而止，后续的几何关系论证严禁过度依赖坐标系解析法，必须回归到纯粹的初等平面几何图形关系上！对于非坐标系题目，绝对绝对禁止私自建立平面直角坐标系。
+  3. 动点路径锁定：在梳理动点时，必须先明确动点的运动轨迹、临界状态，以及在 t 时刻转化出的实际线段标量长度表达式，再代入纯几何定理。禁止将动点定义为带有 t 的繁杂坐标点去找直线交点。
+
+  [SVG 辅助线绘图引擎]
+  对于几何或动点问题，你需要推算图形比例，使用标准的 SVG 代码重建一个包含辅助线的示意图，输出到 auxiliary_svg 字段中。
+  规范：
+  - <svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  - 使用 stroke="black" 绘制实线原图，使用 stroke="red" stroke-dasharray="5,5" 绘制你新增的辅助线或动点轨迹。
+  - 使用 <text> 标签标记关键点 (如 P, Q, E 等)。
 
   [符号物理隔离]
   - 所有数学依据、关系及特殊符号必须使用 **原生 UTF-8 符号**：∵, ∴, Δ, ∠, ≅, ∽, √, ², π, ⊥, ▱, ⊙。
   - 严禁使用任何形式的转义字符或由反斜杠引导的命令。
 
   [视觉盘点 (Visual Inventory)]
-  在解析前，必须在分析首段先盘点：图中共有几张图？主图与局部放大图的对应关系是什么？关键点 M'、F、E 在哪张图中？观察是否有虚线（辅助线）及其标注。严禁忽视细节。
+  在解析前，必须在分析首段先盘点：图中共有几张图？主图与局部放大图的对应关系是什么？关键点在哪里？观察是否有虚线（辅助线）及其标注。严禁忽视细节。
+
+  [思维漫游 (Chain of Thought - Scratchpad)]
+  为了保证解析 (analysis) 的纯粹性与格式严肃性，你必须在 "_thought_process" 字段中完成所有的内部思考、试错、寻找解题路径、关键点推测等「草稿」推导过程。
+  ！！！极其重要：因为大模型有严格的输出截断限制，你的思维漫游必须极度精简（控制在300字以内，仅罗列几何关系与方程组合），若废话连篇会导致下游 "analysis" 被强行截断，任务彻底失败！！！
+  在 "analysis" 字段中，绝对不参与任何胡言乱语或自我验证，只允许输出给学生看的、最终梳理好的标准解题步骤！
 
   [核心原则]
   1. 极致还原：文字原样提取，保持布局。
-  2. 方正式锁死 (Lockdown)：数值结论（如 t=10/3）前，必须紧跟其带具体数值的原始等式（如 2t = 10 - t 或 12/y = 6/4）。
-  3. 绝不省略：禁止出现“略”、“下略”、“解答略”、“同理可得”。出现此类占位符即视为任务失败。
+  2. 方正式锁死 (Lockdown)：数值结论之前，必须紧跟其带具体数值的原始等式。
+  3. 绝不省略：禁止出现“略”、“下略”、“同理可得”。出现此类占位符即视为任务失败。
   4. 原始数值：方程第一步必须包含图中提取的数值（12, 16, 10 等），严禁只写字母变量。
-
-  [字段规范 - analysis]
-  - 包含每一个小问 (1)(2)(3)... 的完整“推导链”。
-  - 推演逻辑必须由 ∵ 依据 -> 原方程 -> 整理过程 -> 结论 构成。
+  5. 纯粹分数制 (Strict Fraction)：计算过程中所有的非整除结果，必须无条件保留为最简分数形式。绝对禁止将其转化为小数。
+  6. 严格 JSON 引用隔离：在思维漫游区 (_thought_process) 或解析区 (analysis) 写作时，如果需要强调或引用文字内容，【绝对禁止使用双引号 (")】，必须且只能使用单引号 (') 或书名号 (《》)。内部的双引号会导致 JSON 端点解析崩溃！
 
   [输出示例参考 - 严禁模仿占位符]
   [
@@ -47,8 +62,10 @@ export const parseQuestion = async (
       "order": 24,
       "type": "essay",
       "content": "24. [附图] ...",
+      "_thought_process": "先看一下图，E在BC上，F在...这题是不是用勾股定理？不对，应该相似。好，我知道了，把这部分算式整理一下。...",
       "analysis": "解：(1) [视觉盘点] 主图显示菱形 ABCD，辅图 2 显示了对称点 M'。\\n∵ 四边形 ABCD 是菱形，AC=12, BD=16 \\n∴ 根据菱形面积公式 S = 1/2 * 12 * 16 = 96 ...... 1分\\n又 ∵ S = BC * h，且根据勾股定理 BC = 10 \\n∴ 10 * h = 96，解得 h = 9.6 ...... 2分\\n答：(1) 高 h 为 9.6; (2)...",
-      "answer": "(1) h=9.6; (2)..."
+      "answer": "(1) h=9.6; (2)...",
+      "auxiliary_svg": "<svg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'><polygon points='150,50 250,150 ...' fill='none' stroke='black'/><line x1='150' y1='50' x2='150' y2='250' stroke='red' stroke-dasharray='5,5'/><text x='150' y='40'>P</text></svg>"
     }
   ]`;
 
@@ -58,13 +75,27 @@ export const parseQuestion = async (
       {
         role: "user",
         content: [
-          { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: imageData } },
+          {
+            type: "image_url",
+            image_url: { url: imageData }
+          },
+          {
+            type: "text",
+            text: `${prompt}
+            
+[CRITICAL INSTRUCTION]
+Output ONLY the raw JSON array. 
+Do NOT include any preamble, prefix text like "[视觉盘点]", or conversational filler.
+Return the result in this exact format:
+[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "" }]
+`
+          }
         ],
       },
     ],
     temperature: 0,
-    stream: false,
+    max_tokens: 8192, // 开启 8K 输出窗口，防截断
+    stream: true, // [STREAMING FIX] 开启流式以绕过上游 Nginx/Cloudflare 的 100s HTTP 死霸超时
   };
 
   const controller = new AbortController();
@@ -88,8 +119,34 @@ export const parseQuestion = async (
         throw new Error(`AI 服务异常: ${response.status}`);
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
+    // [STREAMING FIX] 手动读取并拼接流式响应 (避免 524 Timeout)
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let content = "";
+    
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // 解析 SSE 格式的 data: {...}
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              const delta = data.choices?.[0]?.delta?.content || "";
+              content += delta;
+            } catch (e) {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        }
+      }
+    } else {
+      throw new Error('Response body is null');
+    }
 
     const jsonMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
     const rawJson = jsonMatch ? jsonMatch[0] : content;
@@ -105,18 +162,32 @@ export const parseQuestion = async (
  * 强力 JSON 解析器：处理 AI 输出中常见的格式错误、转义失败和截断问题
  */
 function robustParseJson(raw: string): any {
-  // 1. 基础清理
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+  // 1. [精准定位起始符] 过滤所有非 JSON 的前缀杂质（如 [视觉盘点] 等描述性文字）
+  const firstBrace = raw.indexOf('{');
+  const firstBracket = raw.indexOf('[');
+  let startIndex = -1;
+  
+  if (firstBrace !== -1 && firstBracket !== -1) {
+    startIndex = Math.min(firstBrace, firstBracket);
+  } else {
+    startIndex = Math.max(firstBrace, firstBracket);
+  }
 
-  // 2. [关键修复] 物理隔离非法的反斜杠
-  // 将所有非标准 JSON 转义路径的反斜杠，强制升格为双斜杠字面量
-  // 匹配规则：匹配反斜杠，只要后面不是紧跟着指定的合法转义字符，就将其变为 \\\\
+  if (startIndex === -1) {
+    throw new Error('No JSON structure found in response');
+  }
+
+  // 截断起始点之前的所有无关字符
+  let cleaned = raw.substring(startIndex).trim();
+
+  // 2. 基础清理 Markdown 代码块
+  cleaned = cleaned.replace(/```json\s*/i, '').replace(/\s*```$/i, '');
+
+  // 3. 物理隔离非法的反斜杠
   cleaned = cleaned.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
 
-  // 3. 强力清除不可见的控制字符 (防止 JSON.parse 崩溃)
+  // 4. 强力清除不可见的控制字符
   cleaned = cleaned.replace(/[\x00-\x1F\x7F-\x9F]/g, (match) => {
-    // 允许常见的换行和制表符，其余一律抹除
     return (match === '\n' || match === '\r' || match === '\t') ? match : '';
   });
 
@@ -128,7 +199,7 @@ function robustParseJson(raw: string): any {
   for (let i = 0; i < cleaned.length; i++) {
     const char = cleaned[i];
     const prev = i > 0 ? cleaned[i-1] : '';
-    // 考虑转义引号的情况
+    
     if (char === '"' && (prev !== '\\' || (i > 1 && cleaned[i-2] === '\\'))) {
       inString = !inString;
       result += char;
