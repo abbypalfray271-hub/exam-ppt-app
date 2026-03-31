@@ -18,7 +18,7 @@ export const parseQuestion = async (
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
 
   if (onStatus) {
-    onStatus(isDeepThinking ? "🧠 深度理解多张附图与几何关系 (3.1 Pro)..." : "⚡ 极速解析 (3.0 Flash)...");
+    onStatus(isDeepThinking ? "🧠 正在深度分析图像与逻辑关系..." : "⚡ 正在快速识别题目内容...");
   }
 
   // 核心提示词：注入“全景盘点”、“方程锁死”与“符号物理隔离”逻辑
@@ -190,7 +190,7 @@ export const parseFullDocument = async (
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
 
   if (onStatus) {
-    onStatus(isDeepThinking ? "🧠 深度理解多张试卷卷面 (3.1 Pro)..." : "⚡ 极速全文档识别 (3.0 Flash)...");
+    onStatus(isDeepThinking ? "🧠 正在深度分析全页内容..." : "⚡ 正在智能提取页面题目...");
   }
 
   // TODO: 目前仅作为架构预留，实际调用逻辑仍主要由 ExtractionCanvas 分页驱动

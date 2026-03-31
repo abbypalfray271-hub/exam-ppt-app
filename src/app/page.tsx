@@ -90,7 +90,7 @@ export default function Home() {
 
       {/* 终极缓存验证探针：版本号 移至顶部防止遮挡 */}
       <div className="fixed top-1 right-2 text-[8px] text-gray-200/50 pointer-events-none z-[9999] select-none font-mono">
-        v20260331DualChannel
+        v202603310831_ok
       </div>
     </main>
   );

@@ -961,13 +961,24 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           <div className="absolute top-0 right-0 w-px h-full bg-gray-200 pointer-events-none z-40" />
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {pages.map((page, idx) => (
-              <div key={idx} className={cn("relative rounded-xl overflow-hidden border-4 aspect-[3/4]", selectedPageIndices.has(idx) ? "border-brand-primary" : "border-gray-200")}>
+              <div 
+                key={idx} 
+                onClick={() => scrollToPage(idx)}
+                className={cn(
+                  "relative rounded-xl overflow-hidden border-4 aspect-[3/4] cursor-pointer transition-all hover:scale-[1.02] active:scale-95 group", 
+                  selectedPageIndices.has(idx) ? "border-brand-primary" : "border-gray-200"
+                )}
+              >
                 <img src={page} className="w-full h-full object-cover" />
-                <div onClick={() => {
-                  const next = new Set(selectedPageIndices);
-                  if (next.has(idx)) next.delete(idx); else next.add(idx);
-                  setSelectedPageIndices(next);
-                }} className="absolute top-2 right-2 bg-white rounded-md p-1 shadow-md cursor-pointer">
+                <div 
+                  onClick={(e) => {
+                    e.stopPropagation(); // 防止触发 scrollToPage
+                    const next = new Set(selectedPageIndices);
+                    if (next.has(idx)) next.delete(idx); else next.add(idx);
+                    setSelectedPageIndices(next);
+                  }} 
+                  className="absolute top-2 right-2 bg-white rounded-md p-1 shadow-md cursor-pointer hover:bg-gray-50 active:scale-90 transition-transform"
+                >
                   {selectedPageIndices.has(idx) ? <CheckSquare className="text-brand-primary" /> : <Square className="text-gray-300" />}
                 </div>
                 <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] px-2 rounded">{idx + 1}</div>
@@ -993,10 +1004,50 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               ))}
               {rects.map(rect => {
                 const isSelected = selectedId === rect.id;
+                const handles = [
+                  { n: 'n', cursor: 'ns-resize', style: { top: -4, left: '50%', marginLeft: -4 } },
+                  { n: 's', cursor: 'ns-resize', style: { bottom: -4, left: '50%', marginLeft: -4 } },
+                  { n: 'e', cursor: 'ew-resize', style: { right: -4, top: '50%', marginTop: -4 } },
+                  { n: 'w', cursor: 'ew-resize', style: { left: -4, top: '50%', marginTop: -4 } },
+                  { n: 'nw', cursor: 'nwse-resize', style: { top: -4, left: -4 } },
+                  { n: 'ne', cursor: 'nesw-resize', style: { top: -4, right: -4 } },
+                  { n: 'sw', cursor: 'nesw-resize', style: { bottom: -4, left: -4 } },
+                  { n: 'se', cursor: 'nwse-resize', style: { bottom: -4, right: -4 } },
+                ];
+
                 return (
-                  <div key={rect.id} onPointerDown={(e) => startMoving(e, rect.id)} className={cn("absolute border-2 z-20", isSelected ? "border-brand-secondary bg-brand-secondary/10" : "border-brand-primary bg-brand-primary/5")} style={{ left: rect.x * zoom, top: rect.y * zoom, width: rect.width * zoom, height: rect.height * zoom }}>
-                    <div className="absolute -top-6 left-0 bg-brand-primary text-white text-[10px] px-2 py-0.5 rounded-t-md">#{rects.filter(r => r.type === 'question' || !r.type).findIndex(r => r.id === rect.id) + 1} 题目</div>
-                    <button onClick={(e) => { e.stopPropagation(); setRects(prev => prev.filter(r => r.id !== rect.id)); }} className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 shadow-lg"><X size={12} /></button>
+                  <div 
+                    key={rect.id} 
+                    onPointerDown={(e) => startMoving(e, rect.id)} 
+                    className={cn(
+                      "absolute border-2 z-20 group transition-colors", 
+                      isSelected ? "border-brand-secondary bg-brand-secondary/10 shadow-[0_0_15px_rgba(234,88,12,0.3)]" : "border-brand-primary bg-brand-primary/5 hover:border-brand-secondary/50",
+                      "cursor-move"
+                    )} 
+                    style={{ left: rect.x * zoom, top: rect.y * zoom, width: rect.width * zoom, height: rect.height * zoom }}
+                  >
+                    <div className="absolute -top-6 left-0 bg-brand-primary text-white text-[10px] px-2 py-0.5 rounded-t-md font-black">
+                      #{rects.filter(r => r.type === 'question' || !r.type).findIndex(r => r.id === rect.id) + 1} 题目
+                    </div>
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setRects(prev => prev.filter(r => r.id !== rect.id)); 
+                      }} 
+                      className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 shadow-lg hover:scale-110 active:scale-95 transition-transform"
+                    >
+                      <X size={12} />
+                    </button>
+
+                    {/* 缩放手柄 */}
+                    {isSelected && handles.map(h => (
+                      <div
+                        key={h.n}
+                        onPointerDown={(e) => startResizing(e, rect.id, h.n)}
+                        className="absolute w-2 h-2 bg-white border-2 border-brand-secondary rounded-sm z-30"
+                        style={{ ...h.style, cursor: h.cursor }}
+                      />
+                    ))}
                   </div>
                 )
               })}

@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         const { action, imageData, images, hasManualAnswer, hasManualAnalysis, isDeepThinking } = body;
         
         console.log(`[API-STREAM] Action: ${action} (DeepThinking: ${!!isDeepThinking}) (Ultra-Speed Heartbeat Mode Enabled)`);
-        console.log(`[SSE] 正在以 5s 频率持续注入心跳包，抗击 3.1 Pro 的长时间推演...`);
+        console.log(`[SSE] 正在以 5s 频率持续注入心跳包，维持深度推理通道连接...`);
 
         const onStatus = (msg: string) => {
           // 局部失败信号转发：将 FAILURE_ITEM 映射为 SSE 的错误消息

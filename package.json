@@ -1,6 +1,6 @@
 {
   "name": "exam-ppt-app",
-  "version": "20260331DualChannel",
+  "version": "202603310831_ok",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
