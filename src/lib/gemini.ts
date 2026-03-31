@@ -36,6 +36,11 @@ export const parseQuestion = async (
   - 使用 stroke="black" 绘制实线原图，使用 stroke="red" stroke-dasharray="5,5" 绘制你新增的辅助线或动点轨迹。
   - 使用 <text> 标签标记关键点 (如 P, Q, E 等)。
 
+  [Atomic Splitting & Context Inheritance - 课堂 PPT 专用原子化拆分]
+  1. 一题一页 (One Item per Slide)：如果图片中包含阅读理解、综合题或带编号的小题 (如 1., 2., 3. 或 (1), (2), (3) 等)，你必须坚决地将其拆分为 JSON 数组中的 **独立对象**。
+  2. 首题捆绑原文：仅限数组中的 **第一个对象** (通常是第 1 题) 需要包含完整的 [公共背景/原文/ passage] 内容。后续的所有小题 (从第 2 题开始) **绝对禁止** 再次重复原文背景，只需输出该项对应的小题干本身。
+  3. 禁止合并：严禁将多个不同编号的小题合并在同一个 JSON 对象中。
+
   [符号物理隔离]
   - 所有数学依据、关系及特殊符号必须使用 **原生 UTF-8 符号**：∵, ∴, Δ, ∠, ≅, ∽, √, ², π, ⊥, ▱, ⊙。
   - 严禁使用任何形式的转义字符或由反斜杠引导的命令。
@@ -59,13 +64,22 @@ export const parseQuestion = async (
   [输出示例参考 - 严禁模仿占位符]
   [
     {
-      "order": 24,
+      "order": 1,
       "type": "essay",
-      "content": "24. [附图] ...",
-      "_thought_process": "先看一下图，E在BC上，F在...这题是不是用勾股定理？不对，应该相似。好，我知道了，把这部分算式整理一下。...",
-      "analysis": "解：(1) [视觉盘点] 主图显示菱形 ABCD，辅图 2 显示了对称点 M'。\\n∵ 四边形 ABCD 是菱形，AC=12, BD=16 \\n∴ 根据菱形面积公式 S = 1/2 * 12 * 16 = 96 ...... 1分\\n又 ∵ S = BC * h，且根据勾股定理 BC = 10 \\n∴ 10 * h = 96，解得 h = 9.6 ...... 2分\\n答：(1) 高 h 为 9.6; (2)...",
-      "answer": "(1) h=9.6; (2)...",
-      "auxiliary_svg": "<svg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'><polygon points='150,50 250,150 ...' fill='none' stroke='black'/><line x1='150' y1='50' x2='150' y2='250' stroke='red' stroke-dasharray='5,5'/><text x='150' y='40'>P</text></svg>"
+      "content": "阅读下面片段并回答：[原文] 床前明月光，疑是地上霜。\\n1. 作者是谁？",
+      "_thought_process": "静夜思李白...",
+      "analysis": "解：作者是唐代著名诗人李白。",
+      "answer": "李白",
+      "auxiliary_svg": ""
+    },
+    {
+      "order": 2,
+      "type": "essay",
+      "content": "2. 该诗表达了什么意境？",
+      "_thought_process": "思乡情...",
+      "analysis": "解：表达了诗人在寂静月夜对家乡的深切思念。",
+      "answer": "思乡",
+      "auxiliary_svg": ""
     }
   ]`;
 
@@ -83,9 +97,12 @@ export const parseQuestion = async (
             type: "text",
             text: `${prompt}
             
-[CRITICAL INSTRUCTION]
+[CRITICAL INSTRUCTION: ATOMIC SPLIT REQUIRED]
 Output ONLY the raw JSON array. 
-Do NOT include any preamble, prefix text like "[视觉盘点]", or conversational filler.
+IMPORTANT: Every numbered sub-question in the image MUST be a separate element in the array. 
+ONLY the first element should include the shared passage/context. 
+Subsequent elements should ONLY contain the sub-question text.
+Do NOT include any preamble or conversational filler.
 Return the result in this exact format:
 [{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "" }]
 `

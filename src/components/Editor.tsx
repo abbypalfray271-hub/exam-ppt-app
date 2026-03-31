@@ -10,7 +10,8 @@ import {
   FileSearch,
   Save,
   FolderOpen,
-  Trash2
+  Trash2,
+  Zap
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -169,7 +170,7 @@ export const Editor = () => {
                       }
                     }}
                     label={`${idx + 1}`}
-                    className="w-full"
+                    className="w-full relative group/thumb"
                     onDelete={slide.type === 'unified' ? () => {
                       if (confirm('确定要删除这一整页及包含的题目吗？')) {
                         const qIds = slide.questions.map(q => q.id);
@@ -181,6 +182,12 @@ export const Editor = () => {
                       }
                     } : undefined}
                   >
+                    {/* 缩略图中的几何深度推理指示器 */}
+                    {slide.type === 'unified' && slide.questions.some(q => q.auxiliary_svg) && (
+                      <div className="absolute bottom-1 right-1 p-1 bg-purple-500 rounded-lg shadow-lg z-20 scale-75 md:scale-90">
+                        <Zap className="w-3 h-3 text-white fill-current" />
+                      </div>
+                    )}
                     {/* 缩略图强制打码：forceMask=true */}
                     <div className="pointer-events-none select-none">
                       {renderSlideContent(slide, false, true)}
@@ -212,19 +219,24 @@ export const Editor = () => {
       )}
 
       <div className="flex-1 flex flex-col items-center justify-center relative min-h-0 w-full overflow-hidden">
-        {/* 顶部工具栏 */}
+        {/* 顶部工具栏 - 高对比度药丸风格 */}
         <div className="w-full flex items-center justify-between px-4 mb-3">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-black text-gray-500 uppercase tracking-widest">
-            {currentSlide.type === 'title' ? '📋 封面页' 
-                : `📝 题目组 (${currentSlide.questions.length} 道题目)`}
-            </span>
-            <span className="text-xs font-black text-white bg-brand-primary px-3 py-1 rounded-lg shadow-lg shadow-brand-primary/20">
-              {currentSlideIdx + 1} / {totalSlides}
+            <div className="bg-[#1e293b] text-white px-4 py-1.5 rounded-2xl shadow-lg shadow-gray-200/50 flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-widest opacity-60">
+                {currentSlide.type === 'title' ? 'PROJECT COVER' : 'QUESTION BLOCK'}
+              </span>
+              <div className="w-px h-3 bg-white/20 mx-1" />
+              <span className="text-sm font-black tracking-tight">
+                {currentSlide.type === 'title' ? '📋 封面页' : `📝 题组 (${currentSlide.questions.length} 题)`}
+              </span>
+            </div>
+            <span className="text-xs font-bold text-gray-400 bg-white border border-gray-100 px-3 py-1.5 rounded-xl">
+              SLIDE {currentSlideIdx + 1} / {totalSlides}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-xs font-black text-red-500 uppercase tracking-[0.2em]">
-            点击文字可编辑 · 方向键翻页
+          <div className="hidden md:flex items-center gap-2 text-[10px] font-black text-[#1e293b]/30 uppercase tracking-[0.2em] bg-gray-100/50 px-4 py-1.5 rounded-full">
+            Ready for Presentation · Use Arrow Keys
           </div>
         </div>
 

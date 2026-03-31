@@ -16,6 +16,7 @@ interface Rect {
   width: number;
   height: number;
   type?: 'question' | 'answer' | 'analysis' | 'diagram';
+  qIdx?: number;
 }
 
 // 每页图片在纵向容器中的偏移信息
@@ -69,6 +70,8 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [isDeepThinking, setIsDeepThinking] = useState(false);
   
   // [NEW] 失败项面板数据
+  // [NEW] 题号关联标定
+  const [activeQIdx, setActiveQIdx] = useState(1);
   const [parsingFailures, setParsingFailures] = useState<{ id: string; label: string; error: string }[]>([]);
 
   const { 
@@ -307,12 +310,19 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const startDrawing = (e: React.PointerEvent) => {
     if (!containerRef.current || isProcessing) return;
     if (!activeDrawMode) return;
+    
+    // 强制捕获指针，防止被浏览器自带的拖拽行为干扰
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch(e) {}
+
     const cr = containerRef.current.getBoundingClientRect();
     const x = (e.clientX - cr.left) / zoom;
     const y = (e.clientY - cr.top) / zoom;
 
     setSelectedId(null);
     setDrawingRect({ id: (Date.now().toString(36) + Math.random().toString(36).substring(2)), x, y, width: 0, height: 0, type: activeDrawMode });
+    drawingRectRef.current = { id: '', x, y, width: 0, height: 0, type: activeDrawMode };
     setIsDrawing(true);
     interactionRef.current = 'drawing';
   };
@@ -323,6 +333,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
     setSelectedId(id);
+    if (rect.qIdx) setActiveQIdx(rect.qIdx);
     interactionRef.current = 'moving';
     startPosRef.current = { x: e.clientX, y: e.clientY };
     initialRectRef.current = { ...rect };
@@ -416,6 +427,18 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       if (interactionRef.current === 'drawing') {
         const currentRect = drawingRectRef.current;
         if (currentRect && Math.abs(currentRect.width || 0) > 10 && Math.abs(currentRect.height || 0) > 10) {
+          
+          // [NEW] 智能题号递增逻辑
+          let targetQIdx = activeQIdx;
+          if (currentRect.type === 'question' || !currentRect.type) {
+            // 如果是在画题目，且当前题号已经有题目了，则自动递增
+            const alreadyHasQuestion = rects.some(r => r.qIdx === activeQIdx && (r.type === 'question' || !r.type));
+            if (alreadyHasQuestion) {
+              targetQIdx = activeQIdx + 1;
+              setActiveQIdx(targetQIdx);
+            }
+          }
+
           const normalized: Rect = {
             id: (Date.now().toString(36) + Math.random().toString(36).substring(2)),
             x: currentRect.width! > 0 ? currentRect.x! : currentRect.x! + currentRect.width!,
@@ -423,6 +446,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             width: Math.abs(currentRect.width!),
             height: Math.abs(currentRect.height!),
             type: currentRect.type as 'question' | 'answer' | 'diagram',
+            qIdx: targetQIdx,
           };
           setRects(prev => [...prev, normalized]);
           setSelectedId(normalized.id);
@@ -654,36 +678,65 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
       return;
     }
 
-    // === 手动选区解析模式 ===
+    // === 手动选区解析模式 (升级版：基于 qIdx 标定分组) ===
     setProcessing(true);
     setParsingFailures([]); 
     try {
       const offsets = getPageOffsets();
-      setTotalItems(qRects.length);
+      
+      // 1. 按照 qIdx 分组 (只处理有题目框的分组)
+      const groupMap = new Map<number, Rect[]>();
+      rects.forEach(r => {
+        const qIdx = r.qIdx || 1;
+        if (!groupMap.has(qIdx)) groupMap.set(qIdx, []);
+        groupMap.get(qIdx)!.push(r);
+      });
+
+      // 过滤出含有题目框的分组，并按题号排序
+      const sortedGroups = Array.from(groupMap.entries())
+        .filter(([_, groupRects]) => groupRects.some(r => r.type === 'question' || !r.type))
+        .sort(([a], [b]) => a - b);
+
+      if (sortedGroups.length === 0) {
+        alert('未检测到有效的题目框标定。');
+        setProcessing(false);
+        return;
+      }
+
+      setTotalItems(sortedGroups.length);
       let cumulativeOffset = 0;
-      for (let i = 0; i < qRects.length; i++) {
-        const qRect = qRects[i];
+
+      for (let i = 0; i < sortedGroups.length; i++) {
+        const [qIdx, groupRects] = sortedGroups[i];
         setCurrentItemIdx(i);
-        lastProgressRef.current = Math.round((i / qRects.length) * 100);
+        lastProgressRef.current = Math.round((i / sortedGroups.length) * 100);
+
+        // a. 获取该组的题目框 (通常只有一个，若有多个则取第一个作为主裁切区)
+        const qRect = groupRects.find(r => r.type === 'question' || !r.type)!;
         const slice = await cropRect(qRect, offsets);
-        const childAnsRects = aRects.filter(ar => {
-          const cx = ar.x + ar.width / 2;
-          const cy = ar.y + ar.height / 2;
-          return cx >= qRect.x && cx <= qRect.x + qRect.width && cy >= qRect.y - 10 && cy <= qRect.y + qRect.height + 20;
-        });
+
+        // b. 获取该组的答案框
+        const childAnsRects = groupRects.filter(r => r.type === 'answer');
+        
         const getManualBox = (target: Rect | undefined) => {
           if (!target) return undefined;
-          return [Math.max(0, Math.round((target.y - qRect.y) / qRect.height * 10000)), Math.max(0, Math.round((target.x - qRect.x) / qRect.width * 10000)), Math.min(10000, Math.round((target.y + target.height - qRect.y) / qRect.height * 10000)), Math.min(10000, Math.round((target.x + target.width - qRect.x) / qRect.width * 10000))] as [number, number, number, number];
+          // 注意：坐标是相对于主题目框 qRect 的
+          return [
+            Math.max(0, Math.round((target.y - qRect.y) / qRect.height * 10000)),
+            Math.max(0, Math.round((target.x - qRect.x) / qRect.width * 10000)),
+            Math.min(10000, Math.round((target.y + target.height - qRect.y) / qRect.height * 10000)),
+            Math.min(10000, Math.round((target.x + target.width - qRect.x) / qRect.width * 10000))
+          ] as [number, number, number, number];
         };
+
         const manualAnswerBox = getManualBox(childAnsRects[0]);
+        // 自动分析区逻辑依然沿用（基于主题目框）
         const autoAnalysis = autoAnalysisRects.find(ar => ar.id === `auto-analysis-${qRect.id}`);
         const manualAnalysisBox = getManualBox(autoAnalysis);
+
+        // c. 获取该组的插图框（直接由标定关联，不受距离限制）
         const childDiagrams: string[] = [];
-        const diagramRects = dRects.filter(dr => {
-          const cx = dr.x + dr.width / 2;
-          const cy = dr.y + dr.height / 2;
-          return (cx >= qRect.x - 100 && cx <= qRect.x + qRect.width + 100 && cy >= qRect.y - 50 && cy <= qRect.y + qRect.height + 200);
-        });
+        const diagramRects = groupRects.filter(r => r.type === 'diagram');
         for (const dr of diagramRects) {
           const dSlice = await cropRect(dr as Rect, offsets);
           if (dSlice) childDiagrams.push(dSlice.base64);
@@ -716,12 +769,12 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               try {
                 const payload = JSON.parse(line.slice(6));
                 if (payload.type === 'status') {
-                  setProgressLabel(`第 ${i + 1}/${qRects.length} 项: ${payload.msg}`);
+                  setProgressLabel(`第 ${i + 1}/${sortedGroups.length} 题: ${payload.msg}`);
                 } else if (payload.type === 'data') {
                   parsedQuestions = payload.data;
                 } else if (payload.type === 'error') {
                   const failureId = (Date.now().toString(36) + Math.random().toString(36).substring(2));
-                  setParsingFailures(prev => [...prev, { id: failureId, label: `项 ${i + 1}`, error: payload.error || '解析异常' }]);
+                  setParsingFailures(prev => [...prev, { id: failureId, label: `题号 ${qIdx}`, error: payload.error || '解析异常' }]);
                   break;
                 }
               } catch (e) {}
@@ -731,9 +784,6 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
         if (parsedQuestions && parsedQuestions.length > 0) {
           const processedQuestions = await Promise.all(parsedQuestions.map(async (q: any, subIdx: number) => {
-            // 处理插图逻辑：
-            // 1. 如果手动框选了 diagramRects，使用手动裁切的结果
-            // 2. 否则，如果 AI 返回了 diagrams 坐标，进行全自动裁切
             let diagrams = childDiagrams;
             if (diagrams.length === 0 && (q.diagrams || q.diagram_boxes)) {
               diagrams = await processAIDiagrams(q.diagrams || q.diagram_boxes, slice.base64);
@@ -863,7 +913,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               插图
             </button>
           </div>
-
+          
           {/* 统计信息药丸 */}
           <div className="hidden md:flex items-center justify-center gap-4 bg-gray-100/80 px-5 py-2.5 rounded-full text-[11px] font-black text-gray-500 tracking-wide border border-gray-200 shadow-sm shrink-0 whitespace-nowrap">
             <span className="flex items-center gap-1.5 underline decoration-gray-300 decoration-2 underline-offset-4">
@@ -941,11 +991,49 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
       <div className="flex-1 flex overflow-hidden relative">
         <div className={cn("flex bg-white flex-col shrink-0 overflow-hidden transition-transform duration-300", isMobileSidebarOpen ? "fixed inset-0 z-[100]" : "hidden md:relative md:flex")} style={{ width: isMobileSidebarOpen ? '100%' : `${sidebarWidth}px` }}>
-          <div className="p-4 border-b bg-gray-50/50 flex items-center justify-between">
-            <span className="text-sm font-black text-gray-800 flex items-center gap-2">
-              <LayoutList className="w-5 h-5" /> 页面管理
-            </span>
-            <button onClick={() => setIsMobileSidebarOpen(false)} className="md:hidden p-2 bg-gray-100 rounded-full active:scale-95"><X className="w-5 h-5" /></button>
+          <div className="p-4 border-b bg-white flex flex-col gap-3 shadow-sm relative z-10">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-black text-gray-800 flex items-center gap-2">
+                <LayoutList className="w-5 h-5" /> 页面管理
+              </span>
+              <button onClick={() => setIsMobileSidebarOpen(false)} className="md:hidden p-2 bg-gray-100 rounded-full active:scale-95"><X className="w-5 h-5" /></button>
+            </div>
+            
+            {/* 批量操作工具栏 */}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => {
+                  if (selectedPageIndices.size === pages.length) {
+                    setSelectedPageIndices(new Set());
+                  } else {
+                    setSelectedPageIndices(new Set(pages.map((_, i) => i)));
+                  }
+                }}
+                className={cn(
+                  "flex-1 h-10 rounded-xl font-black text-[12px] uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2 border-2",
+                  selectedPageIndices.size === pages.length
+                    ? "bg-gray-100 border-gray-200 text-gray-500"
+                    : "bg-white border-brand-primary text-brand-primary hover:bg-brand-primary/5"
+                )}
+              >
+                <CheckSquare className="w-4 h-4" />
+                {selectedPageIndices.size === pages.length ? "取消全选" : "全选页面"}
+              </button>
+
+              <button 
+                onClick={handleDeleteSelected}
+                disabled={selectedPageIndices.size === 0}
+                className={cn(
+                  "flex-1 h-10 rounded-xl font-black text-[12px] uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2 border-2",
+                  selectedPageIndices.size > 0
+                    ? "bg-red-500 border-red-600 text-white shadow-lg shadow-red-500/20"
+                    : "bg-gray-50 border-gray-100 text-gray-300 pointer-events-none"
+                )}
+              >
+                <Trash2 className="w-4 h-4" />
+                删除选中 ({selectedPageIndices.size})
+              </button>
+            </div>
           </div>
 
           {/* 侧边栏宽度拉伸柄 */}
@@ -1000,7 +1088,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
           <div className="flex justify-center">
             <div ref={containerRef} className={cn("relative shadow-2xl bg-white flex flex-col origin-top", isProcessing ? "opacity-50 pointer-events-none" : "cursor-crosshair")} style={{ width: `${zoom * 100}%` }} onPointerDown={startDrawing}>
               {pages.map((page, idx) => (
-                <img key={idx} ref={el => { imgRefs.current[idx] = el; }} src={page} className="block w-full select-none" onLoad={() => setImagesLoaded(prev => prev + 1)} />
+                <img 
+                  key={idx} 
+                  ref={el => { imgRefs.current[idx] = el; }} 
+                  src={page} 
+                  className="block w-full select-none pointer-events-none" 
+                  draggable={false}
+                  onLoad={() => setImagesLoaded(prev => prev + 1)} 
+                />
               ))}
               {rects.map(rect => {
                 const isSelected = selectedId === rect.id;
@@ -1033,19 +1128,21 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
                     )} 
                     style={{ left: rect.x * zoom, top: rect.y * zoom, width: rect.width * zoom, height: rect.height * zoom }}
                   >
-                    <div className={cn("absolute -top-6 left-0 text-white text-[10px] px-2 py-0.5 rounded-t-md font-black whitespace-nowrap", typeInfo.color)}>
-                      {(!rect.type || rect.type === 'question') 
-                        ? `#${rects.filter(r => r.type === 'question' || !r.type).findIndex(r => r.id === rect.id) + 1} 题目` 
-                        : typeInfo.label}
+                    <div className={cn(
+                      "absolute -top-6 left-0 h-6 px-3 flex items-center gap-1.5 rounded-t-xl text-white text-[11px] font-black shadow-lg shadow-black/5 z-30 transition-transform active:scale-95 cursor-pointer",
+                      typeInfo.color
+                    )}>
+                      <span className="opacity-60 tabular-nums">#{rect.qIdx}</span>
+                      <span className="tracking-tighter">{typeInfo.label}</span>
                     </div>
                     <button 
                       onClick={(e) => { 
                         e.stopPropagation(); 
                         setRects(prev => prev.filter(r => r.id !== rect.id)); 
                       }} 
-                      className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 shadow-lg hover:scale-110 active:scale-95 transition-transform"
+                      className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 shadow-xl hover:scale-125 hover:bg-red-600 active:scale-90 transition-all z-[60] cursor-pointer"
                     >
-                      <X size={12} />
+                      <X size={12} strokeWidth={3} />
                     </button>
 
                     {/* 缩放手柄 */}

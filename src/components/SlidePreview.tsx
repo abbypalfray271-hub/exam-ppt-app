@@ -672,21 +672,21 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               )}
             >
               <div className="flex flex-col w-full">
-                <div className="flex items-center justify-center gap-3 w-full border-b border-gray-100 pb-3">
-                  <div className="bg-[#1e293b] text-white px-3 md:px-4 py-1 rounded-full shadow-md shrink-0">
-                    <span className="text-sm md:text-base font-black italic tracking-tighter">题 {qIdx + 1}</span>
+                <div className="flex items-center justify-center gap-4 w-full border-b-2 border-gray-100 pb-4 mb-4">
+                  <div className="bg-[#1e293b] text-white px-5 py-1.5 rounded-2xl shadow-xl shrink-0 transform -rotate-1">
+                    <span className="text-lg md:text-xl font-black italic tracking-tighter">第 {qIdx + 1} 题</span>
                   </div>
                   {editable ? (
                     <input
-                      className="flex-1 min-w-0 text-lg md:text-xl font-black text-center text-[#1e293b] bg-transparent border-none outline-none hover:bg-gray-50 focus:bg-gray-50 rounded px-2 transition-colors"
+                      className="flex-1 min-w-0 text-xl md:text-2xl font-black text-center text-[#1e293b] bg-transparent border-none outline-none hover:bg-gray-50 focus:bg-gray-50 rounded-xl px-4 transition-all"
                       value={q.title}
                       onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
                       onClick={(e) => e.stopPropagation()}
-                      placeholder="修改题号..."
+                      placeholder="修改题号/标题..."
                     />
                   ) : (
-                    <h3 className="flex-1 min-w-0 text-lg md:text-xl font-black text-[#1e293b] leading-tight text-center">
-                      {q.title || '题目'}
+                    <h3 className="flex-1 min-w-0 text-xl md:text-2xl font-black text-[#1e293b] leading-tight text-center tracking-tight">
+                      {q.title || '题目内容'}
                     </h3>
                   )}
 
@@ -707,13 +707,13 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   )}
                 </div>
                 
-                {/* 内容摘要 - [MASKED] */}
+                {/* 内容摘要 - 提升字号与对比度 */}
                 {q.content && (
-                  <p className="w-full text-center text-[13px] md:text-sm text-gray-400 font-bold line-clamp-2 md:line-clamp-3 mt-3 px-2">
+                  <p className="w-full text-center text-lg md:text-xl text-[#1e293b]/70 font-bold line-clamp-2 md:line-clamp-3 mt-4 px-4 leading-relaxed">
                     {cleanLatexSymbols(q.content.replace(/\{\{.*?\}\}/g, ' ________ '))
                       .replace(/\n/g, ' ')
-                      .replace(/【答案】.*/g, '') // 摘要中彻底移除【答案】文本
-                      .replace(/【解析】.*/g, '') // 摘要中彻底移除【解析】文本
+                      .replace(/【答案】.*/g, '')
+                      .replace(/【解析】.*/g, '')
                     }
                   </p>
                 )}
@@ -733,10 +733,24 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     </div>
                   </div>
                 )}
+
+                {/* AI 几何辅助线渲染区 */}
+                {q.auxiliary_svg && (
+                  <div className="mt-4 w-full flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-purple-100 shadow-inner relative overflow-hidden group/svg">
+                    <div className="absolute top-2 left-3 flex items-center gap-1 opacity-40 group-hover/svg:opacity-100 transition-opacity">
+                      <Zap className="w-3 h-3 text-purple-600 fill-purple-600" />
+                      <span className="text-[10px] font-black text-purple-600 tracking-tighter uppercase whitespace-nowrap">Ai Geometry Engine</span>
+                    </div>
+                    <div 
+                      className="w-full max-h-64 flex justify-center py-2 [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-w-md [&>svg]:drop-shadow-sm"
+                      dangerouslySetInnerHTML={{ __html: q.auxiliary_svg }} 
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* 如果没有图片，兜底展示文字逻辑 (不再默认展示 textarea，除非处于 editable) */}
+            {/* 如果没有图片，兜底展示文字逻辑 */}
             {!q.contentImage && editable && (
               <div className="bg-gray-50 rounded-lg p-2 border border-gray-100 mt-2 ml-10">
                 <textarea
@@ -939,7 +953,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                                     <CheckSquare className="w-5 h-5" />
                                     <span className="text-sm font-black uppercase tracking-widest">答案：</span>
                                   </div>
-                                  <div className="text-brand-primary whitespace-pre-wrap font-bold text-2xl pl-2">
+                                  <div className="text-brand-primary whitespace-pre-wrap font-black text-2xl md:text-3xl pl-2">
                                     {cleanLatexSymbols(answerPart ? answerPart.replace(/【.*?答案.*?】/, '').trim() : (expandedQuestion.answer || '无'))}
                                   </div>
                                 </div>
@@ -948,7 +962,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                               {/* 解析部分：仅在 analysis 状态下显示 */}
                               {analysisPart && revealState === 'analysis' && (
                                 <div className="mt-4 pt-4 border-t-2 border-dashed border-purple-200">
-                                  <div className="text-purple-600 whitespace-pre-wrap">
+                                  <div className="text-xl md:text-2xl font-bold text-purple-700 leading-loose whitespace-pre-wrap">
                                     {cleanLatexSymbols(analysisPart)}
                                   </div>
                                   
