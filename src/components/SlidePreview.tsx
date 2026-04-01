@@ -385,7 +385,7 @@ const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
           onClick={(e) => { e.stopPropagation(); }}
         >
           <EyeOff className="w-5 h-5 text-gray-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
-          <span className="text-[10px] font-bold text-gray-400 group-hover/mask:opacity-0 transition-opacity">答案隐藏区</span>
+          <span className="text-[10px] font-bold text-gray-400 group-hover/mask:opacity-0 transition-opacity">答案</span>
           
           <button
             onClick={(e) => {
@@ -424,7 +424,7 @@ const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
           onClick={(e) => { e.stopPropagation(); }}
         >
           <EyeOff className="w-5 h-5 text-purple-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
-          <span className="text-[10px] font-bold text-purple-400 group-hover/mask:opacity-0 transition-opacity">试题分析区</span>
+          <span className="text-[10px] font-bold text-purple-400 group-hover/mask:opacity-0 transition-opacity">分析</span>
           
           <button
             onClick={(e) => {

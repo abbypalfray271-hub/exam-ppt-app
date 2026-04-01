@@ -57,7 +57,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [activePageIdx, setActivePageIdx] = useState(initialPageIndex);
-  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'diagram' | null>(null);
+  const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'diagram' | 'analysis' | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
   const [errorLogs, setErrorLogs] = useState<{ id: string; msg: string; type: 'error' | 'warn' }[]>([]);
   const [currentItemIdx, setCurrentItemIdx] = useState(0);
@@ -445,7 +445,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
             y: currentRect.height! > 0 ? currentRect.y! : currentRect.y! + currentRect.height!,
             width: Math.abs(currentRect.width!),
             height: Math.abs(currentRect.height!),
-            type: currentRect.type as 'question' | 'answer' | 'diagram',
+            type: currentRect.type as 'question' | 'answer' | 'analysis' | 'diagram',
             qIdx: targetQIdx,
           };
           setRects(prev => [...prev, normalized]);
@@ -892,14 +892,20 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
               )}
             >
               <div className={cn("w-3.5 h-3.5 rounded border-2 transition-colors", activeDrawMode === 'answer' ? "bg-white/20 border-white" : "bg-red-500/20 border-red-500")} />
-              答案遮挡
+              答案
             </button>
-            <div
-              className="px-5 py-2.5 rounded-full text-sm font-black flex items-center gap-2 text-purple-600/60 cursor-default whitespace-nowrap"
+            <button
+              onClick={() => setActiveDrawMode(prev => prev === 'analysis' ? null : 'analysis')}
+              className={cn(
+                "px-5 py-2.5 rounded-full text-sm font-black transition-all flex items-center gap-2 whitespace-nowrap",
+                activeDrawMode === 'analysis' 
+                  ? "bg-purple-500 text-white shadow-md shadow-purple-500/30" 
+                  : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
+              )}
             >
-              <div className="w-3.5 h-3.5 rounded bg-purple-500/10 border-2 border-purple-500/30" />
-              分析 <span className="text-[10px] text-purple-400">自动</span>
-            </div>
+              <div className={cn("w-3.5 h-3.5 rounded border-2 transition-colors", activeDrawMode === 'analysis' ? "bg-white/20 border-white" : "bg-purple-500/20 border-purple-500")} />
+              分析
+            </button>
             <button
               onClick={() => setActiveDrawMode(prev => prev === 'diagram' ? null : 'diagram')}
               className={cn(
@@ -1112,7 +1118,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
 
                 const typeInfo = {
                   question: { label: '题目', color: 'bg-brand-primary', border: 'border-brand-primary', bg: 'bg-brand-primary/5' },
-                  answer: { label: '答案遮挡', color: 'bg-red-500', border: 'border-red-500', bg: 'bg-red-500/5' },
+                  answer: { label: '答案', color: 'bg-red-500', border: 'border-red-500', bg: 'bg-red-500/5' },
                   diagram: { label: '插图', color: 'bg-emerald-500', border: 'border-emerald-500', bg: 'bg-emerald-500/5' },
                   analysis: { label: '分析', color: 'bg-purple-500', border: 'border-purple-500', bg: 'bg-purple-500/5' }
                 }[rect.type || 'question'] || { label: '题目', color: 'bg-brand-primary', border: 'border-brand-primary', bg: 'bg-brand-primary/5' };
