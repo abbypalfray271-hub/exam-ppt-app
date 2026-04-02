@@ -3,6 +3,7 @@
 import React from 'react';
 import { Question, useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
+import { cleanLatexSymbols } from '@/lib/latexCleaner';
 import { 
   Trash2, 
   BookOpen,
@@ -17,195 +18,29 @@ import {
   EyeOff,
   CheckSquare,
   Image as ImageIcon,
-  Zap // [NEW] AI 几何作图引擎图标
+  Zap
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResizableHandle } from './ResizableHandle';
 
-// ============================================================
-// 幻灯片数据模型
-// ============================================================
-
-export interface SlideData {
-  type: 'title' | 'unified';
-  questions: Question[];      // 该页包含的所有题目 (用于支持同屏多题)
-}
-
-/** 
- * 根据 questions 数组生成完整的幻灯片序列
- * 逻辑：如果连续的题目具有【完全相同】的 material (素材)，则将它们归并为同一张幻灯片。
- */
-export function buildSlides(questions: Question[]): SlideData[] {
-  const slides: SlideData[] = [{ type: 'title', questions: [] }];
-  
-  if (questions.length === 0) return slides;
-
-  // === 防御性去重：确保即使 store 中已有重复数据，也不会产生重复幻灯片 ===
-  const seen = new Set<string>();
-  const dedupedQuestions = questions.filter(q => {
-    const fp = (q.content || '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60);
-    if (seen.has(fp) && fp.length > 0) return false;
-    seen.add(fp);
-    return true;
-  });
-
-  let currentGroup: Question[] = [dedupedQuestions[0]];
-  
-  for (let i = 1; i < dedupedQuestions.length; i++) {
-    const prevQ = dedupedQuestions[i - 1];
-    const currQ = dedupedQuestions[i];
-    
-    // 判断是否共用素材 (除了文本精确匹配外，还要判断图片 URL)
-    const sameMaterialText = prevQ.material === currQ.material && !!prevQ.material;
-    const sameMaterialImage = prevQ.materialImage === currQ.materialImage && !!prevQ.materialImage;
-    const sameFullImage = prevQ.image === currQ.image && !!prevQ.image;
-    
-    const sameMaterial = sameMaterialText || sameMaterialImage || sameFullImage;
-    
-    if (sameMaterial) {
-      currentGroup.push(currQ);
-    } else {
-      slides.push({ type: 'unified', questions: currentGroup });
-      currentGroup = [currQ];
-    }
-  }
-  
-  // 最后一组
-  slides.push({ type: 'unified', questions: currentGroup });
-  
-  return slides;
-}
+// Re-export from new modules for backward compatibility (Editor.tsx imports from here)
+export type { SlideData } from '@/lib/slideBuilder';
+export { buildSlides } from '@/lib/slideBuilder';
+export { SlideFrame } from '@/components/slide/SlideFrame';
+export { TitleSlide } from '@/components/slide/TitleSlide';
 
 // ============================================================
-// 标题页幻灯片
+// 内联定义已提取到独立模块:
+// - SlideData, buildSlides → @/lib/slideBuilder
+// - TitleSlide → @/components/slide/TitleSlide
+// - cleanLatexSymbols → @/lib/latexCleaner
 // ============================================================
-
-interface TitleSlideProps {
-  editable?: boolean;
-}
-
-export const TitleSlide: React.FC<TitleSlideProps> = ({ editable = false }) => {
-  const { projectName, setProjectName } = useProjectStore();
-
-  return (
-    <div className="w-full h-full bg-[#F8FAFC] flex flex-col items-center justify-center relative">
-      {/* 装饰性背景圆 */}
-      <div className="absolute top-[10%] right-[10%] w-[30%] h-[30%] bg-blue-500/5 rounded-full blur-[60px]" />
-      <div className="absolute bottom-[10%] left-[10%] w-[25%] h-[25%] bg-purple-500/5 rounded-full blur-[60px]" />
-      
-      {editable ? (
-        <input
-          className="text-[2.2em] font-bold text-[#1e293b] text-center bg-transparent border-none outline-none w-[80%] hover:bg-gray-100/50 focus:bg-blue-50/50 rounded-xl px-4 py-2 transition-colors"
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-          placeholder="点击编辑项目名..."
-        />
-      ) : (
-        <h1 className="text-[2.2em] font-bold text-[#1e293b] text-center leading-tight px-[10%]">
-          {projectName}
-        </h1>
-      )}
-      <p className="text-[0.9em] text-[#64748b] mt-[4%] tracking-wide">
-        助教工具：试卷题目极简分割
-      </p>
-    </div>
-  );
-};
 
 // ============================================================
 // 统一模板幻灯片：左素材 + 右侧多题目区块 (极简分割版)
+// cleanLatexSymbols 已提取到 @/lib/latexCleaner.ts
 // ============================================================
-// 工具函数：将常见的 LaTeX 符号转换为 Unicode
-// ============================================================
-const cleanLatexSymbols = (text: string): string => {
-  if (!text) return text;
-
-  // === 第一步：保护 {{...}} 答案块，防止被后续正则破坏 ===
-  const preserved: string[] = [];
-  let safed = text.replace(/\{\{[\s\S]*?\}\}/g, (match) => {
-    preserved.push(match);
-    return `__CLOZE_${preserved.length - 1}__`;
-  });
-
-  // === 第二步：执行 LaTeX 符号清理 ===
-  safed = safed
-    // === 第一步：高优先级结构化指令解析 (必须最先运行) ===
-    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (match, p1, p2) => {
-       // 智能规则：如果分子或分母包含运算符（+ - * /）或空格，则添加括号，否则直接输出
-       const wrapIfComplex = (s: string) => {
-         const needsWrap = /[\+\-\s\/\*]/.test(s.trim());
-         return needsWrap ? `(${s})` : s;
-       };
-       return `${wrapIfComplex(p1)}/${wrapIfComplex(p2)}`;
-    })
-    .replace(/\\frac\s*(\d+)\s*(\d+)/g, '$1/$2')
-    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
-    .replace(/\\sqrt/g, '√')
-    .replace(/\\text\{([^}]+)\}/g, '$1')
-    .replace(/\\mathrm\{([^}]+)\}/g, '$1')
-    .replace(/\\pi/g, 'π')
-    
-    .replace(/\\overset\{\\frown\}\{([^}]+)\}/g, '⌒$1')
-    .replace(/\\frown\{([^}]+)\}/g, '⌒$1')
-    .replace(/\\alpha/g, 'α')
-    .replace(/\\beta/g, 'β')
-    .replace(/\\gamma/g, 'γ')
-    .replace(/\\delta/g, 'δ')
-    .replace(/\\theta/g, 'θ')
-    .replace(/\\rho/g, 'ρ')
-    .replace(/\\sigma/g, 'σ')
-    .replace(/\\phi/g, 'φ')
-    .replace(/\\omega/g, 'ω')
-    .replace(/\\lambda/g, 'λ')
-    .replace(/\^\\circ/g, '°') 
-    .replace(/\^°/g, '°')
-    
-    // === 第二步：常用几何与数学符号映射 ===
-    .replace(/\\triangle/g, '△')
-    .replace(/\\angle/g, '∠')
-    .replace(/\\perp/g, '⊥')
-    .replace(/\\parallel/g, '∥')
-    .replace(/\\circ/g, '°')
-    .replace(/\\degree/g, '°')
-    .replace(/\\pm/g, '±')
-    .replace(/\\times/g, '×')
-    .replace(/\\div/g, '÷')
-    .replace(/\\neq/g, '≠')
-    .replace(/\\leq/g, '≤')
-    .replace(/\\geq/g, '≥')
-    .replace(/\\approx/g, '≈')
-    .replace(/\\infty/g, '∞')
-    .replace(/\\quad/g, ' ')
-    .replace(/\\cdot/g, '·')
-    .replace(/\\le/g, '≤')
-    .replace(/\\ge/g, '≥')
-    
-    // === 第三步：处理数学指数 (Unicode 上标) ===
-    .replace(/\^\{?(-?[0-9]+)\}?/g, (match, digits) => {
-      const superscripts: Record<string, string> = {
-        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', 
-        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
-        '-': '⁻'
-      };
-      return digits.split('').map((d: string) => superscripts[d] || d).join('');
-    })
-    
-    // === 第四步：兜底清理排版残留 ===
-    .replace(/\\t/g, '    ')         // 制表符转 4 格空格
-    .replace(/\$/g, '')              // 全量剥离 $
-    .replace(/\\{2,}/g, '\n')        // 将双反斜杠 \\ 转换为换行符
-    .replace(/\\/g, '')              // 移除孤立反斜杠
-    .replace(/\{/g, '')              // 清除残余 {
-    .replace(/\}/g, '')              // 清除残余 }
-    .replace(/\{\{/g, '')            // 清除孤立 {{
-    .replace(/\}\}/g, '');           // 清除孤立 }}
-
-  // === 第三步：恢复被保护的答案块 ===
-  safed = safed.replace(/__CLOZE_(\d+)__/g, (_, idx) => preserved[parseInt(idx)]);
-
-  return safed;
-};
 
 /**
  * 渲染规范化文本：对“解：”、“关键步骤”、“答：”等进行视觉强化
@@ -1181,62 +1016,4 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   );
 };
 
-// ============================================================
-// 单张幻灯片容器（16:9 固定比例）
-// ============================================================
-
-interface SlideFrameProps {
-  children: React.ReactNode;
-  selected?: boolean;
-  onClick?: () => void;
-  className?: string;
-  label?: string;
-  onDelete?: () => void;
-}
-
-export const SlideFrame: React.FC<SlideFrameProps> = ({ children, selected, onClick, className, label, onDelete }) => {
-  return (
-    <div 
-      onClick={onClick}
-      className={cn(
-        "relative cursor-pointer group transition-all duration-200",
-        className
-      )}
-    >
-      {/* 16:9 比例容器 */}
-      <div className={cn(
-        "relative w-full aspect-[16/9] rounded-xl overflow-hidden shadow-md border-2 transition-all duration-200",
-        selected 
-          ? "border-brand-primary shadow-lg shadow-brand-primary/20 ring-2 ring-brand-primary/30"
-          : "border-transparent hover:border-gray-300 hover:shadow-lg"
-      )}>
-        {children}
-      </div>
-      {/* 页码标签 */}
-      {label && (
-        <div className={cn(
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-black px-2 py-0.5 rounded-full transition-colors",
-          selected 
-            ? "bg-brand-primary text-white"  
-            : "bg-gray-200 text-gray-500 group-hover:bg-gray-300"
-        )}>
-          {label}
-        </div>
-      )}
-      
-      {/* 鼠标悬浮显示的删除按钮 */}
-      {onDelete && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-90 z-20"
-          title="删除此页"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      )}
-    </div>
-  );
-};
+// SlideFrame 已提取到 @/components/slide/SlideFrame.tsx

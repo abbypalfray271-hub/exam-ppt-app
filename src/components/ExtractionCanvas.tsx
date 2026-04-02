@@ -4,29 +4,16 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, CheckCircle2, Loader2, X, Sparkles, CheckSquare, Square, LayoutList, Image as ImageIcon, Brain, Zap, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
-
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { cropImageByBox, compressImage } from '@/lib/documentProcessor';
+import { cropRectFromCanvas, processAIDiagrams, type CanvasRect, type PageOffset, type ImageSlice } from '@/lib/canvasCropper';
+import { MobileToolbar } from '@/components/canvas/MobileToolbar';
+import { ParsingFailurePanel, type ParsingFailure } from '@/components/canvas/ParsingFailurePanel';
 
-interface Rect {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  type?: 'question' | 'answer' | 'analysis' | 'diagram';
-  qIdx?: number;
-}
-
-// 每页图片在纵向容器中的偏移信息
-interface PageOffset {
-  top: number;         // 图片顶部在 container 中的 offsetTop
-  height: number;      // 图片显示高度
-  imgWidth: number;    // 图片显示宽度
-  naturalWidth: number;
-  naturalHeight: number;
-}
+// Rect 和 PageOffset 类型已提取到 @/lib/canvasCropper.ts
+// 本组件内使用 CanvasRect 别名 Rect
+type Rect = CanvasRect;
 
 export interface NormalizedRect {
   pageIdx: number;
@@ -72,7 +59,7 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
   // [NEW] 失败项面板数据
   // [NEW] 题号关联标定
   const [activeQIdx, setActiveQIdx] = useState(1);
-  const [parsingFailures, setParsingFailures] = useState<{ id: string; label: string; error: string }[]>([]);
+  const [parsingFailures, setParsingFailures] = useState<ParsingFailure[]>([]);
 
   const { 
     questions, 
@@ -469,111 +456,14 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
     };
   }, [selectedId, resizeHandle, zoom]);
 
-  interface ImageSlice {
-    base64: string;
-    yOffset: number; 
-    height: number;  
-  }
-
-  const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<ImageSlice> => {
-    if (offsets.length === 0) throw new Error('No page offsets');
-    const rectTop = rect.y;
-    const rectBottom = rect.y + rect.height;
-    const overlapping: { pageIdx: number; cropTop: number; cropHeight: number; offset: PageOffset }[] = [];
-    for (let i = 0; i < offsets.length; i++) {
-      const pTop = offsets[i].top;
-      const pBottom = pTop + offsets[i].height;
-      if (rectTop < pBottom && rectBottom > pTop) {
-        const cTop = Math.max(0, rectTop - pTop);
-        const cBottom = Math.min(offsets[i].height, rectBottom - pTop);
-        overlapping.push({ pageIdx: i, cropTop: cTop, cropHeight: cBottom - cTop, offset: offsets[i] });
-      }
-    }
-    if (overlapping.length === 0) throw new Error('Rect does not overlap any page');
-
-    const loaded = await Promise.all(
-      overlapping.map(({ pageIdx }) =>
-        new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.src = pages[pageIdx];
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error(`Page ${pageIdx} load failed`));
-        })
-      )
-    );
-
-    const segments: { img: HTMLImageElement; sx: number; sy: number; sw: number; sh: number }[] = [];
-    let fullH = 0;
-    let outputW = 0;
-
-    for (let i = 0; i < overlapping.length; i++) {
-      const { cropTop: cTop, cropHeight: cH, offset } = overlapping[i];
-      const img = loaded[i];
-      const sx = (rect.x / offset.imgWidth) * img.naturalWidth;
-      const sy = (cTop / offset.height) * img.naturalHeight;
-      const sw = (rect.width / offset.imgWidth) * img.naturalWidth;
-      const sh = (cH / offset.height) * img.naturalHeight;
-      segments.push({ img, sx, sy, sw, sh });
-      fullH += sh;
-      if (i === 0) outputW = sw;
-    }
-
-    const fullCanvas = document.createElement('canvas');
-    const fullCtx = fullCanvas.getContext('2d');
-    if (!fullCtx) throw new Error('Canvas ctx failed');
-    fullCanvas.width = outputW;
-    fullCanvas.height = fullH;
-
-    let currY = 0;
-    for (const seg of segments) {
-      fullCtx.drawImage(seg.img, seg.sx, seg.sy, seg.sw, seg.sh, 0, currY, outputW, seg.sh);
-      currY += seg.sh;
-    }
-
-    const MAX_WIDTH = 2500;
-    const MAX_HEIGHT = 5000;
-    let finalScale = 1;
-    if (outputW > MAX_WIDTH) finalScale = MAX_WIDTH / outputW;
-    if (fullH * finalScale > MAX_HEIGHT) finalScale = MAX_HEIGHT / fullH;
-    
-    const finalCanvas = document.createElement('canvas');
-    const fCtx = finalCanvas.getContext('2d');
-    if (!fCtx) throw new Error('Final canvas ctx failed');
-    finalCanvas.width = Math.round(outputW * finalScale);
-    finalCanvas.height = Math.round(fullH * finalScale);
-    fCtx.drawImage(fullCanvas, 0, 0, outputW, fullH, 0, 0, finalCanvas.width, finalCanvas.height);
-    
-    return {
-      base64: finalCanvas.toDataURL('image/jpeg', 0.98),
-      yOffset: 0,
-      height: finalCanvas.height
-    };
-  };
+    // cropRect 和 processAIDiagrams 已提取到 @/lib/canvasCropper.ts
+    // 使用 cropRectFromCanvas(rect, offsets, pages) 和 processAIDiagrams(aiDiagrams, sourceImage)
 
   const handleConfirm = async () => {
-    // === 辅助函数：处理 AI 返回的 diagrams 坐标并裁切为图片 ===
-    const processAIDiagrams = async (aiDiagrams: any[], sourceImage: string): Promise<string[]> => {
-      if (!aiDiagrams || !Array.isArray(aiDiagrams)) return [];
-      const diagramImages: string[] = [];
-      for (const d of aiDiagrams) {
-        // 兼容多种可能的坐标字段名
-        const box = d.box_2d || d.box || d.box2d || (Array.isArray(d) ? d : null);
-        if (!box || !Array.isArray(box) || box.length < 4) continue;
-        
-        // 增加 5% 的溢出保护
-        const boxH = box[2] - box[0];
-        const boxW = box[3] - box[1];
-        const expandedBox: [number, number, number, number] = [
-          Math.max(0, box[0] - Math.round(boxH * 0.05)),
-          Math.max(0, box[1] - Math.round(boxW * 0.05)),
-          Math.min(1000, box[2] + Math.round(boxH * 0.05)),
-          Math.min(1000, box[3] + Math.round(boxW * 0.05)),
-        ];
-        
-        const dCrop = await cropImageByBox(sourceImage, expandedBox);
-        if (dCrop) diagramImages.push(dCrop);
-      }
-      return diagramImages;
+
+    // 包装函数：用提取后的 cropRectFromCanvas 替代原来的内联 cropRect
+    const cropRect = async (rect: Rect, offsets: PageOffset[]): Promise<ImageSlice> => {
+      return cropRectFromCanvas(rect, offsets, pages);
     };
 
     const qRects = rects.filter(r => r.type === 'question' || !r.type).sort((a, b) => a.y - b.y);
@@ -1171,72 +1061,25 @@ export const ExtractionCanvas = ({ pages, initialPageIndex = 0, initialNormalize
         </div>
       </div>
 
-      {/* === 移动端悬浮操作栏 (Fixed Bottom Bar) === */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 pb-safe bg-white/95 backdrop-blur-md border-t z-[80] shadow-[0_-10px_20px_rgba(0,0,0,0.05)] flex items-center justify-between gap-2.5">
-        
-        {/* 全局页面抽屉按钮 */}
-        <button
-          onClick={() => setIsMobileSidebarOpen(true)}
-          className="flex flex-col items-center justify-center gap-1 w-[68px] h-[52px] bg-indigo-50 text-indigo-600 rounded-xl active:scale-95 transition-transform shrink-0"
-        >
-          <LayoutList className="w-5 h-5" /> 
-          <span className="text-[10px] font-black leading-none">{selectedPageIndices.size}/{pages.length}页</span>
-        </button>
+      {/* === 移动端悬浮操作栏 (提取为独立子组件) === */}
+      <MobileToolbar
+        selectedPageCount={selectedPageIndices.size}
+        totalPageCount={pages.length}
+        isDeepThinking={isDeepThinking}
+        isProcessing={isProcessing}
+        progress={progress}
+        onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+        onToggleDeepThinking={() => setIsDeepThinking(!isDeepThinking)}
+        onSkip={() => setView('editor')}
+        onConfirm={handleConfirm}
+      />
 
-        {/* 深度思考 (Mobile) */}
-        <button
-          onClick={() => setIsDeepThinking(!isDeepThinking)}
-          className={cn(
-            "flex flex-col items-center justify-center gap-1 w-[68px] h-[52px] rounded-xl active:scale-95 transition-all shrink-0 shadow-sm border",
-            isDeepThinking ? "bg-purple-600 text-white border-purple-700" : "bg-gray-50 text-gray-400 border-gray-200"
-          )}
-        >
-          {isDeepThinking ? <Brain className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-          <span className="text-[9px] font-black leading-none">深度思考</span>
-        </button>
-
-        <button
-          onClick={() => setView('editor')}
-          className="flex-1 h-[52px] bg-orange-500 text-white font-black text-[15px] rounded-xl shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] active:scale-95 transition-all flex items-center justify-center shrink-0"
-        >
-          跳过
-        </button>
-
-        <button
-          onClick={handleConfirm}
-          disabled={isProcessing}
-          className="flex-[1.5] h-[52px] bg-brand-primary text-white font-black text-[15px] rounded-xl shadow-[0_8px_20px_-6px_rgba(59,130,246,0.5)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-80 transition-all flex items-center justify-center gap-2 shrink-0 border-none"
-        >
-          {isProcessing ? (
-            <><Loader2 className="w-5 h-5 animate-spin" /> {Math.floor(progress)}%</>
-          ) : (
-            <><CheckCircle2 className="w-5 h-5" /> 识别解析</>
-          )}
-        </button>
-      </div>
-
-      <AnimatePresence>
-        {!isProcessing && parsingFailures.length > 0 && (
-          <motion.div initial={{ opacity: 0, x: 200 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="fixed top-24 right-6 w-80 bg-white border border-red-200 rounded-3xl shadow-2xl z-[150] overflow-hidden">
-             <div className="p-5 bg-gradient-to-r from-red-500 to-rose-600 text-white flex items-center justify-between font-black">
-                <span>解析任务诊断报告</span>
-                <button onClick={() => setParsingFailures([])}><X size={16} /></button>
-             </div>
-             <div className="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
-                {parsingFailures.map((f, i) => (
-                  <div key={f.id} className="p-3 bg-red-50 rounded-xl">
-                    <div className="text-xs font-black flex justify-between"><span>{f.label}</span><span>#{i+1}</span></div>
-                    <div className="text-[10px] text-red-600 mt-1">{f.error}</div>
-                  </div>
-                ))}
-             </div>
-             <div className="p-4 border-t bg-gray-50 flex flex-col gap-2">
-                <p className="text-[10px] text-gray-500 text-center">系统已跳过失败项，您可以手动补录。</p>
-                <button onClick={() => setParsingFailures([])} className="w-full py-2 bg-red-500 text-white font-black rounded-xl">确认并继续</button>
-             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* === 解析失败诊断报告 (提取为独立子组件) === */}
+      <ParsingFailurePanel
+        failures={parsingFailures}
+        isProcessing={isProcessing}
+        onDismiss={() => setParsingFailures([])}
+      />
       <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleAddPage} />
     </div>
   );
