@@ -8,7 +8,7 @@ import { compressImage, cropImageByBox } from '@/lib/documentProcessor';
 
 interface UseAIExtractionProps {
   pages: string[];
-  rects: CanvasRect[];
+  rects: any[]; // 兼容 ExtendedRect
   onComplete: () => void;
 }
 
@@ -33,11 +33,13 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   const startExtraction = useCallback(async (
     offsets: PageOffset[], 
     selectedPageIndices: Set<number>,
-    isDeepThinking: boolean
+    isDeepThinking: boolean,
+    correctedRects?: any[] // [NEW] 接收已经处理过坐标偏移的 Rect
   ) => {
     if (isProcessing) return;
 
-    const qRects = rects.filter(r => r.type === 'question' || !r.type);
+    const targetRects = correctedRects || rects;
+    const qRects = targetRects.filter(r => r.type === 'question' || !r.type);
     
     // 情况 A: 全自动批量识别 (无手动框选题目)
     if (qRects.length === 0) {
@@ -49,7 +51,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
     } 
     // 情况 B: 手动/半自动框选识别
     else {
-      await runManualBoxExtraction(offsets, isDeepThinking);
+      await runManualBoxExtraction(offsets, isDeepThinking, targetRects);
     }
   }, [rects, isProcessing, pages]);
 
@@ -57,7 +59,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   async function runFullAutoExtraction(pageIndices: number[], isDeepThinking: boolean) {
     setProcessing(true);
     setParsingFailures([]);
-    setTotalItems(pageIndices.size);
+    setTotalItems(pageIndices.length);
     const allResults: Question[] = [];
 
     try {
@@ -71,6 +73,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
         // 构造切片：全页作为 Question
         const clips: AIClip[] = [{
           role: 'question',
+          source: 'exam', // 全自动模式默认为试卷来源
           color: 'blue',
           image: compressedPage
         }];
@@ -108,13 +111,13 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   }
 
   // --- 手动框选模式 (核心重构：基于颜色切片) ---
-  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean) {
+  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: any[]) {
     setProcessing(true);
     setParsingFailures([]);
     
     // 按 qIdx 分组
-    const groupMap = new Map<number, CanvasRect[]>();
-    rects.forEach(r => {
+    const groupMap = new Map<number, any[]>();
+    targetRects.forEach(r => {
       const qIdx = r.qIdx || 1;
       if (!groupMap.has(qIdx)) groupMap.set(qIdx, []);
       groupMap.get(qIdx)!.push(r);
@@ -144,6 +147,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
           
           clips.push({
             role: role as any,
+            source: r.source || 'exam', // [NEW] 传递来源
             color: colorMap[role as keyof typeof colorMap] || 'blue',
             image: slice.base64
           });
@@ -156,8 +160,14 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
         
         if (streamResults && streamResults.length > 0) {
           const processed = streamResults.map((q, subIdx) => {
-            // 特殊处理插图：将绿色切片直接同步给 Question
-            const diagramImages = clips.filter(c => c.role === 'diagram').map(c => c.image);
+            // 极致精准分流：仅保留角色为 'diagram' 的插图，排除所有识字用的文本切片
+            const examDiagrams = clips
+              .filter(c => c.source !== 'reference' && c.role === 'diagram')
+              .map(c => c.image);
+            
+            const refDiagrams = clips
+              .filter(c => c.source === 'reference' && c.role === 'diagram')
+              .map(c => c.image);
 
             return {
               ...q,
@@ -165,7 +175,8 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
               order: questions.length + allResults.length + subIdx + 1,
               image: mainQuestionImage,
               contentImage: mainQuestionImage,
-              diagrams: diagramImages, // 注入手动框选的插图
+              diagrams: examDiagrams, // 仅存放试卷中的物理插图
+              answerDiagrams: refDiagrams, // 仅存放参考池中的物理插图
             } as unknown as Question;
           });
           allResults.push(...processed);

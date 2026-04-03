@@ -44,6 +44,7 @@ export interface AIQuestionResult {
  */
 export interface AIClip {
   role: 'question' | 'answer' | 'analysis' | 'diagram';
+  source: 'exam' | 'reference'; // [NEW] 区分素材来源：试卷还是参考池
   color: 'blue' | 'red' | 'purple' | 'emerald';
   image: string; // Base64
 }

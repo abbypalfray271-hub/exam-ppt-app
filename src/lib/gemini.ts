@@ -61,6 +61,8 @@ export const parseQuestion = async (
   [符号物理隔离]
   - 所有数学依据、关系及特殊符号必须使用 **原生 UTF-8 符号**：∵, ∴, Δ, ∠, ≅, ∽, √, ², π, ⊥, ▱, ⊙。
   - 严禁使用任何形式的转义字符或由反斜杠引导的命令。
+  - **重要：由于 JSON 格式限制，输出反斜杠时请确保其能被正确转义（如果你输出单反斜杠，下游解析器会自动处理，但请尽量保持语法标准）。**
+  - **重要：如果你收到了绿色切片 (Diagram)，必须在输出文字 (content 或 analysis) 的对应位置插入 [附图] 占位符，严禁漏掉。**
 
   [视觉盘点 (Visual Inventory)]
   在解析前，必须在分析首段先盘点：图中共有几张图？主图与局部放大图的对应关系是什么？关键点在哪里？观察是否有虚线（辅助线）及其标注。严禁忽视细节。
@@ -110,11 +112,12 @@ export const parseQuestion = async (
   });
 
   sortedClips.forEach((clip, index) => {
+    const sourceText = clip.source === 'reference' ? '源自参考池' : '源自试卷';
     let label = "";
-    if (clip.role === 'question') label = `【蓝色切片 - 题干内容 #${index + 1}】`;
-    if (clip.role === 'answer') label = `【红色切片 - 官方答案 #${index + 1}】`;
-    if (clip.role === 'analysis') label = `【紫色切片 - 官方解析 #${index + 1}】`;
-    if (clip.role === 'diagram') label = `【绿色切片 - 关联插图 #${index + 1}】`;
+    if (clip.role === 'question') label = `【蓝色切片 - 题干内容 (${sourceText} #${index + 1})】`;
+    if (clip.role === 'answer') label = `【红色切片 - 官方答案 (${sourceText} #${index + 1})】`;
+    if (clip.role === 'analysis') label = `【紫色切片 - 官方解析 (${sourceText} #${index + 1})】`;
+    if (clip.role === 'diagram') label = `【绿色切片 - 关联插图 (${sourceText} #${index + 1})】`;
 
     messageContent.push({
       type: "text",

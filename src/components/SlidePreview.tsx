@@ -1,8 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Question, useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
+import { RichExamContent } from '@/components/RichExamContent';
 import { cleanLatexSymbols } from '@/lib/latexCleaner';
 import { 
   Trash2, 
@@ -20,7 +22,6 @@ import {
   Image as ImageIcon,
   Zap
 } from 'lucide-react';
-import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResizableHandle } from './ResizableHandle';
 
@@ -39,160 +40,7 @@ export { TitleSlide } from '@/components/slide/TitleSlide';
 
 // ============================================================
 // 统一模板幻灯片：左素材 + 右侧多题目区块 (极简分割版)
-// cleanLatexSymbols 已提取到 @/lib/latexCleaner.ts
 // ============================================================
-
-/**
- * 渲染规范化文本：对“解：”、“关键步骤”、“答：”等进行视觉强化
- */
-const renderStandardizedText = (rawText: string) => {
-  if (!rawText) return null;
-  const text = cleanLatexSymbols(rawText);
-  
-  // 匹配标记词：解、证明、答、因为、由于、所以、则、综上所述
-  // 必须是出现在行首或紧跟在换行符后的关键字，或者带冒号的结尾
-  const parts = text.split(/(解：|证明：|答：|因为|由于|所以|则|综上所述)/g);
-
-  return parts.map((part, index) => {
-    const isKeyword = /^(解：|证明：|答：|因为|由于|所以|则|综上所述)$/.test(part);
-    if (isKeyword) {
-      const isConclusion = part === '答：' || part === '综上所述';
-      return (
-        <span 
-          key={index} 
-          className={cn(
-            "font-black mr-1",
-            isConclusion ? "text-[#1e293b] text-[1.1em] border-l-4 border-brand-primary pl-2" : "text-purple-700"
-          )}
-        >
-          {part}
-        </span>
-      );
-    }
-    return <span key={index}>{part}</span>;
-  });
-};
-
-// ============================================================
-
-const renderClozeText = (rawText: string, show: boolean, diagrams?: string[], forceMask: boolean = false) => {
-  if (!rawText) return null;
-  const showAnswer = show && !forceMask;
-  const text = cleanLatexSymbols(rawText);
-  
-  // 正则增强 V2：优先捕获整个圆括号块（即使内部含有 {{}}），其次捕获独立的 {{内容}}
-  // 模式解释：
-  // 1. [\(（][^()（）]*\{\{[\s\S]*?\}\}[^()（）]*[\)）] -> 捕获包含打码标记的完整括号
-  // 2. \{\{[\s\S]*?\}\} -> 捕获独立的打码标记
-  // 3. [\(（][^()（）]{1,12}[\)）] -> 捕获普通短括号（用于猜测打码）
-  const parts = text.split(/(\[\附图\]|\[表格\]|[\(（][^()（）]*?\{\{[\s\S]*?\}\}[^()（）]*?[\)）]|\{\{[\s\S]*?\}\}|[\(（][^()（）]{1,12}[\)）])/g);
-  let diagramIndex = 0;
-
-  const renderedParts = parts.map((part, index) => {
-    // 1. 处理图样占位符
-    if (part === '[附图]' || part === '[表格]') {
-      const imgSrc = diagrams?.[diagramIndex++];
-      if (imgSrc && typeof imgSrc === 'string' && imgSrc.startsWith('data:image')) {
-        return (
-          <div key={`diag-${index}`} className="my-4 flex items-center justify-center w-full">
-            <img 
-              src={imgSrc} 
-              alt="插图" 
-              className="max-w-[80%] max-h-[16em] object-contain rounded-lg shadow-sm border border-gray-100 bg-white mix-blend-multiply" 
-            />
-          </div>
-        );
-      }
-      // 如果数据异常（如 AI 返回了坐标但裁切失败），显示占位符而非破碎图标
-      return <span key={index} className="text-gray-400 italic mx-1 opacity-50 flex flex-col items-center gap-1 border border-dashed border-gray-200 p-4 rounded-lg my-2"><ImageIcon className="w-5 h-5" /> 插图加载中或不可用</span>;
-    }
-
-    // 2. 处理显式打码语法 {{答案}} (包含被包裹在括号内的完整块)
-    // 如果匹配项是以括号开头结尾且内部含有 {{}}，或者直接是 {{}}
-    const isExplicitCloze = part.startsWith('{{') && part.endsWith('}}');
-    const isParenWithCloze = (part.startsWith('(') || part.startsWith('（')) && (part.endsWith(')') || part.endsWith('）')) && part.includes('{{');
-
-    if (isExplicitCloze || isParenWithCloze) {
-      // 提取核心答案文本用于占位计算
-      const answerText = part.replace(/\{\{/g, '').replace(/\}\}/g, '').replace(/[\(（\)）]/g, '').trim();
-      if (!answerText) return null;
-
-      if (showAnswer) {
-        // 显示态：如果是括号包裹型，还原括号并高亮内部
-        const displayContent = part.replace(/\{\{|\}\}/g, '');
-        return (
-          <span key={index} className="inline-block text-brand-primary font-black border-b-[2px] border-brand-primary pb-[1px] px-1 mx-1 bg-brand-primary/10 rounded-sm scale-110 transition-transform">
-            {cleanLatexSymbols(displayContent)}
-          </span>
-        );
-      } else {
-        // 隐藏态：遮盖整个匹配块长度
-        return (
-          <span key={index} className="inline-block min-w-[5em] text-transparent border-b-[2.5px] border-gray-400/50 pb-[1px] px-2 mx-1 select-none relative bg-gray-100/50 rounded-sm">
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 font-bold tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">答案已隐藏</span>
-            {cleanLatexSymbols(part.replace(/\{\{|\}\}/g, ''))}
-          </span>
-        );
-      }
-    }
-
-    // 3. 智能语义遮挡：捕获普通的 (yì) 或 (1) 这种括号内容
-    const parenMatch = part.match(/^[\(（](.+)[\)）]$/);
-    if (parenMatch) {
-      const inner = parenMatch[1].trim();
-      // 启发式规则：如果括号内是 1-8 个字符，且看起来像拼音（含音调）或字母/选项
-      const isLikelyAnswer = inner.length <= 10 && (
-        /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/.test(inner) || // 含拼音音调
-        /^[a-zA-Z√×\s\/\\]{1,8}$/.test(inner) ||      // 纯字母、对错符号或分隔符
-        /^[\u4e00-\u9fa5]{1,2}$/.test(inner)        // 1-2个汉字候选词
-      ) && !/^\d+$/.test(inner); // 排除纯数字如 (1) (2)
-
-      if (isLikelyAnswer && !showAnswer) {
-        return (
-          <span key={index} className="inline-block transition-all duration-300">
-            {part[0]}
-            <span className="inline-block min-w-[2.5em] text-transparent border-b-2 border-dashed border-brand-primary/30 mx-0.5 select-none relative bg-brand-primary/5 rounded-sm">
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] text-brand-primary/40 font-black opacity-0 group-hover:opacity-100 transition-opacity scale-75">?</span>
-                {inner}
-            </span>
-            {part[part.length - 1]}
-          </span>
-        );
-      } else if (isLikelyAnswer && showAnswer) {
-        return (
-          <span key={index} className="inline-block text-brand-primary font-black scale-110 transition-transform">
-            {part[0]}{inner}{part[part.length - 1]}
-          </span>
-        );
-      }
-    }
-
-    return <span key={index} className="whitespace-pre-wrap">{part}</span>;
-  });
-
-  // 如果仍有未使用的图样（可能 AI 没给占位符，或者手动框选但未编辑文本），则追加在末尾
-  const remainingDiagrams: React.ReactNode[] = [];
-  if (diagrams && diagramIndex < diagrams.length) {
-    for (let i = diagramIndex; i < diagrams.length; i++) {
-      remainingDiagrams.push(
-        <div key={`rem-diag-${i}`} className="my-4 flex items-center justify-center w-full">
-          <img 
-            src={diagrams[i]} 
-            alt="追加插图" 
-            className="max-w-[80%] max-h-[16em] object-contain rounded-lg shadow-sm border border-gray-100 bg-white mix-blend-multiply" 
-          />
-        </div>
-      );
-    }
-  }
-
-  return (
-    <>
-      {renderedParts}
-      {remainingDiagrams}
-    </>
-  );
-};
 
 const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
   const masks: React.ReactNode[] = [];
@@ -351,6 +199,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   // =========================
 
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   // 3-state click cycle: hidden → answer → analysis → hidden
   const [revealState, setRevealState] = useState<'hidden' | 'answer' | 'analysis'>('hidden');
   const [isEditingContent, setIsEditingContent] = useState(false); // 新增状态：控制是否处于富文本编辑状态
@@ -777,38 +626,81 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                               autoFocus
                             />
                           ) : (
-                            <div className="text-xl font-bold text-[#1e293b] leading-loose whitespace-pre-wrap cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                              {/* 题目部分：在 answer/analysis 状态下可见内部答案，缩略图(forceMask)下强制隐藏 */}
-                              {renderClozeText(questionPart, revealState === 'answer' || revealState === 'analysis', expandedQuestion.diagrams, forceMask)}
+                            <div className="text-xl font-bold text-[#1e293b] leading-loose cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                              {/* [题干渲染] */}
+                              <RichExamContent 
+                                content={questionPart} 
+                                showClozeAnswers={revealState === 'answer' || revealState === 'analysis'}
+                                diagrams={expandedQuestion.diagrams}
+                                onImageClick={setZoomedImage}
+                              />
                               
-                              {/* 答案部分：在 answer 或 analysis 状态下可见 */}
+                              {/* [答案区域] */}
                               {(answerPart || expandedQuestion.answer) && (revealState === 'answer' || revealState === 'analysis') && (
-                                <div className="mt-4 pt-4 border-t-2 border-dashed border-brand-primary/10 flex flex-col gap-2">
+                                <div className="mt-8 pt-6 border-t-2 border-dashed border-brand-primary/10 flex flex-col gap-4">
                                   <div className="flex items-center gap-2 text-brand-primary">
-                                    <CheckSquare className="w-5 h-5" />
-                                    <span className="text-sm font-black uppercase tracking-widest">答案：</span>
+                                    <CheckSquare className="w-6 h-6" />
+                                    <span className="text-sm font-black uppercase tracking-widest bg-brand-primary/5 px-3 py-1 rounded-full">参考答案</span>
                                   </div>
-                                  <div className="text-brand-primary whitespace-pre-wrap font-black text-2xl md:text-3xl pl-2">
-                                    {cleanLatexSymbols(answerPart ? answerPart.replace(/【.*?答案.*?】/, '').trim() : (expandedQuestion.answer || '无'))}
+                                  <div className="text-brand-primary font-black text-2xl md:text-4xl pl-2 drop-shadow-sm">
+                                    <RichExamContent 
+                                      content={answerPart ? answerPart.replace(/【.*?答案.*?】/, '').trim() : (expandedQuestion.answer || '无')} 
+                                      showClozeAnswers={true} 
+                                      diagrams={expandedQuestion.diagrams}
+                                      diagramStartIndex={(questionPart.match(/\[附图\]/g) || []).length}
+                                      onImageClick={setZoomedImage}
+                                    />
                                   </div>
                                 </div>
                               )}
 
-                              {/* 解析部分：仅在 analysis 状态下显示 */}
+                              {/* [解析区域] */}
                               {analysisPart && revealState === 'analysis' && (
-                                <div className="mt-4 pt-4 border-t-2 border-dashed border-purple-200">
-                                  <div className="text-xl md:text-2xl font-bold text-purple-700 leading-loose whitespace-pre-wrap">
-                                    {cleanLatexSymbols(analysisPart)}
+                                <div className="mt-8 pt-6 border-t-2 border-dashed border-purple-200">
+                                  <div className="flex items-center gap-2 text-purple-700 mb-4">
+                                    <BookOpen className="w-6 h-6" />
+                                    <span className="text-sm font-black uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-full">详解步骤</span>
                                   </div>
+                                  <div className="text-xl md:text-2xl font-bold text-slate-700 leading-relaxed">
+                                    <RichExamContent 
+                                      content={analysisPart} 
+                                      showClozeAnswers={true} 
+                                      diagrams={expandedQuestion.diagrams}
+                                      diagramStartIndex={(questionPart.match(/\[附图\]/g) || []).length + (answerPart?.match(/\[附图\]/g) || []).length}
+                                      onImageClick={setZoomedImage}
+                                    />
+                                  </div>
+
+                                  {/* [辅助配图廊] - 精细化分流展示 */}
+                                  {expandedQuestion.answerDiagrams && expandedQuestion.answerDiagrams.length > 0 && (
+                                    <div className="mt-8 flex flex-wrap justify-center gap-6">
+                                      {expandedQuestion.answerDiagrams.map((dg, dgIdx) => (
+                                        <div key={dgIdx} className="group/dg relative">
+                                          <div className="absolute -top-3 -left-2 z-10 bg-brand-primary text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-lg">
+                                            补充知识点 #{dgIdx + 1}
+                                          </div>
+                                          <img 
+                                            src={dg} 
+                                            alt={`Supplement ${dgIdx}`}
+                                            className="max-h-64 md:max-h-80 rounded-2xl shadow-xl border-4 border-white cursor-zoom-in hover:scale-[1.03] transition-transform active:scale-95"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setZoomedImage(dg);
+                                            }}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                   
                                   {/* AI 渲染的 SVG 辅助配图 */}
                                   {expandedQuestion.auxiliary_svg && (
-                                    <div className="w-full flex flex-col items-center gap-3 mt-6 bg-purple-50/50 rounded-2xl p-4 border border-purple-100">
+                                    <div className="w-full flex flex-col items-center gap-3 mt-8 bg-white rounded-2xl p-6 border-2 border-purple-100 shadow-inner">
                                       <div className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-1.5 self-start">
                                         <Zap className="w-4 h-4 fill-purple-400" /> AI 几何作图引擎
                                       </div>
                                       <div 
-                                        className="w-full max-w-sm aspect-square bg-white rounded-xl shadow-inner border border-purple-100/50 flex items-center justify-center p-2 overflow-hidden"
+                                        className="w-full max-w-sm aspect-square flex items-center justify-center p-2 overflow-hidden"
                                         dangerouslySetInnerHTML={{ __html: expandedQuestion.auxiliary_svg }}
                                       />
                                     </div>
@@ -1010,9 +902,145 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                </div>
              </motion.div>
            </motion.div>
-         )}
-       </AnimatePresence>
+          )}
+        </AnimatePresence>
+
+       {/* [NEW] 交互式全屏灯箱 (Portal) - 支持滚轮缩放与拖拽平移 */}
+       {typeof document !== 'undefined' && zoomedImage && createPortal(
+         <Lightbox 
+           src={zoomedImage} 
+           onClose={() => setZoomedImage(null)} 
+         />,
+         document.body
+       )}
     </div>
+  );
+};
+
+/**
+ * 内部功能组件：交互式滚动缩放灯箱
+ * 技术栈：Framer Motion (Spring Physics) + React Hooks
+ */
+const Lightbox: React.FC<{ src: string; onClose: () => void }> = ({ src, onClose }) => {
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 核心逻辑：平滑滚轮缩放
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    // 灵敏度控制：向上滚放大，向下滚缩小
+    const delta = e.deltaY < 0 ? 1.15 : 0.85; 
+    const newScale = Math.min(Math.max(0.5, scale * delta), 12); // 最高支持 12 倍放大
+    setScale(newScale);
+
+    // 回弹重置：当缩放接近原始比例时，清空偏移量
+    if (newScale <= 1.05) {
+      setOffset({ x: 0, y: 0 });
+    }
+  };
+
+  // 核心逻辑：拖拽平移 (仅在放大状态激活)
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || scale <= 1) return;
+    setOffset(prev => ({
+      x: prev.x + e.movementX,
+      y: prev.y + e.movementY
+    }));
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-3xl flex items-center justify-center overflow-hidden touch-none"
+        onWheel={handleWheel}
+        onClick={onClose}
+        onPointerDown={(e) => {
+          if (scale > 1) {
+            setIsDragging(true);
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          }
+        }}
+        onPointerUp={(e) => {
+          setIsDragging(false);
+          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        }}
+        onPointerMove={handlePointerMove}
+      >
+        {/* 右上角悬浮控制栏 */}
+        <div className="absolute top-8 right-8 z-50 flex items-center gap-4">
+          <div className="bg-white/10 px-5 py-2.5 rounded-2xl border border-white/20 backdrop-blur-xl text-white text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-3">
+             <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
+                <span>Zoomed {Math.round(scale * 100)}%</span>
+             </div>
+             <div className="w-px h-3 bg-white/20" />
+             <span className="opacity-60">Interactive Mode</span>
+          </div>
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="w-14 h-14 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,0.5)] hover:scale-110 active:scale-90 transition-all text-2xl font-black border-4 border-black/10 z-50"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* 动态渲染容器 */}
+        <motion.div
+          animate={{ 
+            scale: scale,
+            x: offset.x,
+            y: offset.y,
+            rotate: isDragging ? 0.2 : 0 // 增加微小的物理扭曲感
+          }}
+          transition={{ 
+            type: 'spring', 
+            damping: 30, 
+            stiffness: 250, 
+            mass: 0.8
+          }}
+          className={cn(
+            "relative flex items-center justify-center p-4 transition-all duration-300",
+            scale > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <img
+            src={src}
+            alt="Large preview"
+            className="max-w-[70vw] max-h-[70vh] md:max-w-[85vw] md:max-h-[85vh] object-contain rounded-2xl shadow-[0_0_120px_rgba(0,0,0,0.8)] border-4 border-white/30 select-none pointer-events-none"
+            draggable={false}
+          />
+        </motion.div>
+        
+        {/* 底部操作反馈 */}
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 opacity-30 group pointer-events-none">
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col items-center gap-1">
+               <div className="w-8 h-8 rounded-lg border border-white/40 flex items-center justify-center mb-1">
+                 <div className="w-1 h-3 bg-white/60 rounded-full" />
+               </div>
+               <span className="text-[9px] font-black text-white uppercase tracking-tighter">Scroll Zoom</span>
+            </div>
+            <div className="w-px h-8 bg-white/20" />
+            <div className="flex flex-col items-center gap-1">
+               <div className="w-8 h-8 rounded-lg border border-white/40 flex items-center justify-center mb-1">
+                 <div className="w-3 h-3 border-2 border-white/60 rounded-sm" />
+               </div>
+               <span className="text-[9px] font-black text-white uppercase tracking-tighter">Drag Pan</span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 };
 

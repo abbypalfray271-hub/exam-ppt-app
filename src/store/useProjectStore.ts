@@ -26,12 +26,14 @@ export interface Question {
   analysis_box?: [number, number, number, number]; // 记录原图上解析区域的万分位坐标，以便打码
   diagram_boxes?: [number, number, number, number][]; // [NEW] 题中的插图万分位坐标数组
   diagrams?: string[]; // [NEW] 裁剪后的插图图片流 (Base64) 数组
+  answerDiagrams?: string[]; // [NEW] 来自参考池的辅助插图/截图流 (Base64) 数组
 }
 
 interface ProjectState {
   projectName: string;
   examImageUrl?: string;
   examPages: string[]; // PDF 各页图像
+  referencePages: string[]; // [NEW] 参考答案/素材库
 
   questions: Question[];
   currentMode: 'quick' | 'deep';
@@ -62,6 +64,7 @@ interface ProjectState {
   setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
   setCanvasOpen: (open: boolean) => void; // -- 新增：控制框选画布 --
   setFileType: (type: 'image' | 'pdf' | null) => void;
+  setReferencePages: (pages: string[]) => void; // [NEW] 设置参考答案页
 
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
 
@@ -70,6 +73,7 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>((set) => ({
   projectName: '新考试试卷讲解',
   examPages: [],
+  referencePages: [], // [NEW]
   questions: [],
   currentMode: 'quick',
   isProcessing: false,
@@ -103,9 +107,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setView: (view) => set({ currentView: view }),
   setCanvasOpen: (open) => set({ isCanvasOpen: open }),
   setFileType: (type) => set({ fileType: type }),
+  setReferencePages: (pages) => set({ referencePages: pages }), // [NEW]
   resetUpload: () => set({ 
     examImageUrl: undefined, 
     examPages: [], 
+    referencePages: [], // [NEW] 同时清空参考页
     questions: [], 
     isProcessing: false,
     currentSlideIndex: 0,
