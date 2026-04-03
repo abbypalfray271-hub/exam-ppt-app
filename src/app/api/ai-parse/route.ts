@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseQuestion, parseFullDocument } from '@/lib/gemini';
+import { parseQuestion } from '@/lib/gemini';
 
 /** 从 content 中提取【解析】部分，写入 analysis 字段（保留 content 不变） */
 function extractAnalysis(questions: any[]): any[] {
@@ -55,11 +55,8 @@ export async function POST(request: NextRequest) {
             !!isDeepThinking
           );
           send({ type: 'data', data: extractAnalysis(result) });
-        } else if (action === 'parseFullDocument') {
-          const result = await parseFullDocument(images, onStatus, !!isDeepThinking);
-          send({ type: 'data', data: extractAnalysis(result) });
         } else {
-          send({ type: 'error', error: 'Invalid action' });
+          send({ type: 'error', error: `Invalid action: ${action}` });
         }
       } catch (error: any) {
         console.error('[API Stream Error]:', error);

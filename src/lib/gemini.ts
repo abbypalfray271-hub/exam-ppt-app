@@ -275,26 +275,4 @@ function robustParseJson(raw: string): any {
   }
 }
 
-/**
- * 全文档解析接口 (同步双通道逻辑)
- */
-export const parseFullDocument = async (
-  images: string[],
-  onStatus?: (status: string) => void,
-  isDeepThinking: boolean = false
-): Promise<any> => {
-  const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
-  const model31 = process.env.REASONING_MODEL_NAME || "gemini-3.1-pro-preview";
-  const modelName = isDeepThinking ? model31 : model30;
-  
-  const apiKey = process.env.API_KEY;
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
-
-  if (onStatus) {
-    onStatus(isDeepThinking ? "🧠 正在深度分析全页内容..." : "⚡ 正在智能提取页面题目...");
-  }
-
-  // TODO: 目前仅作为架构预留，实际调用逻辑仍主要由 ExtractionCanvas 分页驱动
-  return []; 
-};
-
+// parseFullDocument 已被移除 — 全文档解析现由 ExtractionCanvas 分页驱动调用 parseQuestion

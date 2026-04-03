@@ -14,8 +14,14 @@ import { createPortal } from 'react-dom';
 
 import { importProjectJSON } from '@/lib/projectIO';
 
-
-
+/**
+ * 上传区组件 (P1 重构版)
+ * 
+ * 核心改动：消除了双重状态源 (Single Source of Truth)
+ * - 删除了本地 pdfPages, preview, localFileType 状态
+ * - 全部使用 Store 中的 examPages, examImageUrl, fileType 驱动
+ * - preview 由 examPages[currentPage] 派生，不再独立维护
+ */
 export const UploadZone = () => {
   const { 
     setExamImage, 
@@ -30,77 +36,62 @@ export const UploadZone = () => {
     setCanvasOpen,
     resetUpload,
     setFileType,
-    fileType: storeFileType
+    fileType   // [P1] 直接使用 Store 中的 fileType，不再维护本地副本
   } = useProjectStore();
 
-  
+  // === 仅保留纯 UI 状态 ===
   const [isDragActive, setIsDragActive] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [pdfPages, setPdfPages] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [fileType, setLocalFileType] = useState<'image' | 'pdf' | null>(null);
-
+  const [currentPage, setCurrentPage] = useState(0);       // 当前预览页码 (纯 UI 导航)
   const [fileName, setFileName] = useState<string | null>(null);
-
   const [autoDetectedRects, setAutoDetectedRects] = useState<NormalizedRect[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
-  
-  // 初始化预览 (从 Store 恢复)
+
+  // [P1] preview 由 Store 派生，不再独立维护
+  const preview = examPages.length > 0 ? examPages[currentPage] : examImageUrl || null;
+  const hasContent = examPages.length > 0 || !!examImageUrl;
+
+  // 初始化：仅处理 mounted 状态
   React.useEffect(() => {
     setMounted(true);
-    if (examPages.length > 0) {
-      setPdfPages(examPages);
-      setLocalFileType('image'); // 开启多页模式
-      if (!preview) {
-        setPreview(examPages[0]);
-        setExamImage(examPages[0]);
-      }
-    } else if (examImageUrl && !preview) {
-      setPreview(examImageUrl);
-      setLocalFileType('image');
+  }, []);
+
+  // 当 examPages 变化且 currentPage 越界时，自动修正
+  React.useEffect(() => {
+    if (examPages.length > 0 && currentPage >= examPages.length) {
+      setCurrentPage(examPages.length - 1);
     }
-  }, [examPages, examImageUrl, preview]);
-
-  // handleWordParse removed
-
+  }, [examPages, currentPage]);
 
   const handleFiles = async (files: File[], mode: 'replace' | 'append' = 'replace') => {
     if (!files || files.length === 0) return;
     
     setProcessing(true);
     try {
-      // 检查首选处理模式
       const mainFile = files[0];
       if (mode === 'replace') {
         setFileName(files.length > 1 ? `${mainFile.name} 等 ${files.length} 个文件` : mainFile.name);
       }
 
       if (mainFile.type === 'application/pdf' || mainFile.name.toLowerCase().endsWith('.pdf')) {
-        setLocalFileType('pdf');
-        setFileType('pdf');
+        setFileType('pdf');     // [P1] 只写 Store，不再双写
         const images = await pdfToImages(mainFile);
         
         if (mode === 'append') {
-          const newPages = [...pdfPages, ...images];
-          setPdfPages(newPages);
+          const newPages = [...examPages, ...images];
           setExamPages(newPages);
-          setCurrentPage(pdfPages.length);
-          setPreview(images[0]);
-          setExamImage(images[0]);
+          setCurrentPage(examPages.length); // 跳到新页
+          if (images.length > 0) setExamImage(images[0]);
         } else {
-          setPdfPages(images);
           setExamPages(images);
           if (images.length > 0) {
-            setPreview(images[0]);
             setExamImage(images[0]);
             setCurrentPage(0);
           }
         }
       } else {
         // 处理图片文件
-        setLocalFileType('image');
-        setFileType('image');
+        setFileType('image');   // [P1] 只写 Store
 
         const imageFiles = files.filter(f => f.type.startsWith('image/'));
         if (imageFiles.length === 0) {
@@ -121,17 +112,12 @@ export const UploadZone = () => {
         }
 
         if (mode === 'append') {
-          const newPages = [...pdfPages, ...base64Images];
-          setPdfPages(newPages);
+          const newPages = [...examPages, ...base64Images];
           setExamPages(newPages);
-          // 跳转到新添加的第一页
-          setCurrentPage(pdfPages.length);
-          setPreview(base64Images[0]);
+          setCurrentPage(examPages.length); // 跳到新添加的第一页
           setExamImage(base64Images[0]);
         } else {
-          setPdfPages(base64Images);
           setExamPages(base64Images);
-          setPreview(base64Images[0]);
           setExamImage(base64Images[0]);
           setCurrentPage(0);
         }
@@ -158,9 +144,15 @@ export const UploadZone = () => {
     }
   };
 
+  // [P1] 清除预览：只需重置 Store，本地 currentPage 归零即可
+  const handleClearPreview = () => {
+    setCurrentPage(0);
+    resetUpload();
+  };
+
   return (
     <div className="w-full max-w-2xl mx-auto p-6">
-      {/* 始终挂载的文件输入控件，确保 preview 切换时 fileInputRef 不为 null */}
+      {/* 始终挂载的文件输入控件 */}
       <input
         ref={fileInputRef}
         type="file"
@@ -170,16 +162,15 @@ export const UploadZone = () => {
         onChange={(e) => {
           const files = e.target.files;
           if (!files) return;
-          // 如果当前已经在预览模式，则默认为追加模式
-          // 否则为替换模式
-          const mode = preview ? 'append' : 'replace';
+          // 如果当前已经有内容，则默认为追加模式
+          const mode = hasContent ? 'append' : 'replace';
           handleFiles(Array.from(files), mode);
           e.target.value = '';
         }}
       />
       
       <AnimatePresence mode="wait">
-        {!preview ? (
+        {!hasContent ? (
           <motion.div
             key="upload-panel"
             initial={{ opacity: 0, y: 20 }}
@@ -208,7 +199,7 @@ export const UploadZone = () => {
             </p>
 
             <AnimatePresence>
-              {isProcessing && !preview && (
+              {isProcessing && !hasContent && (
                 <motion.div
                   key="processing-mask1"
                   initial={{ opacity: 0 }}
@@ -247,7 +238,7 @@ export const UploadZone = () => {
             exit={{ opacity: 0, scale: 0.95 }}
             className="relative rounded-3xl overflow-hidden glass-panel border shadow-2xl aspect-[3/4] max-h-[70vh] group flex flex-col items-center justify-center"
           >
-            {(fileType === 'image' || fileType === 'pdf') && (
+            {preview && (
               <img 
                 src={preview} 
                 alt="试卷预览" 
@@ -255,17 +246,15 @@ export const UploadZone = () => {
               />
             )}
 
-            
-            {(fileType === 'pdf' || (fileType === 'image' && pdfPages.length > 1)) && pdfPages.length > 1 && (
-
+            {/* 多页导航控件 */}
+            {examPages.length > 1 && (
               <div className="absolute top-4 left-4 flex gap-2 z-10">
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
                     const prevIdx = Math.max(0, currentPage - 1);
                     setCurrentPage(prevIdx);
-                    setPreview(pdfPages[prevIdx]);
-                    setExamImage(pdfPages[prevIdx]);
+                    setExamImage(examPages[prevIdx]);
                   }}
                   disabled={currentPage === 0}
                   className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md"
@@ -273,17 +262,16 @@ export const UploadZone = () => {
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xs font-bold flex items-center backdrop-blur-md">
-                  {currentPage + 1} / {pdfPages.length}
+                  {currentPage + 1} / {examPages.length}
                 </div>
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    const nextIdx = Math.min(pdfPages.length - 1, currentPage + 1);
+                    const nextIdx = Math.min(examPages.length - 1, currentPage + 1);
                     setCurrentPage(nextIdx);
-                    setPreview(pdfPages[nextIdx]);
-                    setExamImage(pdfPages[nextIdx]);
+                    setExamImage(examPages[nextIdx]);
                   }}
-                  disabled={currentPage === pdfPages.length - 1}
+                  disabled={currentPage === examPages.length - 1}
                   className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -291,34 +279,26 @@ export const UploadZone = () => {
               </div>
             )}
 
+            {/* 关闭预览按钮 */}
             <button 
-              onClick={() => { 
-                setPreview(null); 
-                setLocalFileType(null); 
-                setPdfPages([]); 
-                setCurrentPage(0); 
-                resetUpload();
-              }}
-
+              onClick={handleClearPreview}
               className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors backdrop-blur-md z-10"
             >
               <X className="w-6 h-6" />
             </button>
 
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
-              {(fileType === 'image' || fileType === 'pdf') && (
-                <button 
-                  className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2 whitespace-nowrap"
-                  onClick={() => {
-                    setAutoDetectedRects([]);
-                    setCanvasOpen(true);
-                  }}
-                >
-                  <Wand2 className="w-5 h-5" /> 开始框选题目
-                </button>
-              )}
+              <button 
+                className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2 whitespace-nowrap"
+                onClick={() => {
+                  setAutoDetectedRects([]);
+                  setCanvasOpen(true);
+                }}
+              >
+                <Wand2 className="w-5 h-5" /> 开始框选题目
+              </button>
               
-              {/* [NEW] 允许在预览态继续添加照片（由于 PDF 本身是静态的一般不追加，此处限定为 image 模式或 PDF 各页均显示） */}
+              {/* 允许在预览态继续添加照片 */}
               {fileType === 'image' && (
                 <button 
                   className="px-6 py-3 bg-gray-900 text-white border border-gray-700 rounded-full font-bold shadow-xl hover:bg-black transition-all flex items-center gap-2 whitespace-nowrap"
@@ -333,7 +313,7 @@ export const UploadZone = () => {
             </div>
 
             <AnimatePresence>
-              {isProcessing && preview && (
+              {isProcessing && hasContent && (
                 <motion.div
                   key="processing-mask-ai"
                   initial={{ opacity: 0 }}
@@ -366,7 +346,7 @@ export const UploadZone = () => {
               className="fixed inset-0 z-[999] bg-white"
             >
               <ExtractionCanvas 
-                pages={examPages.length > 0 ? examPages : (pdfPages.length > 0 ? pdfPages : [preview!])} 
+                pages={examPages.length > 0 ? examPages : (preview ? [preview] : [])} 
                 initialPageIndex={currentPage}
                 initialNormalizedRects={autoDetectedRects}
                 onComplete={() => {

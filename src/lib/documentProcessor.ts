@@ -1,4 +1,7 @@
-// Removed mammoth import
+/**
+ * 文档处理工具
+ * PDF 转图片、图像压缩、坐标裁切
+ */
 
 
 // 为较旧的浏览器环境 (如 iOS 16-, 微信内置浏览器等) 提供必须的 ES 最新特性 Polyfill，防止 pdf.js 崩溃
