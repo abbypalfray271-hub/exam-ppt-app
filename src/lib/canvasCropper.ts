@@ -5,6 +5,7 @@
  */
 
 import { cropImageByBox } from '@/lib/documentProcessor';
+import type { AIDiagramBox } from '@/types/ai';
 
 // ============================================================
 // 类型定义
@@ -136,7 +137,7 @@ export async function cropRectFromCanvas(
  * 自动增加 5% 的溢出保护边距
  */
 export async function processAIDiagrams(
-  aiDiagrams: any[],
+  aiDiagrams: AIDiagramBox[],
   sourceImage: string
 ): Promise<string[]> {
   if (!aiDiagrams || !Array.isArray(aiDiagrams)) return [];

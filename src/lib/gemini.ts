@@ -3,13 +3,13 @@
  * 核心识别逻辑：已修复乱码与转义冲突
  * 逻辑：独立双通道 (3.0 Flash 极速 / 3.1 Pro 深度推理)
  */
+import type { AIQuestionResult, AIClip } from '@/types/ai';
+
 export const parseQuestion = async (
-  imageData: string,
-  hasManualAnswer: boolean = false,
-  hasManualAnalysis: boolean = false,
+  clips: AIClip[],
   onStatus?: (status: string) => void,
   isDeepThinking: boolean = false
-): Promise<any> => {
+): Promise<AIQuestionResult[]> => {
   const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
   const model31 = process.env.REASONING_MODEL_NAME || "gemini-3.1-pro-preview";
   
@@ -21,14 +21,18 @@ export const parseQuestion = async (
     onStatus(isDeepThinking ? "🧠 正在深度分析图像与逻辑关系..." : "⚡ 正在快速识别题目内容...");
   }
 
+  const hasManualAnswer = clips.some(c => c.role === 'answer');
+  const hasManualAnalysis = clips.some(c => c.role === 'analysis');
+  
   let manualInstruction = "";
   if (hasManualAnswer || hasManualAnalysis) {
     manualInstruction = `
-[SPECIAL INSTRUCTION: MANUAL MODE]
-！！！用户已经手动标注了结果区域，禁止进行任何数学推理或解题演算！！！
-- 如果 hasManualAnswer=true: 'answer' 字段必须严谨 OCR 识别并提取图中指定区域的文字内容，**绝对禁止** 利用 AI 能力生成新的解题结论！
-- 如果 hasManualAnalysis=true: 'analysis' 字段必须由 OCR 转录图中对应区域的解析文字，**绝对禁止** 自行构思解题步骤！
-- 此时 '_thought_process' 只能用于盘点坐标系和文字内容，严禁进行逻辑推算。
+[SPECIAL INSTRUCTION: COLOR-CODED TRANSCRIPTION MODE]
+你已收到带有颜色语义标识的精准切片，请执行以下最高优先级的处理逻辑：
+- 🔴 【红色切片 (Answer)】：这是官方答案。你必须进入“纯文字 OCR 转录”模式。**绝对禁止** 利用 AI 逻辑进行任何形式的自发推理、解题、计算或猜测。请闭合你的数学大脑，仅作为一个高精度的打字员，逐字还原图中的文字。
+- 🟣 【紫色切片 (Analysis)】：这是官方解析。同样进入“纯文字 OCR 转录”模式。请原封不动地提取图中的解题逻辑，不要尝试简化或修正原文内容。
+- 🔵 【蓝色切片 (Question)】：这是题干核心上下文。
+- 🟢 【绿色切片 (Diagram)】：这是关联插图。
 `;
   }
 
@@ -96,36 +100,57 @@ export const parseQuestion = async (
     }
   ]`;
 
+  // 构建多模态消息内容
+  const messageContent: any[] = [];
+  
+  // 1. 按照特定顺序排列图片：题干 -> 答案 -> 解析 -> 插图
+  const sortedClips = [...clips].sort((a, b) => {
+    const order = { question: 0, answer: 1, analysis: 2, diagram: 3 };
+    return order[a.role] - order[b.role];
+  });
+
+  sortedClips.forEach((clip, index) => {
+    let label = "";
+    if (clip.role === 'question') label = `【蓝色切片 - 题干内容 #${index + 1}】`;
+    if (clip.role === 'answer') label = `【红色切片 - 官方答案 #${index + 1}】`;
+    if (clip.role === 'analysis') label = `【紫色切片 - 官方解析 #${index + 1}】`;
+    if (clip.role === 'diagram') label = `【绿色切片 - 关联插图 #${index + 1}】`;
+
+    messageContent.push({
+      type: "text",
+      text: label
+    });
+    messageContent.push({
+      type: "image_url",
+      image_url: { url: clip.image }
+    });
+  });
+
+  // 2. 注入提示词
+  messageContent.push({
+    type: "text",
+    text: `${prompt}
+
+[CRITICAL INSTRUCTION: ATOMIC SPLIT REQUIRED]
+Output ONLY the raw JSON array. 
+IMPORTANT: Every numbered sub-question in the image MUST be a separate element in the array. 
+DO NOT include any preamble or conversational filler.
+Return the result in this exact format:
+[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "" }]
+`
+  });
+
   const body = {
     model: modelName,
     messages: [
       {
         role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: { url: imageData }
-          },
-          {
-            type: "text",
-            text: `${prompt}
-            
-[CRITICAL INSTRUCTION: ATOMIC SPLIT REQUIRED]
-Output ONLY the raw JSON array. 
-IMPORTANT: Every numbered sub-question in the image MUST be a separate element in the array. 
-ONLY the first element should include the shared passage/context. 
-Subsequent elements should ONLY contain the sub-question text.
-Do NOT include any preamble or conversational filler.
-Return the result in this exact format:
-[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "" }]
-`
-          }
-        ],
+        content: messageContent,
       },
     ],
     temperature: 0,
-    max_tokens: 8192, // 开启 8K 输出窗口，防截断
-    stream: true, // [STREAMING FIX] 开启流式以绕过上游 Nginx/Cloudflare 的 100s HTTP 死霸超时
+    max_tokens: 8192,
+    stream: true,
   };
 
   const controller = new AbortController();
@@ -191,7 +216,7 @@ Return the result in this exact format:
 /**
  * 强力 JSON 解析器：处理 AI 输出中常见的格式错误、转义失败和截断问题
  */
-function robustParseJson(raw: string): any {
+function robustParseJson(raw: string): AIQuestionResult[] {
   // 1. [精准定位起始符] 过滤所有非 JSON 的前缀杂质（如 [视觉盘点] 等描述性文字）
   const firstBrace = raw.indexOf('{');
   const firstBracket = raw.indexOf('[');
