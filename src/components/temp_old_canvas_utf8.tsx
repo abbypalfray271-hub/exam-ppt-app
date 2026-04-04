@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { 
@@ -15,13 +15,12 @@ import {
   Zap,
   Brain,
   Info,
-  ChevronDown,
-  Plus
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
-import { compressImage, pdfToImages } from '@/lib/documentProcessor';
+import { compressImage } from '@/lib/documentProcessor';
 import { type CanvasRect as Rect, type PageOffset } from '@/lib/canvasCropper';
 import { ParsingFailurePanel } from '@/components/canvas/ParsingFailurePanel';
 import { useAIExtraction } from '@/hooks/useAIExtraction';
@@ -35,8 +34,7 @@ interface ExtractionCanvasProps {
   onClose?: () => void;
 }
 
-// 扩展 Rect 类型，支持来源追踪
-interface ExtendedRect extends Rect {
+// 鎵╁睍 Rect 绫诲瀷锛屾敮鎸佹潵婧愯拷韪?interface ExtendedRect extends Rect {
   source: 'exam' | 'reference';
 }
 
@@ -65,12 +63,12 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const [zoom, setZoom] = useState(1); 
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [refPoolWidth, setRefPoolWidth] = useState(window.innerWidth / 3); // 默认 1/3 宽度
+  const [refPoolWidth, setRefPoolWidth] = useState(window.innerWidth / 3); // 榛樿 1/3 瀹藉害
   const [isDeepThinking, setIsDeepThinking] = useState(false);
   const [activeQIdx, setActiveQIdx] = useState(1);
 
   // === Hooks ===
-  // AI 提取 Hook：我们将两站页面的合集传给它
+  // AI 鎻愬彇 Hook锛氭垜浠皢涓ょ珯椤甸潰鐨勫悎闆嗕紶缁欏畠
   const allPages = useMemo(() => [...examPages, ...referencePages], [examPages, referencePages]);
   
   const { 
@@ -81,7 +79,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     isProcessing,
   } = useAIExtraction({
     pages: allPages,
-    rects, // 虽然 Hook 期望 Rect[]，但 ExtendedRect 是兼容的
+    rects, // 铏界劧 Hook 鏈熸湜 Rect[]锛屼絾 ExtendedRect 鏄吋瀹圭殑
     onComplete
   });
 
@@ -93,7 +91,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   } = useProjectStore();
 
   // === Logic: Page Offsets ===
-  // 我们需要两组 Offset，用于计算不同容器内的 pageIdx
+  // 鎴戜滑闇€瑕佷袱缁?Offset锛岀敤浜庤绠椾笉鍚屽鍣ㄥ唴鐨?pageIdx
   const getPageOffsets = useCallback((source: 'exam' | 'reference'): PageOffset[] => {
     const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
     const imgRefs = source === 'exam' ? examImgRefs.current : refImgRefs.current;
@@ -112,53 +110,22 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   }, [zoom]);
 
   const handleConfirm = () => {
-    // 关键点：我们在调用 startExtraction 前，需要将 rect 映射到 allPages 的绝对索引
-    const examOffsets = getPageOffsets('exam');
+    // 鍏抽敭鐐癸細鎴戜滑鍦ㄨ皟鐢?startExtraction 鍓嶏紝闇€瑕佸皢 rect 鏄犲皠鍒?allPages 鐨勭粷瀵圭储寮?    const examOffsets = getPageOffsets('exam');
     const refOffsets = getPageOffsets('reference');
     const examTotalHeight = examOffsets.reduce((acc, o) => acc + o.height, 0);
 
-    // 实际上，Hook 期望的是一个单一页池。我们需要构造一个虚拟的“长偏移量数组”给 Hook
-    // 修正：refOffsets 的 top 必须加上 examTotalHeight 才能在长条中对齐
+    // 瀹為檯涓婏紝Hook 鏈熸湜鐨勬槸涓€涓崟涓€椤垫睜銆傛垜浠渶瑕佹瀯閫犱竴涓櫄鎷熺殑鈥滈暱鍋忕Щ閲忔暟缁勨€濈粰 Hook
+    // 淇锛歳efOffsets 鐨?top 蹇呴』鍔犱笂 examTotalHeight 鎵嶈兘鍦ㄩ暱鏉′腑瀵归綈
     const correctedRefOffsets = refOffsets.map(o => ({ ...o, top: o.top + examTotalHeight }));
     const combinedOffsets = [...examOffsets, ...correctedRefOffsets];
 
-    // 重新修正 rects 的 Y 坐标，使其符合 combinedOffsets 的大长条布局
+    // 閲嶆柊淇 rects 鐨?Y 鍧愭爣锛屼娇鍏剁鍚?combinedOffsets 鐨勫ぇ闀挎潯甯冨眬
     const correctedRects = rects.map(r => {
       if (r.source === 'exam') return r;
       return { ...r, y: r.y + examTotalHeight };
     });
 
     startExtraction(combinedOffsets, selectedPageIndices, isDeepThinking, correctedRects);
-  };
-
-  const handleAddFiles = async (files: FileList, source: 'exam' | 'reference') => {
-    if (isProcessing) return;
-    setProcessing(true);
-    try {
-      const newPages: string[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.type === 'application/pdf') {
-          const imgs = await pdfToImages(file);
-          newPages.push(...imgs);
-        } else {
-          const reader = new FileReader();
-          const base64 = await new Promise<string>((res) => {
-            reader.onload = (e) => res(e.target?.result as string);
-            reader.readAsDataURL(file);
-          });
-          const compressed = await compressImage(base64);
-          newPages.push(compressed);
-        }
-      }
-      if (source === 'exam') setExamPages([...examPages, ...newPages]);
-      else setReferencePages([...referencePages, ...newPages]);
-    } catch (error) {
-      console.error('Failed to add pages:', error);
-      alert('添加页面失败。');
-    } finally {
-      setProcessing(false);
-    }
   };
 
   // === Interaction Logic ===
@@ -302,8 +269,8 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
 
   const handleDeleteSelectedImages = () => {
     if (selectedPageIndices.size === 0) return;
-    if (!confirm(`确定删除选中的 ${selectedPageIndices.size} 个页面吗？`)) return;
-    // 逻辑：目前仅支持从 Exam 集里删。简化起见暂时不对 Reference 集做批量删除逻辑
+    if (!confirm(`纭畾鍒犻櫎閫変腑鐨?${selectedPageIndices.size} 涓〉闈㈠悧锛焋)) return;
+    // 閫昏緫锛氱洰鍓嶄粎鏀寔浠?Exam 闆嗛噷鍒犮€傜畝鍖栬捣瑙佹殏鏃朵笉瀵?Reference 闆嗗仛鎵归噺鍒犻櫎閫昏緫
     const newExamPages = examPages.filter((_, i) => !selectedPageIndices.has(i));
     setExamPages(newExamPages);
     setSelectedPageIndices(new Set());
@@ -311,7 +278,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
 
   return (
     <div className="flex flex-col h-full bg-[#f8f9fc] overflow-hidden relative">
-      {/* 顶部进度条 */}
+      {/* 椤堕儴杩涘害鏉?*/}
       {isProcessing && (
         <div className="absolute inset-x-0 top-0 z-[100] h-1.5 bg-gray-100 overflow-hidden">
           <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} className="h-full bg-blue-600" />
@@ -332,15 +299,14 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：页面概览 */}
+        {/* 宸︿晶锛氶〉闈㈡瑙?*/}
         <div className="bg-white border-r flex flex-col relative group" style={{ width: sidebarWidth }}>
           <div className="p-4 border-b flex items-center justify-between">
-            <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">页面概览</h4>
+            <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">椤甸潰姒傝</h4>
             <LayoutList className="w-4 h-4 text-gray-300" />
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-             {/* 仅保留试卷主素材 */}
-             <SectionLabel label="试卷主素材" count={examPages.length} />
+             <SectionLabel label="璇曞嵎涓荤礌鏉? count={examPages.length} />
              {examPages.map((p, i) => (
                 <Thumbnail key={`exam-${i}`} src={p} index={i+1} active={activeExamPageIdx === i} onClick={() => {
                    setActiveExamPageIdx(i);
@@ -348,7 +314,17 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                    if (img) img.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }} />
              ))}
-             <AddCard label="试题页面" onAdd={(files) => handleAddFiles(files, 'exam')} />
+             {referencePages.length > 0 && (
+               <>
+                 <SectionLabel label="瑙ｆ瀽/鍙傝€冨簱" count={referencePages.length} />
+                 {referencePages.map((p, i) => (
+                    <Thumbnail key={`ref-${i}`} src={p} index={i+1} isRef onClick={() => {
+                       const img = refImgRefs.current[i];
+                       if (img) img.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }} />
+                 ))}
+               </>
+             )}
           </div>
           {/* Sidebar Resizer */}
           <div 
@@ -357,7 +333,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
           />
         </div>
 
-        {/* 中间：试卷主画布 */}
+        {/* 涓棿锛氳瘯鍗蜂富鐢诲竷 */}
         <div ref={examScrollRef} className="flex-1 overflow-auto bg-gray-100/30 p-8 scroll-smooth relative">
            <div className="mx-auto" style={{ width: `${zoom * 100}%` }}>
               <div 
@@ -374,18 +350,18 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
            </div>
         </div>
 
-        {/* 右侧：分栏调节条 */}
+        {/* 鍙充晶锛氬垎鏍忚皟鑺傛潯 */}
         <div 
           className="w-1.5 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors z-[60] shadow-[0_0_10px_rgba(0,0,0,0.05)]"
           onPointerDown={() => interactionRef.current = 'resizing-refpool'}
         />
 
-        {/* 右侧：答案池/参考库 */}
+        {/* 鍙充晶锛氱瓟妗堟睜/鍙傝€冨簱 */}
         <div className="bg-white border-l flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.02)]" style={{ width: refPoolWidth }}>
            <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
                  <div className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-black rounded uppercase">Ref Pool</div>
-                 <h4 className="text-sm font-black text-gray-800">答案参考池</h4>
+                 <h4 className="text-sm font-black text-gray-800">绛旀鍙傝€冩睜</h4>
               </div>
               <Info className="w-4 h-4 text-gray-300" />
            </div>
@@ -402,16 +378,12 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                   <RectsLayer rects={rects.filter(r => r.source === 'reference')} zoom={1} selectedId={selectedId} startMoving={startMoving} startResizing={startResizing} onRemove={(id: string) => setRects(p => p.filter(x => x.id !== id))} />
                   {isDrawing && drawingRect?.source === 'reference' && <DrawingPreview rect={drawingRect} zoom={1} />}
                 </div>
-                {/* 答案页面追加 */}
-                <div className="mt-8 mb-20 max-w-[200px] mx-auto">
-                   <AddCard label="答案页面" onAdd={(files) => handleAddFiles(files, 'reference')} />
-                </div>
               </div>
            </div>
         </div>
       </div>
 
-      {/* 故障面板 */}
+      {/* 鏁呴殰闈㈡澘 */}
       {parsingFailures.length > 0 && <ParsingFailurePanel failures={parsingFailures} isProcessing={isProcessing} onDismiss={() => {}} />}
     </div>
   );
@@ -445,7 +417,7 @@ const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, se
                 'bg-fuchsia-500 shadow-[0_0_8px_rgba(217,70,239,0.5)]': mode === 'analysis',
                 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]': mode === 'diagram'
               })} />
-              {mode === 'question' ? '题目' : mode === 'answer' ? '答案' : mode === 'analysis' ? '分析' : '插图'}
+              {mode === 'question' ? '棰樼洰' : mode === 'answer' ? '绛旀' : mode === 'analysis' ? '鍒嗘瀽' : '鎻掑浘'}
             </button>
           ))}
         </div>
@@ -467,7 +439,7 @@ const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, se
             )}
           >
             {isDeepThinking ? <Brain className="w-4 h-4 animate-pulse" /> : <Zap className="w-4 h-4" />}
-            <span className="text-[10px] font-black uppercase tracking-widest">深度思考</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">娣卞害鎬濊€?/span>
           </button>
           <button 
             onClick={onConfirm} 
@@ -475,8 +447,7 @@ const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, se
             className="px-10 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white text-sm font-black rounded-full shadow-xl hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
           >
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-            识别并解析
-          </button>
+            璇嗗埆骞惰В鏋?          </button>
       </div>
     </div>
   );
@@ -488,20 +459,6 @@ const SectionLabel = ({ label, count }: any) => (
     <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">{count}</span>
   </div>
 );
-
-const AddCard = ({ onAdd, label = "试题页面" }: { onAdd: (files: FileList) => void, label?: string }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  return (
-    <div 
-      onClick={() => inputRef.current?.click()}
-      className="relative rounded-xl overflow-hidden border-2 border-dashed border-gray-200 aspect-[3/4] cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group shrink-0 w-full hover:border-blue-400 hover:bg-blue-50/30"
-    >
-      <Plus className="w-8 h-8 text-gray-300 group-hover:text-blue-500" />
-      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</span>
-      <input type="file" multiple hidden ref={inputRef} onChange={(e) => e.target.files && onAdd(e.target.files)} accept="image/*,application/pdf" />
-    </div>
-  );
-};
 
 const Thumbnail = ({ src, index, active, onClick, isRef }: any) => (
   <div 
@@ -534,7 +491,7 @@ const RectsLayer = ({ rects, zoom, selectedId, startMoving, startResizing, onRem
         })}
       >
         <div className="absolute -top-7 left-0 px-2 py-1 bg-black/80 text-white text-[9px] font-black rounded backdrop-blur-md flex items-center gap-2 whitespace-nowrap">
-           #{r.qIdx} {r.type === 'question' ? '题目' : r.type === 'answer' ? '答案' : r.type === 'analysis' ? '分析' : '插图'}
+           #{r.qIdx} {r.type === 'question' ? '棰樼洰' : r.type === 'answer' ? '绛旀' : r.type === 'analysis' ? '鍒嗘瀽' : '鎻掑浘'}
            <button onClick={(e) => { e.stopPropagation(); onRemove(r.id); }} className="hover:text-rose-400 p-0.5"><Trash2 className="w-3 h-3" /></button>
         </div>
         {selectedId === r.id && ['nw','ne','sw','se','n','s','e','w'].map(h => (
