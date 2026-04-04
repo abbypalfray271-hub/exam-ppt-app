@@ -10,7 +10,10 @@ import {
   ChevronRight,
   ImageIcon,
   Wand2,
-  FolderOpen
+  FolderOpen,
+  LayoutGrid,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore } from '@/store/useProjectStore';
@@ -86,7 +89,7 @@ export const UploadZone: React.FC = () => {
   const preview = examPages[currentPage];
 
   return (
-    <div className={cn("w-full transition-all duration-500", hasContent ? "min-h-[60vh]" : "min-h-[40vh] flex items-center justify-center")}>
+    <div className="w-full h-full flex flex-col items-center justify-center py-4 relative">
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -110,149 +113,139 @@ export const UploadZone: React.FC = () => {
         }}
       />
 
-      <AnimatePresence mode="wait">
-        {!hasContent ? (
-          <div className="flex flex-col items-center justify-center mt-12 w-full">
-            <motion.div
-              key="upload-exam"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={cn(
-                "relative aspect-[4/3] w-full max-w-lg border-4 border-dashed rounded-3xl flex flex-col items-center justify-center transition-all bg-white group shadow-sm",
-                !isProcessing ? "border-gray-200 cursor-pointer hover:border-brand-primary hover:bg-brand-primary/5 hover:shadow-xl active:scale-[0.99]" : "border-brand-primary/30"
-              )}
-              onClick={() => !isProcessing && fileInputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setIsDragActive(true); }}
-              onDragLeave={() => setIsDragActive(false)}
-              onDrop={(e) => { e.preventDefault(); handleFiles(Array.from(e.dataTransfer.files), 'replace', 'exam'); }}
-            >
-              <div className="bg-brand-primary/10 p-6 rounded-2xl mb-4 group-hover:scale-110 transition-transform">
-                <Upload className="w-12 h-12 text-brand-primary" />
-              </div>
-              <h2 className="text-2xl font-black mb-2">上传试卷素材</h2>
-              <p className="text-gray-400 text-xs px-8 text-center uppercase tracking-widest font-bold">PDF / 图片 / 拍照</p>
-              {isProcessing && (
-                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-3xl">
-                  <Loader2 className="w-10 h-10 text-brand-primary animate-spin" />
-                </div>
-              )}
-            </motion.div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center pt-8">
-            <motion.div
-              key="preview-panel"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-xl rounded-3xl overflow-hidden glass-panel border shadow-2xl aspect-[3/4] group flex flex-col items-center justify-center"
-            >
-              {preview && <img src={preview} alt="预览" className={cn("w-full h-full object-contain p-4 transition-opacity", isProcessing ? "opacity-30" : "opacity-100")} />}
-              
-              {isProcessing && (
-                <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center">
-                  <div className="bg-white/90 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border border-brand-primary/10">
-                    <Loader2 className="w-12 h-12 text-brand-primary animate-spin" />
-                    <div className="flex flex-col items-center">
-                      <p className="text-sm font-black text-gray-900 tracking-widest uppercase">正在处理新素材</p>
-                      <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">AI 引擎正在解析预览图...</p>
+      {/* 核心工作视窗 (沉浸式布局) */}
+      <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center min-h-0">
+        <div className={cn(
+          "relative bg-white shadow-2xl rounded-3xl overflow-hidden border border-gray-100 transition-all duration-700 flex flex-col",
+          !hasContent ? "w-[65%] aspect-[3/4]" : "w-full h-full"
+        )}>
+          {/* 背景/预览大图 */}
+          <AnimatePresence mode="wait">
+             <motion.div
+                key={hasContent ? examPages[currentPage] : 'empty'}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="w-full h-full relative"
+             >
+               <img 
+                 src={hasContent ? examPages[currentPage] : '/empty_workbench.png'} 
+                 className={cn(
+                   "w-full h-full object-contain select-none", 
+                   !hasContent && "opacity-40 grayscale-[20%] blur-[0.5px]",
+                   isProcessing && "opacity-20 blur-sm"
+                 )}
+               />
+
+               {/* 页面顶部的格式导引标签 */}
+               {!hasContent && (
+                  <div className="absolute top-10 left-1/2 -translate-x-1/2 z-30 animate-in fade-in zoom-in duration-700">
+                    <div className="px-6 py-2 bg-white/40 backdrop-blur-md rounded-full border border-white/20 shadow-sm">
+                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] whitespace-nowrap">
+                        PDF / 图片 / 拍照
+                      </span>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {examPages.length > 1 && (
-                <div className="absolute top-4 left-4 flex gap-2 z-10">
-                  <button onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))} disabled={currentPage === 0 || isProcessing} className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md transition-all active:scale-90"><ChevronLeft className="w-4 h-4" /></button>
-                  <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xs font-bold flex items-center backdrop-blur-md">{currentPage + 1} / {examPages.length}</div>
-                  <button onClick={() => setCurrentPage(prev => Math.min(examPages.length - 1, prev + 1))} disabled={currentPage === examPages.length - 1 || isProcessing} className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md transition-all active:scale-90"><ChevronRight className="w-4 h-4" /></button>
-                </div>
-              )}
-
-              <button onClick={handleClearPreview} disabled={isProcessing} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 disabled:opacity-30 transition-all backdrop-blur-md z-10 active:scale-90"><X className="w-6 h-6" /></button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* [工业版控制中心] 全局化物理排布 - 让首页也具备读入入口 */}
-      {mounted && (
-        <div className="fixed inset-0 z-[100] pointer-events-none">
-          {/* 1. 左下角：读入演稿 (全局可见) */}
-          <div className="absolute left-6 bottom-6 pointer-events-auto">
-            <button 
-              disabled={isProcessing}
-              className="w-32 h-16 flex flex-col items-center justify-center bg-gray-900 text-white rounded-2xl shadow-xl border-b-2 border-gray-950 hover:bg-black transition-all active:scale-95 gap-1"
-              onClick={() => importProjectJSON()}
-            >
-              <FolderOpen className="w-5 h-5 opacity-60" />
-              <span className="text-sm font-black tracking-normal whitespace-nowrap">读入演稿</span>
-            </button>
-          </div>
-
-          {/* 仅在已有内容时显示的核心操作区 */}
-          {hasContent && (
-            <>
-              {/* 2. 中央：素材双核 (垂直+水平双向居中) */}
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center gap-12">
-                  {/* 试题添加 (精巧立牌) */}
-                  <button 
-                    disabled={isProcessing}
-                    className="w-24 h-32 flex flex-col items-center justify-center bg-white text-gray-900 rounded-[2rem] shadow-[0_20px_70px_rgba(0,0,0,0.15)] border-2 border-gray-50 hover:shadow-[0_35px_90px_rgba(0,0,0,0.25)] transition-all active:scale-95 group" 
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {isProcessing && processingTarget === 'exam' ? (
-                      <Loader2 className="w-8 h-8 animate-spin mb-2 text-brand-primary" />
-                    ) : (
-                      <div className="p-3 bg-gray-50 rounded-2xl group-hover:bg-brand-primary/10 transition-colors mb-2">
-                        <ImageIcon className="w-8 h-8 text-gray-400 group-hover:text-brand-primary" />
-                      </div>
-                    )}
-                    <div className="text-lg font-black tracking-tight whitespace-nowrap">
-                      试题添加
+               )}
+               
+               {/* 正在处理时的遮罩 */}
+               {isProcessing && (
+                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/30 backdrop-blur-sm z-50">
+                    <Loader2 className="w-12 h-12 text-brand-primary animate-spin mb-4" />
+                    <div className="px-6 py-2 bg-white/80 rounded-full shadow-lg border border-brand-primary/10">
+                      <span className="text-xs font-black uppercase tracking-widest text-gray-900">
+                        {processingTarget === 'exam' ? '解析试题素材' : '同步参考答案'}
+                      </span>
                     </div>
-                  </button>
+                 </div>
+               )}
+             </motion.div>
+          </AnimatePresence>
 
-                  {/* 补充答案 (精巧立牌) */}
-                  <button 
-                    disabled={isProcessing}
-                    className="w-24 h-32 flex flex-col items-center justify-center bg-[#E0E8FF] text-brand-primary rounded-[2rem] shadow-[0_20px_70px_rgba(40,113,255,0.1)] border-2 border-white/50 hover:bg-[#D4E0FF] transition-all active:scale-95 group" 
-                    onClick={() => refInputRef.current?.click()}
-                  >
-                    {isProcessing && processingTarget === 'reference' ? (
-                      <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                    ) : (
-                      <div className="p-3 bg-white/50 rounded-2xl mb-2">
-                        <FileText className="w-8 h-8" />
-                      </div>
-                    )}
-                    <div className="text-lg font-black tracking-tight whitespace-nowrap">
-                      补充答案
-                    </div>
-                  </button>
-              </div>
+          {/* 核心功能卡片 (悬浮枢纽) - 仅在非处理态显示 */}
+          {!isProcessing && (
+            <div className="absolute inset-0 flex items-center justify-center gap-8 z-20">
+               <button 
+                 onClick={() => fileInputRef.current?.click()}
+                 className="flex flex-col items-center gap-3 p-7 bg-white/90 backdrop-blur-xl rounded-[2.5rem] shadow-[0_30px_90px_rgba(0,0,0,0.12)] border border-white hover:border-blue-400 hover:scale-110 active:scale-95 transition-all group/btn"
+               >
+                 <div className="w-16 h-16 bg-blue-500 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30 group-hover/btn:rotate-12 transition-transform">
+                    <Plus className="w-8 h-8" strokeWidth={3} />
+                 </div>
+                 <span className="text-sm font-black text-gray-900 tracking-tighter uppercase">试题添加</span>
+               </button>
 
-              {/* 3. 右下角：执行终端 (开始制作) */}
-              <div className="absolute right-6 bottom-6 pointer-events-auto">
-                <button 
-                  disabled={isProcessing}
-                  style={{
-                    background: 'linear-gradient(135deg, #FF3D77 0%, #FFB100 30%, #00E4A1 50%, #0088FF 70%, #A155FF 100%)',
-                  }}
-                  className="w-32 h-16 flex flex-col items-center justify-center text-white rounded-2xl shadow-[0_15px_45px_rgba(255,61,119,0.35)] border border-white/30 backdrop-blur-xl hover:scale-110 active:scale-95 transition-all group gap-1"
-                  onClick={() => setCanvasOpen(true)}
-                >
-                  <Wand2 className="w-6 h-6 group-hover:rotate-12 transition-transform drop-shadow-md" />
-                  <div className="text-sm font-black tracking-normal leading-none drop-shadow-sm">
-                      开始制作
-                  </div>
+               <button 
+                 onClick={() => refInputRef.current?.click()}
+                 className="flex flex-col items-center gap-3 p-7 bg-white/90 backdrop-blur-xl rounded-[2.5rem] shadow-[0_30px_90px_rgba(0,0,0,0.12)] border border-white hover:border-purple-400 hover:scale-110 active:scale-95 transition-all group/btn"
+               >
+                 <div className="w-16 h-16 bg-purple-500 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-purple-500/30 group-hover/btn:-rotate-12 transition-transform">
+                    <LayoutGrid className="w-8 h-8" strokeWidth={3} />
+                 </div>
+                 <span className="text-sm font-black text-gray-900 tracking-tighter uppercase">补充答案</span>
+               </button>
+            </div>
+          )}
+
+          {/* 底部翻页控制 (内容态可见) */}
+          {hasContent && examPages.length > 1 && (
+             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 px-5 py-2.5 bg-black/70 backdrop-blur-md rounded-full text-white z-30 shadow-2xl scale-90 md:scale-100">
+                <button onClick={() => setCurrentPage(p => Math.max(0, p - 1))} disabled={currentPage === 0}>
+                  <ChevronLeft className="w-5 h-5" />
                 </button>
-              </div>
-            </>
+                <div className="h-4 w-px bg-white/20" />
+                <span className="text-[11px] font-black uppercase tracking-[0.2em]">{currentPage + 1} / {examPages.length}</span>
+                <div className="h-4 w-px bg-white/20" />
+                <button onClick={() => setCurrentPage(p => Math.min(examPages.length - 1, p + 1))} disabled={currentPage === examPages.length - 1}>
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+             </div>
+          )}
+          
+          {/* 右上角快速重置 */}
+          {hasContent && (
+             <button 
+               onClick={resetUpload}
+               className="absolute top-6 right-6 p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-full backdrop-blur-md transition-all z-30 opacity-0 group-hover/canvas:opacity-100"
+               title="清空素材"
+             >
+               <Trash2 className="w-5 h-5" />
+             </button>
           )}
         </div>
-      )}
+      </div>
 
+      {/* 底部全局控制条 (常驻可见) */}
+      <div className="w-full max-w-4xl flex items-center justify-between px-2 mt-8 z-10">
+         <div className="flex items-center gap-4">
+            <button 
+              onClick={() => importProjectJSON()}
+              className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white border border-gray-100 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-all shadow-sm active:scale-95 group"
+            >
+              <FolderOpen className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity" />
+              <span className="text-xs font-black uppercase tracking-widest">读入演稿</span>
+            </button>
+            {hasContent && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-500 rounded-lg text-[10px] font-black uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
+                素材就绪
+              </div>
+            )}
+         </div>
+
+         <button 
+           disabled={!hasContent || isProcessing}
+           onClick={() => setCanvasOpen(true)}
+           className={cn(
+             "px-10 py-3.5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-2xl",
+             hasContent 
+               ? "bg-gradient-to-r from-blue-600 to-indigo-700 text-white hover:scale-105 active:scale-95 shadow-blue-500/20" 
+               : "bg-gray-200 text-gray-400 cursor-not-allowed grayscale"
+           )}
+         >
+           {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
+           开始制作
+         </button>
+      </div>
     </div>
   );
 };

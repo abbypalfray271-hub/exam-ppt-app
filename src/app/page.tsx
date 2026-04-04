@@ -47,7 +47,7 @@ export default function Home() {
           </div>
           <span className="text-xl font-black tracking-tight">
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">Ai</span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 ml-1.5">试卷专家</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 ml-1.5">试题演稿制作</span>
           </span>
         </div>
         
@@ -55,36 +55,17 @@ export default function Home() {
 
       </nav>
 
-      <section className={cn("relative z-10 flex flex-col flex-1 min-h-0", currentView === 'upload' ? "pt-4 pb-20 overflow-y-auto" : "")}>
+      <section className={cn("relative z-10 flex flex-col flex-1 min-h-0", currentView === 'upload' ? "pt-10 pb-10 flex items-center justify-center overflow-x-hidden" : "")}>
         <AnimatePresence mode="wait">
           {currentView === 'upload' ? (
             <motion.div
               key={`landing-${uploadKeyRef.current}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, y: -20 }}
-              className="max-w-7xl mx-auto px-8 text-center"
+              className="w-full h-full max-w-5xl mx-auto px-4 flex items-center justify-center"
             >
-              <div className="pt-16">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/50 backdrop-blur-sm text-xs font-bold tracking-widest uppercase mb-6 shadow-md border border-gray-100 animate-pulse transition-all hover:scale-105">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-500" /> 
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">
-                    AI 驱动的课件革命
-                  </span>
-                </div>
-                
-                <h1 className="text-6xl md:text-7xl font-black text-gray-900 mb-8 leading-[1.1]">
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">Ai</span> 让试卷秒变<br />
-                  <span className="text-brand-primary italic">智慧讲解</span> 即刻开启
-                </h1>
-
-                <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-16 leading-relaxed">
-                  上传试卷，由 AI 自动切割题目、生成解析、并排版成精美的讲解课件。
-                  支持手写识别与双模教学。
-                </p>
-
-                <UploadZone />
-              </div>
+              <UploadZone />
             </motion.div>
           ) : (
             <motion.div
