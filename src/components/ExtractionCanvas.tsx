@@ -111,6 +111,50 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     });
   }, [zoom]);
 
+  const togglePageSelection = (idx: number) => {
+    setSelectedPageIndices(prev => {
+       const next = new Set(prev);
+       if (next.has(idx)) next.delete(idx);
+       else next.add(idx);
+       return next;
+    });
+  };
+
+  const handlePageDelete = (idx: number, source: 'exam' | 'reference') => {
+    if (!confirm(`确定删除该 ${source === 'exam' ? '试卷' : '参考'} 页面吗？`)) return;
+    
+    if (source === 'exam') {
+      const newPages = examPages.filter((_, i) => i !== idx);
+      setExamPages(newPages);
+    } else {
+      const newPages = referencePages.filter((_, i) => i !== idx);
+      setReferencePages(newPages);
+    }
+    // 重置选中状态以防越界
+    setSelectedPageIndices(new Set());
+  };
+
+  const handleToggleAll = () => {
+    if (selectedPageIndices.size === examPages.length) {
+      setSelectedPageIndices(new Set());
+    } else {
+      const all = new Set<number>();
+      examPages.forEach((_, i) => all.add(i));
+      setSelectedPageIndices(all);
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedPageIndices.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedPageIndices.size} 个页面吗？`)) return;
+    
+    const newPages = examPages.filter((_, i) => !selectedPageIndices.has(i));
+    setExamPages(newPages);
+    setSelectedPageIndices(new Set());
+    // 如果当前选中的页被删了，重置 activeIdx 到第一页
+    setActiveExamPageIdx(0);
+  };
+
   const handleConfirm = () => {
     // 关键点：我们在调用 startExtraction 前，需要将 rect 映射到 allPages 的绝对索引
     const examOffsets = getPageOffsets('exam');
@@ -335,18 +379,61 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
         {/* 左侧：页面概览 */}
         <div className="bg-white border-r flex flex-col relative group" style={{ width: sidebarWidth }}>
           <div className="p-4 border-b flex items-center justify-between">
-            <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">页面概览</h4>
-            <LayoutList className="w-4 h-4 text-gray-300" />
+            <div className="flex flex-col">
+              <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">页面概览</h4>
+              {examPages.length > 0 && (
+                <span className="text-[9px] font-bold text-blue-500 mt-1 uppercase tracking-tighter">
+                  已选 {selectedPageIndices.size} / {examPages.length}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {examPages.length > 0 && (
+                <>
+                  <button 
+                    disabled={selectedPageIndices.size === 0}
+                    onClick={handleDeleteSelected}
+                    className={cn(
+                      "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
+                      selectedPageIndices.size > 0 ? "bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" : "text-gray-200 cursor-not-allowed"
+                    )}
+                    title="删除选中页面"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                  <button 
+                    onClick={handleToggleAll}
+                    className={cn(
+                      "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
+                      selectedPageIndices.size === examPages.length ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                    )}
+                  >
+                    {selectedPageIndices.size === examPages.length ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                    <span>全选</span>
+                  </button>
+                </>
+              )}
+              <LayoutList className="w-4 h-4 text-gray-300" />
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
              {/* 仅保留试卷主素材 */}
              <SectionLabel label="试卷主素材" count={examPages.length} />
              {examPages.map((p, i) => (
-                <Thumbnail key={`exam-${i}`} src={p} index={i+1} active={activeExamPageIdx === i} onClick={() => {
-                   setActiveExamPageIdx(i);
-                   const img = examImgRefs.current[i];
-                   if (img) img.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }} />
+                <Thumbnail 
+                  key={`exam-${i}`} 
+                  src={p} 
+                  index={i+1} 
+                  active={activeExamPageIdx === i} 
+                  selected={selectedPageIndices.has(i)}
+                  onSelectToggle={() => togglePageSelection(i)}
+                  onDelete={() => handlePageDelete(i, 'exam')}
+                  onClick={() => {
+                    setActiveExamPageIdx(i);
+                    const img = examImgRefs.current[i];
+                    if (img) img.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }} 
+                />
              ))}
              <AddCard label="试题页面" onAdd={(files) => handleAddFiles(files, 'exam')} />
           </div>
@@ -397,7 +484,17 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                   onPointerDown={(e) => startDrawing(e, 'reference')}
                 >
                   {referencePages.map((page, idx) => (
-                    <img key={`img-ref-${idx}`} ref={el => { refImgRefs.current[idx] = el; }} src={page} className="block w-full select-none mb-4 border-b last:border-0" />
+                    <div key={`img-ref-${idx}`} className="relative group/ref-item scroll-mt-4">
+                      <img ref={el => { refImgRefs.current[idx] = el; }} src={page} className="block w-full select-none mb-4 border-b last:border-0" />
+                      <button 
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handlePageDelete(idx, 'reference'); }}
+                        className="absolute top-4 right-4 p-2 rounded-xl bg-red-500 text-white shadow-2xl opacity-0 group-hover/ref-item:opacity-100 transition-all hover:scale-110 active:scale-90 flex items-center gap-2 z-30"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span className="text-xs font-black">删除此页</span>
+                      </button>
+                    </div>
                   ))}
                   <RectsLayer rects={rects.filter(r => r.source === 'reference')} zoom={1} selectedId={selectedId} startMoving={startMoving} startResizing={startResizing} onRemove={(id: string) => setRects(p => p.filter(x => x.id !== id))} />
                   {isDrawing && drawingRect?.source === 'reference' && <DrawingPreview rect={drawingRect} zoom={1} />}
@@ -503,18 +600,39 @@ const AddCard = ({ onAdd, label = "试题页面" }: { onAdd: (files: FileList) =
   );
 };
 
-const Thumbnail = ({ src, index, active, onClick, isRef }: any) => (
+const Thumbnail = ({ src, index, active, selected, onClick, onSelectToggle, onDelete, isRef }: any) => (
   <div 
-    onClick={onClick}
     className={cn(
-      "relative rounded-xl overflow-hidden border-2 aspect-[3/4] cursor-pointer transition-all hover:shadow-md", 
-      active ? "border-blue-500 scale-[1.05] z-10 shadow-lg" : isRef ? "border-purple-200 opacity-80" : "border-gray-100"
+      "relative rounded-xl overflow-hidden border-2 aspect-[3/4] cursor-pointer transition-all hover:shadow-md group/thumb", 
+      active ? "border-blue-500 scale-[1.05] z-10 shadow-lg" : isRef ? "border-purple-200 opacity-80" : "border-gray-100",
+      selected && "ring-2 ring-blue-500 ring-offset-2"
     )}
   >
-    <img src={src} className="w-full h-full object-cover" />
-    <div className={cn("absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black text-white", isRef ? "bg-purple-500" : "bg-blue-500")}>
+    <div className="w-full h-full" onClick={onClick}>
+      <img src={src} className="w-full h-full object-cover" />
+    </div>
+
+    <div className={cn("absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black text-white pointer-events-none", isRef ? "bg-purple-500" : "bg-blue-500")}>
        {isRef ? "R" : "P"}{index}
     </div>
+
+    <button 
+      onClick={(e) => { e.stopPropagation(); onSelectToggle(); }}
+      className={cn(
+        "absolute bottom-2 right-2 p-1.5 rounded-lg border bg-white/80 transition-all",
+        selected ? "bg-blue-500 border-blue-500 text-white" : "text-gray-400"
+      )}
+    >
+      {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+    </button>
+
+    <button 
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onDelete(); }}
+      className="absolute top-2 right-2 p-1.5 rounded-lg bg-red-500 text-white shadow-xl opacity-0 group-hover/thumb:opacity-100 transition-all"
+    >
+      <Trash2 className="w-3.5 h-3.5" />
+    </button>
   </div>
 );
 
