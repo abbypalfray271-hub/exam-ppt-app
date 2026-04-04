@@ -100,12 +100,14 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     const imgRefs = source === 'exam' ? examImgRefs.current : refImgRefs.current;
     if (!container) return [];
     
+    const currentZoom = source === 'exam' ? zoom : 1;
+
     return imgRefs.map((img) => {
       if (!img) return { top: 0, height: 0, imgWidth: 0, naturalWidth: 1, naturalHeight: 1 };
       return {
-        top: img.offsetTop / zoom,
-        height: img.clientHeight / zoom,
-        imgWidth: img.clientWidth / zoom,
+        top: img.offsetTop / currentZoom,
+        height: img.clientHeight / currentZoom,
+        imgWidth: img.clientWidth / currentZoom,
         naturalWidth: img.naturalWidth || 1,
         naturalHeight: img.naturalHeight || 1,
       };
@@ -220,8 +222,9 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch(e) {}
     
     const cr = container.getBoundingClientRect();
-    const x = (e.clientX - cr.left) / zoom;
-    const y = (e.clientY - cr.top) / zoom;
+    const currentZoom = source === 'exam' ? zoom : 1;
+    const x = (e.clientX - cr.left) / currentZoom;
+    const y = (e.clientY - cr.top) / currentZoom;
     
     setSelectedId(null);
     const newRect: Partial<ExtendedRect> & { source: 'exam' | 'reference' } = { 
@@ -484,7 +487,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                   onPointerDown={(e) => startDrawing(e, 'reference')}
                 >
                   {referencePages.map((page, idx) => (
-                    <div key={`img-ref-${idx}`} className="relative group/ref-item scroll-mt-4">
+                    <div key={`img-ref-${idx}`} className="group/ref-item scroll-mt-4">
                       <img ref={el => { refImgRefs.current[idx] = el; }} src={page} className="block w-full select-none mb-4 border-b last:border-0" />
                       <button 
                         onPointerDown={(e) => e.stopPropagation()}
