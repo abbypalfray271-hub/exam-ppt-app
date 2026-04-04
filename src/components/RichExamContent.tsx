@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 import { Image as ImageIcon } from 'lucide-react';
 import { parseExamContent, Token } from '@/lib/examTextParser';
 import { sanitizeExamContent } from '@/lib/contentSanitizer';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /**
  * 核心数学公式渲染单元
@@ -24,9 +26,10 @@ const MathItem = ({ tex }: { tex: string }) => {
     content = content.trim();
     if (!content) return '';
 
-    // 极简渲染：主要由于 AI 指令已改为 Unicode 优先，此处仅作防守性渲染
+    // 极简渲染与关键字自动修复 (自动补全被 AI 遗漏的反斜杠)
     const healed = content
       .replace(/\\(\$)/g, '$1')
+      .replace(/(?<!\\)\b(div|cdot|times|frac|sqrt|pm|mp|le|ge|ne|approx|degree|begin|end|sin|cos|tan)\b/g, '\\$1')
       .trim();
 
     try {
@@ -204,7 +207,13 @@ const RichExamContentFragment = ({
     case 'option':
       return <span className="font-black text-brand-primary min-w-[1.8em] text-[1.1em] drop-shadow-sm ml-2">{token.content}</span>;
     case 'text':
+      // 兜底逻辑：如果文本中遗留了 LaTeX 关键词或反斜杠命令，且未被 Lexer 识别，则按 MathItem 渲染
+      if (token.content.includes('\\') || token.content.includes('begin{') || token.content.includes('frac{')) {
+        return <MathItem tex={token.content} />;
+      }
       return <TextItem content={token.content} />;
+    case 'table':
+      return <TableItem content={token.content} />;
     default:
       return null;
   }
@@ -262,3 +271,26 @@ const ImageItem = ({ content, src, onClick }: { content: string, src?: string, o
     </span>
   );
 };
+
+const TableItem = ({ content }: { content: string }) => {
+  return (
+    <div className="my-4 overflow-x-auto w-full max-w-full print:overflow-visible">
+      <div className="markdown-table-wrapper inline-block min-w-full align-middle border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm]}
+          components={{
+            table: ({node, ...props}) => <table className="min-w-full divide-y divide-slate-200 text-sm border-collapse" {...props} />,
+            thead: ({node, ...props}) => <thead className="bg-slate-50" {...props} />,
+            tbody: ({node, ...props}) => <tbody className="divide-y divide-slate-200 bg-white" {...props} />,
+            tr: ({node, ...props}) => <tr className="hover:bg-slate-50/50 transition-colors" {...props} />,
+            th: ({node, ...props}) => <th className="px-4 py-3 text-left font-bold text-slate-700 whitespace-nowrap border border-slate-200" {...props} />,
+            td: ({node, ...props}) => <td className="px-4 py-3 text-slate-600 font-medium border border-slate-200" {...props} />
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+};
+

@@ -391,15 +391,16 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                   )}
                 </div>
                 
-                {/* 内容摘要 - 提升字号与对比度 */}
+                {/* 内容摘要 - 使用 RichExamContent 启用数学渲染 */}
                 {q.content && (
-                  <p className="w-full text-center text-lg md:text-xl text-[#1e293b]/70 font-bold line-clamp-2 md:line-clamp-3 mt-4 px-4 leading-relaxed">
-                    {cleanLatexSymbols(q.content.replace(/\{\{.*?\}\}/g, ' ________ '))
-                      .replace(/\n/g, ' ')
-                      .replace(/【答案】.*/g, '')
-                      .replace(/【解析】.*/g, '')
-                    }
-                  </p>
+                  <div className="w-full text-center px-4 mt-4 max-h-40 overflow-y-auto custom-scrollbar">
+                    <div className="text-lg md:text-xl text-[#1e293b]/70 font-bold leading-relaxed pointer-events-none">
+                      <RichExamContent 
+                        content={q.content.split(/【(?:答案|解析)】/)[0].trim()} 
+                        showClozeAnswers={false} 
+                      />
+                    </div>
+                  </div>
                 )}
 
                 {/* 切片大图 - 显著放大且居中 */}

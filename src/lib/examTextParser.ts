@@ -4,7 +4,7 @@
  * 核心变化：不再强制识别 LaTeX Math 块，全面拥抱原生 Unicode 符号展示。
  */
 
-export type TokenType = 'text' | 'cloze' | 'image' | 'option' | 'math';
+export type TokenType = 'text' | 'cloze' | 'image' | 'option' | 'math' | 'table';
 
 export interface Token {
   type: TokenType;
@@ -20,8 +20,10 @@ const TOKEN_PATTERNS = {
   cloze: /\{\{[\s\S]*?\}\}/g,
   // 2. Resource Placeholders
   resource: /\[附图\]|\[表格\]/g,
-  // 3. Defensive Math Block (仅作为极端情况下的兼容，不主动诱导 AI 输出)
-  math: /(\$\$\s*[\s\S]*?\s*\$\$)|(\$\s*[\s\S]*?\s*\$)/g,
+  // 3. Math Block (强力捕获：$ 包裹的内容，或以 \begin, \frac, \sqrt 等开头的原生 LaTeX 序列)
+  math: /(\$\$\s*[\s\S]*?\s*\$\$)|(\$\s*[\s\S]*?\s*\$)|(\\begin\{[\s\S]*?\}[\s\S]*?(?:\\end|end)\{[\s\S]*?\}|\\frac\{[\s\S]*?\}\{[\s\S]*?\}|\\sqrt\{[\s\S]*?\}|\\vec\{[\s\S]*?\})/g,
+  // 4. Markdown Table Block
+  table: /\|[^\n]*\|[ \t]*\n\|[ \t]*[:\-]+[ \t]*\|(?:[ \t]*[:\-]+[ \t]*\|)*[ \t]*(?:\n|$)(?:\|[^\n]*\|[ \t]*(?:\n|$))*/g,
 };
 
 // 合并正则
@@ -46,26 +48,55 @@ const splitTextAndOptions = (text: string): Token[] => {
     if (/^[A-D][\.．]\s*$/.test(seg)) {
       result.push({ type: 'option', content: seg, originalLabel: seg });
     } else {
-      result.push({ type: 'text', content: seg });
+      const processed = seg.replace(/(?<!\\)\b(div|cdot|times|frac|sqrt|pm|mp|le|ge|ne|approx|degree|begin|end)\b/g, '\\$1');
+      result.push({ type: 'text', content: processed });
     }
   }
   return result;
 };
 
 export const parseExamContent = (text: string): Token[] => {
-  if (!text) return [];
+  function safeDecode(str: string): string {
+    if (!str || typeof str !== 'string' || !str.includes('%')) return str || '';
+    try {
+      // 核心算法：使用正则匹配连贯的 %XX 序列进行解码
+      // [FIX] 增加对特殊填充字符 (如 \uFFFD) 的物理清除，防止其破坏 URI 序列
+      const cleanedStr = str.replace(/\uFFFD/g, ''); 
+      return cleanedStr.replace(/(%[0-9A-Fa-f]{2})+/g, (match) => {
+        try {
+          return decodeURIComponent(match);
+        } catch {
+          let result = '';
+          for (let i = 0; i < match.length; i += 3) {
+            const segment = match.substring(i, i + 3);
+            try {
+              result += decodeURIComponent(segment);
+            } catch {
+              result += segment;
+            }
+          }
+          return result;
+        }
+      });
+    } catch {
+      return str;
+    }
+  }
+
+  const decodedText = safeDecode(text);
+  if (!decodedText) return [];
 
   const tokens: Token[] = [];
   let lastIndex = 0;
   let match;
 
-  while ((match = combinedRegex.exec(text)) !== null) {
+  while ((match = combinedRegex.exec(decodedText)) !== null) {
     const matchIndex = match.index;
     const matchText = match[0];
 
     // 1. 填充文本缝隙
     if (matchIndex > lastIndex) {
-      const gapText = text.slice(lastIndex, matchIndex);
+      const gapText = decodedText.slice(lastIndex, matchIndex);
       tokens.push(...splitTextAndOptions(gapText));
     }
 
@@ -75,6 +106,8 @@ export const parseExamContent = (text: string): Token[] => {
       type = 'cloze';
     } else if (matchText.startsWith('$')) {
       type = 'math';
+    } else if (matchText.startsWith('|')) {
+      type = 'table';
     } else if (matchText === '[附图]' || matchText === '[表格]') {
       type = 'image';
     }
@@ -84,8 +117,8 @@ export const parseExamContent = (text: string): Token[] => {
   }
 
   // 3. 收尾
-  if (lastIndex < text.length) {
-    const remainingText = text.slice(lastIndex);
+  if (lastIndex < decodedText.length) {
+    const remainingText = decodedText.slice(lastIndex);
     tokens.push(...splitTextAndOptions(remainingText));
   }
 

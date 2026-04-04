@@ -12,7 +12,7 @@ export const parseQuestion = async (
 ): Promise<AIQuestionResult[]> => {
   const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
   const model31 = process.env.REASONING_MODEL_NAME || "gemini-3.1-pro-preview";
-  
+
   const modelName = isDeepThinking ? model31 : model30;
   const apiKey = process.env.API_KEY;
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.devdove.site/v1';
@@ -23,7 +23,7 @@ export const parseQuestion = async (
 
   const hasManualAnswer = clips.some(c => c.role === 'answer');
   const hasManualAnalysis = clips.some(c => c.role === 'analysis');
-  
+
   let manualInstruction = "";
   if (hasManualAnswer || hasManualAnalysis) {
     manualInstruction = `
@@ -37,7 +37,7 @@ export const parseQuestion = async (
   }
 
   // 核心提示词：注入“全景盘点”、“方程锁死”、“符号物理隔离”、“平面几何降维”以及“SVG重绘”逻辑
-  const prompt = `你是一个顶级数学专家和视觉分析专家。**绝对禁止输出任何形式的反斜杠（\\）**。
+  const prompt = `你是一个顶级数学专家和视觉分析专家。**本任务核心挑战：必须支持复杂的数学公式（\frac, \sqrt, \begin{cases}等）输出！**
   ${manualInstruction}
 
   [解题流派定调 (Methodology Constraint)]
@@ -58,11 +58,18 @@ export const parseQuestion = async (
   2. 首题捆绑原文：仅限数组中的 **第一个对象** (通常是第 1 题) 需要包含完整的 [公共背景/原文/ passage] 内容。后续的所有小题 (从第 2 题开始) **绝对禁止** 再次重复原文背景，只需输出该项对应的小题干本身。
   3. 禁止合并：严禁将多个不同编号的小题合并在同一个 JSON 对象中。
 
-  [符号物理隔离]
-  - 所有数学依据、关系及特殊符号必须使用 **原生 UTF-8 符号**：∵, ∴, Δ, ∠, ≅, ∽, √, ², π, ⊥, ▱, ⊙。
-  - 严禁使用任何形式的转义字符或由反斜杠引导的命令。
-  - **重要：由于 JSON 格式限制，输出反斜杠时请确保其能被正确转义（如果你输出单反斜杠，下游解析器会自动处理，但请尽量保持语法标准）。**
-  - **重要：如果你收到了绿色切片 (Diagram)，必须在输出文字 (content 或 analysis) 的对应位置插入 [附图] 占位符，严禁漏掉。**
+  [URL Encode Protocol (CRITICAL TUNNELING)]
+  1. 为了防止反斜杠 (\)、分数 (\frac) 和中文字符破坏 JSON 结构，**除了 order、type、auxiliary_svg 外，其它所有长文本内容字段（content, _thought_process, analysis, answer）的值必须进行完整的 URI Percent-Encoding（相当于 JS 的 encodeURIComponent）。**
+  2. 哪怕是纯中文，也必须编码为 %E4... 格式。
+  3. **LaTeX 的反斜杠 (\\\\) 必须编码为 %5C。严禁将 \\frac 改写为 over，严禁将 \\div 改写为 div。必须保持 LaTeX 语法的严肃性。**
+  4. 示例：你想输出 {"answer": "解：\frac{1}{2}"}，必须输出 {"answer": "%E8%A7%A3%EF%BC%9A%5Cfrac%7B1%7D%7B2%7D"}
+  5. JSON 的键名 (Key) 和外围结构保持明文。
+
+  [数学公式强制包裹 (LaTeX Constraint)]
+  - 所有包含数学符号、分数、根号、方程式的内容，**必须**严格使用 $ $ (行内) 或 $$ $$ (独立行) 包裹！
+  - 示例：\`$ %5Cfrac%7Ba%7D%7Bb%7D $\` 为合法输出。
+  - 严禁输出任何非标准、口语化的数学表达。
+  - 如果你收到了绿色切片 (Diagram)，必须在输出文字的对应位置插入 [附图] 占位符。
 
   [视觉盘点 (Visual Inventory)]
   在解析前，必须在分析首段先盘点：图中共有几张图？主图与局部放大图的对应关系是什么？关键点在哪里？观察是否有虚线（辅助线）及其标注。严禁忽视细节。
@@ -104,7 +111,7 @@ export const parseQuestion = async (
 
   // 构建多模态消息内容
   const messageContent: any[] = [];
-  
+
   // 1. 按照特定顺序排列图片：题干 -> 答案 -> 解析 -> 插图
   const sortedClips = [...clips].sort((a, b) => {
     const order = { question: 0, answer: 1, analysis: 2, diagram: 3 };
@@ -170,24 +177,24 @@ Return the result in this exact format:
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-        throw new Error(`AI 服务异常: ${response.status}`);
+      throw new Error(`AI 服务异常: ${response.status}`);
     }
 
     // [STREAMING FIX] 手动读取并拼接流式响应 (避免 524 Timeout)
     const reader = response.body?.getReader();
     const decoder = new TextDecoder("utf-8");
     let content = "";
-    
+
     if (reader) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        
+
         // 解析 SSE 格式的 data: {...}
         const lines = chunk.split('\n');
         for (const line of lines) {
@@ -208,7 +215,7 @@ Return the result in this exact format:
 
     const jsonMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
     const rawJson = jsonMatch ? jsonMatch[0] : content;
-    
+
     return robustParseJson(rawJson);
   } catch (error: any) {
     console.error("[Parse API Error]:", error.message);
@@ -220,11 +227,41 @@ Return the result in this exact format:
  * 强力 JSON 解析器：处理 AI 输出中常见的格式错误、转义失败和截断问题
  */
 function robustParseJson(raw: string): AIQuestionResult[] {
-  // 1. [精准定位起始符] 过滤所有非 JSON 的前缀杂质（如 [视觉盘点] 等描述性文字）
-  const firstBrace = raw.indexOf('{');
-  const firstBracket = raw.indexOf('[');
+  // 0. [ATOMIC FLUSH] 对原始流式拼接字符串进行全量解码
+  // 这是最彻底的解码方式：等 AI 吐完所有内容后，一次性还原所有 URI 隧道数据。
+  function safeDecode(str: string): string {
+    if (!str || typeof str !== 'string' || !str.includes('%')) return str || '';
+    try {
+      // 核心算法：使用正则匹配连贯的 %XX 序列进行解码，忽略末尾可能残缺的非连贯序列
+      return str.replace(/(%[0-9A-Fa-f]{2})+/g, (match) => {
+        try {
+          return decodeURIComponent(match);
+        } catch {
+          // 如果这块序列解码失败，尝试分段处理
+          let result = '';
+          for (let i = 0; i < match.length; i += 3) {
+            const segment = match.substring(i, i + 3);
+            try {
+              result += decodeURIComponent(segment);
+            } catch {
+              result += segment;
+            }
+          }
+          return result;
+        }
+      });
+    } catch {
+      return str;
+    }
+  }
+
+  const decodedRaw = safeDecode(raw);
+
+  // 1. [精准定位起始符] 过滤所有非 JSON 的前缀杂质
+  const firstBrace = decodedRaw.indexOf('{');
+  const firstBracket = decodedRaw.indexOf('[');
   let startIndex = -1;
-  
+
   if (firstBrace !== -1 && firstBracket !== -1) {
     startIndex = Math.min(firstBrace, firstBracket);
   } else {
@@ -253,17 +290,17 @@ function robustParseJson(raw: string): AIQuestionResult[] {
   let braceCount = 0;
   let bracketCount = 0;
   let inString = false;
-  
+
   for (let i = 0; i < cleaned.length; i++) {
     const char = cleaned[i];
-    const prev = i > 0 ? cleaned[i-1] : '';
-    
-    if (char === '"' && (prev !== '\\' || (i > 1 && cleaned[i-2] === '\\'))) {
+    const prev = i > 0 ? cleaned[i - 1] : '';
+
+    if (char === '"' && (prev !== '\\' || (i > 1 && cleaned[i - 2] === '\\'))) {
       inString = !inString;
       result += char;
       continue;
     }
-    
+
     if (inString) {
       if (char === '\n') result += '\\n';
       else if (char === '\r') result += '\\r';
@@ -277,7 +314,7 @@ function robustParseJson(raw: string): AIQuestionResult[] {
       // 增强容错：如果 JSON 数组项之间漏写了逗号，尝试补全
       if (char === '{' && result.trim().endsWith('}')) result = result.trim() + ', ';
       if (char === '[' && result.trim().endsWith(']')) result = result.trim() + ', ';
-      
+
       result += char;
     }
   }
@@ -288,19 +325,28 @@ function robustParseJson(raw: string): AIQuestionResult[] {
   while (bracketCount > 0) { cleaned += ' ]'; bracketCount--; }
   cleaned = cleaned.replace(/,(\s*[\]\}])/g, '$1');
 
+  let parsed: AIQuestionResult[] = [];
   try {
-    return JSON.parse(cleaned);
+    parsed = JSON.parse(cleaned);
   } catch (err: any) {
-    // [最终兜底] 如果还是失败，尝试通过正则更激进地清理
-    console.error("[RobustParse Initial Failure]:", err.message);
-    try {
-      const desperateClean = cleaned.replace(/\\/g, '\\\\').replace(/\\\\\\\\/g, '\\\\');
-      return JSON.parse(desperateClean);
-    } catch (innerErr) {
-      console.error("[RobustParse Critical Failure]:", innerErr);
-      throw err;
+    if (cleaned.endsWith('}')) {
+      try {
+        parsed = JSON.parse(cleaned + ']');
+      } catch (e) {
+        throw new Error(`JSON 解析失败: ${err.message}\n截断内容片段: ${cleaned.substring(0, 100)}...`);
+      }
+    } else {
+      throw new Error(`JSON 解析失败: ${err.message}\n截断内容片段: ${cleaned.substring(0, 100)}...`);
     }
   }
+
+  return parsed.map((item: any) => ({
+    ...item,
+    content: safeDecode(item.content),
+    _thought_process: safeDecode(item._thought_process),
+    analysis: safeDecode(item.analysis),
+    answer: safeDecode(item.answer)
+  }));
 }
 
 // parseFullDocument 已被移除 — 全文档解析现由 ExtractionCanvas 分页驱动调用 parseQuestion
