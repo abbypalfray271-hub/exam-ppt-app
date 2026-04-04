@@ -16,8 +16,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore } from '@/store/useProjectStore';
 import { pdfToImages } from '@/lib/documentProcessor';
 import { cn } from '@/lib/utils';
-import { createPortal } from 'react-dom';
-import { ExtractionCanvas } from './ExtractionCanvas';
 
 export const UploadZone: React.FC = () => {
   const { 
@@ -25,6 +23,8 @@ export const UploadZone: React.FC = () => {
     referencePages, 
     isProcessing, 
     processingTarget,
+    isCanvasOpen,
+    setCanvasOpen,
     setPages, 
     setProcessing,
     resetUpload,
@@ -33,7 +33,6 @@ export const UploadZone: React.FC = () => {
   
   const [isDragActive, setIsDragActive] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
-  const [isCanvasOpen, setCanvasOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -254,22 +253,6 @@ export const UploadZone: React.FC = () => {
         </div>
       )}
 
-      {mounted && typeof document !== 'undefined' && createPortal(
-        <AnimatePresence>
-          {isCanvasOpen && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[999] bg-white">
-              <ExtractionCanvas 
-                examPages={examPages}
-                referencePages={referencePages}
-                initialPageIndex={currentPage}
-                onComplete={() => setCanvasOpen(false)}
-                onClose={() => { setCanvasOpen(false); resetUpload(); }}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
     </div>
   );
 };

@@ -7,11 +7,22 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Presentation, Sparkles, Wand2 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
+import { createPortal } from 'react-dom';
+import { ExtractionCanvas } from '@/components/ExtractionCanvas';
 
 
 
 export default function Home() {
-  const { questions, currentView } = useProjectStore();
+  const { 
+    questions, 
+    currentView, 
+    isCanvasOpen, 
+    setCanvasOpen, 
+    examPages, 
+    referencePages,
+    setView,
+    resetUpload
+  } = useProjectStore();
   const hasQuestions = questions.length > 0;
 
   // 每次切回 upload 视图时递增 key，防止 AnimatePresence 的 key 冲突
@@ -89,6 +100,20 @@ export default function Home() {
       </section>
 
 
+
+      {isCanvasOpen && typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[999] bg-white">
+            <ExtractionCanvas 
+              examPages={examPages}
+              referencePages={referencePages}
+              onComplete={() => { setCanvasOpen(false); setView('editor'); }}
+              onClose={() => { setCanvasOpen(false); resetUpload(); }}
+            />
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
     </main>
   );
 }

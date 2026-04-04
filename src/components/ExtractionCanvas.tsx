@@ -16,7 +16,8 @@ import {
   Brain,
   Info,
   ChevronDown,
-  Plus
+  Plus,
+  Presentation
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore, Question } from '@/store/useProjectStore';
@@ -371,8 +372,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
         setIsDeepThinking={setIsDeepThinking}
         isProcessing={isProcessing}
         onConfirm={handleConfirm}
-        zoom={zoom}
-        setZoom={setZoom}
+        onComplete={onComplete}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -516,7 +516,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
 
 // --- Sub components to keep code clean ---
 
-const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, setIsDeepThinking, isProcessing, onConfirm, zoom, setZoom }: any) => {
+const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, setIsDeepThinking, isProcessing, onConfirm, onComplete }: any) => {
   return (
     <div className="flex items-center justify-between px-6 py-4 bg-white border-b z-20 shadow-sm">
       <div className="flex items-center gap-4">
@@ -549,14 +549,14 @@ const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, se
       </div>
 
       <div className="flex items-center gap-4">
-         <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-            {[0.5, 1, 1.5].map(z => (
-              <button key={z} onClick={() => setZoom(z)} className={cn("px-3 py-1 rounded-md text-[10px] font-black", zoom === z ? "bg-white shadow-sm" : "text-gray-400")}>
-                {z*100}%
-              </button>
-            ))}
-         </div>
-         <button
+          <button 
+            onClick={onComplete}
+            className="flex items-center gap-2 px-5 py-2 rounded-full border-2 border-gray-100 bg-white text-gray-500 hover:border-blue-200 hover:text-blue-600 transition-all group"
+          >
+            <Presentation className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-black uppercase tracking-widest">演示页</span>
+          </button>
+          <button
             onClick={() => setIsDeepThinking(!isDeepThinking)}
             className={cn(
               "flex items-center gap-2 px-5 py-2 rounded-full border-2 transition-all",
