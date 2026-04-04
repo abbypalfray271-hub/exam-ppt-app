@@ -43,6 +43,7 @@ interface ProjectState {
   currentView: 'upload' | 'editor'; // -- 新增：当前视图 --
   isCanvasOpen: boolean; // -- 新增：框选画布是否打开 --
   fileType: 'image' | 'pdf' | null; // -- 统一：文件类型 --
+  processingTarget: 'exam' | 'reference' | null; // [NEW] 正在处理的目标
 
 
   
@@ -58,15 +59,17 @@ interface ProjectState {
   removeQuestion: (id: string) => void;
   removeQuestions: (ids: string[]) => void;
   setMode: (mode: 'quick' | 'deep') => void;
-  setProcessing: (processing: boolean) => void;
+  setProcessing: (processing: boolean, target?: 'exam' | 'reference' | null) => void;
   setPresenting: (presenting: boolean) => void;    // -- 新增：进入/退出全屏 --
   setCurrentSlideIndex: (index: number) => void; // -- 新增：切页 --
   setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
   setCanvasOpen: (open: boolean) => void; // -- 新增：控制框选画布 --
   setFileType: (type: 'image' | 'pdf' | null) => void;
   setReferencePages: (pages: string[]) => void; // [NEW] 设置参考答案页
+  setPages: (pages: string[], mode: 'append' | 'replace', target: 'exam' | 'reference') => void; // [NEW] 通用设置页面的 Action
 
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
+  importProjectJSON: () => void; // [NEW] 导入项目 JSON 演稿
 
 }
 
@@ -82,11 +85,21 @@ export const useProjectStore = create<ProjectState>((set) => ({
   currentView: 'upload',
   isCanvasOpen: false,
   fileType: null,
+  processingTarget: null,
 
   
   setProjectName: (name) => set({ projectName: name }),
   setExamImage: (url) => set({ examImageUrl: url }),
   setExamPages: (pages) => set({ examPages: pages }),
+
+  setPages: (newPages, mode, target) => set((state) => {
+    const key = target === 'exam' ? 'examPages' : 'referencePages';
+    const oldPages = state[key];
+    return {
+      [key]: mode === 'replace' ? newPages : [...oldPages, ...newPages],
+      fileType: target === 'exam' ? (newPages.length > 0 ? (newPages[0].startsWith('data:application/pdf') ? 'pdf' : 'image') : state.fileType) : state.fileType
+    };
+  }),
 
   addQuestion: (q) => set((state) => ({ questions: [...state.questions, q] })),
   addQuestions: (qs) => set((state) => ({ questions: [...state.questions, ...qs] })),
@@ -101,7 +114,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     questions: state.questions.filter((q) => !ids.includes(q.id))
   })),
   setMode: (mode) => set({ currentMode: mode }),
-  setProcessing: (processing) => set({ isProcessing: processing }),
+  setProcessing: (processing, target = null) => set({ isProcessing: processing, processingTarget: target }),
   setPresenting: (presenting) => set({ isPresenting: presenting }),
   setCurrentSlideIndex: (index) => set({ currentSlideIndex: index }),
   setView: (view) => set({ currentView: view }),
@@ -114,9 +127,38 @@ export const useProjectStore = create<ProjectState>((set) => ({
     referencePages: [], // [NEW] 同时清空参考页
     questions: [], 
     isProcessing: false,
+    processingTarget: null,
     currentSlideIndex: 0,
     currentView: 'upload',
     isCanvasOpen: false,
     fileType: null,
   }),
+  importProjectJSON: () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target?.result as string);
+          set({
+            projectName: data.projectName || '导入的试卷',
+            examPages: data.examPages || [],
+            referencePages: data.referencePages || [],
+            questions: data.questions || [],
+            fileType: data.fileType || null,
+            currentView: 'upload'
+          });
+        } catch (err) {
+          console.error('Failed to parse project JSON', err);
+          alert('读取演稿失败，请检查文件格式。');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  },
 }));

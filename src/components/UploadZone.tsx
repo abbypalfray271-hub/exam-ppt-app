@@ -1,171 +1,125 @@
 'use client';
 
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Upload, Image as ImageIcon, FileText, X, Wand2, 
-  Sparkles, ChevronLeft, ChevronRight, Loader2, FolderOpen
+  Upload, 
+  FileText, 
+  Loader2, 
+  X, 
+  ChevronLeft, 
+  ChevronRight,
+  ImageIcon,
+  Wand2,
+  FolderOpen
 } from 'lucide-react';
-import { useProjectStore } from '@/store/useProjectStore';
-import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExtractionCanvas } from './ExtractionCanvas';
-import { pdfToImages, compressImage } from '@/lib/documentProcessor';
+import { useProjectStore } from '@/store/useProjectStore';
+import { pdfToImages } from '@/lib/documentProcessor';
+import { cn } from '@/lib/utils';
 import { createPortal } from 'react-dom';
-import { importProjectJSON } from '@/lib/projectIO';
+import { ExtractionCanvas } from './ExtractionCanvas';
 
-export const UploadZone = () => {
+export const UploadZone: React.FC = () => {
   const { 
-    setExamImage, 
-    setExamPages, 
-    setReferencePages,
+    examPages, 
+    referencePages, 
     isProcessing, 
+    processingTarget,
+    setPages, 
     setProcessing,
-    examPages,
-    referencePages,
-    setView,
-    examImageUrl,
-    isCanvasOpen,
-    setCanvasOpen,
     resetUpload,
-    setFileType,
-    fileType
+    importProjectJSON 
   } = useProjectStore();
-
-  const [currentPage, setCurrentPage] = useState(0);
+  
   const [isDragActive, setIsDragActive] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [isCanvasOpen, setCanvasOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
-  const [mounted, setMounted] = useState(false);
 
-  const preview = examPages.length > 0 ? examPages[currentPage] : examImageUrl || null;
-  const hasContent = examPages.length > 0 || !!examImageUrl || referencePages.length > 0;
-
-  React.useEffect(() => {
+  useEffect(() => {
     setMounted(true);
   }, []);
 
-  React.useEffect(() => {
-    if (examPages.length > 0 && currentPage >= examPages.length) {
-      setCurrentPage(examPages.length - 1);
-    }
-  }, [examPages, currentPage]);
-
-  const handleFiles = async (
-    files: File[], 
-    mode: 'replace' | 'append' = 'replace',
-    target: 'exam' | 'reference' = 'exam'
-  ) => {
-    if (!files || files.length === 0) return;
+  const handleFiles = async (files: File[], mode: 'append' | 'replace', target: 'exam' | 'reference') => {
+    if (files.length === 0) return;
     
-    setProcessing(true);
+    setProcessing(true, target);
+    
     try {
-      const setter = target === 'exam' ? setExamPages : setReferencePages;
-      const currentList = target === 'exam' ? examPages : referencePages;
-      const mainFile = files[0];
-
-      if (mainFile.type === 'application/pdf' || mainFile.name.toLowerCase().endsWith('.pdf')) {
-        if (target === 'exam') setFileType('pdf');
-        const images = await pdfToImages(mainFile);
-        
-        if (mode === 'append') {
-          setter([...currentList, ...images]);
-          if (target === 'exam') {
-            setCurrentPage(examPages.length);
-            if (images.length > 0) setExamImage(images[0]);
-          }
+      const allResults: string[] = [];
+      
+      for (const file of files) {
+        if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+          // PDF 处理：渲染为图片数组
+          const images = await pdfToImages(file);
+          allResults.push(...images);
         } else {
-          setter(images);
-          if (target === 'exam') {
-            if (images.length > 0) {
-              setExamImage(images[0]);
-              setCurrentPage(0);
-            }
-          }
-        }
-      } else {
-        const imageFiles = files.filter(f => f.type.startsWith('image/'));
-        if (imageFiles.length === 0) return;
-        if (target === 'exam') setFileType('image');
-
-        const base64Images: string[] = [];
-        for (const file of imageFiles) {
-          const rawBase64 = await new Promise<string>((resolve, reject) => {
+          // 图片处理：读取为 DataURL
+          const result = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target?.result as string);
-            reader.onerror = () => reject(new Error('文件读取失败'));
             reader.readAsDataURL(file);
           });
-          const compressed = await compressImage(rawBase64, 1600);
-          base64Images.push(compressed);
-        }
-
-        if (mode === 'append') {
-          setter([...currentList, ...base64Images]);
-          if (target === 'exam') {
-            setCurrentPage(examPages.length);
-            setExamImage(base64Images[0]);
-          }
-        } else {
-          setter(base64Images);
-          if (target === 'exam') {
-            setExamImage(base64Images[0]);
-            setCurrentPage(0);
-          }
+          allResults.push(result);
         }
       }
-    } catch (error: any) {
-      console.error('File processing error:', error);
-      alert(`无法处理此文件: ${error?.message || '未知错误'}`);
+      
+      setPages(allResults, mode, target);
+      if (target === 'exam') setCurrentPage(0);
+    } catch (err) {
+      console.error('File processing error:', err);
+      alert('素材解析失败，请检查文件格式。');
     } finally {
       setProcessing(false);
+      setIsDragActive(false);
     }
   };
 
   const handleClearPreview = () => {
+    setPages([], 'replace', 'exam');
     setCurrentPage(0);
-    resetUpload();
   };
 
+  const hasContent = examPages.length > 0;
+  const preview = examPages[currentPage];
+
   return (
-    <div className="w-full max-w-6xl mx-auto p-6">
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        accept="image/*,application/pdf,.pdf"
-        multiple
+    <div className={cn("w-full transition-all duration-500", hasContent ? "min-h-[60vh]" : "min-h-[40vh] flex items-center justify-center")}>
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*,.pdf" 
+        multiple 
         onChange={(e) => {
-          const files = e.target.files;
-          if (!files) return;
-          const mode = examPages.length > 0 ? 'append' : 'replace';
-          handleFiles(Array.from(files), mode, 'exam');
+          handleFiles(Array.from(e.target.files || []), 'replace', 'exam');
           e.target.value = '';
         }}
       />
-      <input
-        ref={refInputRef}
-        type="file"
-        className="hidden"
-        accept="image/*,application/pdf,.pdf"
-        multiple
+      <input 
+        type="file" 
+        ref={refInputRef} 
+        className="hidden" 
+        accept="image/*,.pdf" 
+        multiple 
         onChange={(e) => {
-          const files = e.target.files;
-          if (!files) return;
-          const mode = referencePages.length > 0 ? 'append' : 'replace';
-          handleFiles(Array.from(files), mode, 'reference');
+          handleFiles(Array.from(e.target.files || []), 'replace', 'reference');
           e.target.value = '';
         }}
       />
-      
+
       <AnimatePresence mode="wait">
         {!hasContent ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
+          <div className="flex flex-col items-center justify-center mt-12 w-full">
             <motion.div
               key="upload-exam"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               className={cn(
-                "relative aspect-[4/3] border-4 border-dashed rounded-3xl flex flex-col items-center justify-center transition-all bg-white group shadow-sm",
+                "relative aspect-[4/3] w-full max-w-lg border-4 border-dashed rounded-3xl flex flex-col items-center justify-center transition-all bg-white group shadow-sm",
                 !isProcessing ? "border-gray-200 cursor-pointer hover:border-brand-primary hover:bg-brand-primary/5 hover:shadow-xl active:scale-[0.99]" : "border-brand-primary/30"
               )}
               onClick={() => !isProcessing && fileInputRef.current?.click()}
@@ -173,39 +127,14 @@ export const UploadZone = () => {
               onDragLeave={() => setIsDragActive(false)}
               onDrop={(e) => { e.preventDefault(); handleFiles(Array.from(e.dataTransfer.files), 'replace', 'exam'); }}
             >
-              <div className="bg-brand-primary/10 p-4 rounded-2xl mb-4 group-hover:scale-110 transition-transform">
-                <Upload className="w-10 h-10 text-brand-primary" />
+              <div className="bg-brand-primary/10 p-6 rounded-2xl mb-4 group-hover:scale-110 transition-transform">
+                <Upload className="w-12 h-12 text-brand-primary" />
               </div>
-              <h2 className="text-xl font-black mb-1">上传试卷素材</h2>
-              <p className="text-gray-400 text-xs px-8 text-center uppercase tracking-widest font-bold">主素材池 · 支持混合内容</p>
+              <h2 className="text-2xl font-black mb-2">上传试卷素材</h2>
+              <p className="text-gray-400 text-xs px-8 text-center uppercase tracking-widest font-bold">PDF / 图片 / 拍照</p>
               {isProcessing && (
                 <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-3xl">
                   <Loader2 className="w-10 h-10 text-brand-primary animate-spin" />
-                </div>
-              )}
-            </motion.div>
-
-            <motion.div
-              key="upload-reference"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className={cn(
-                "relative aspect-[4/3] border-4 border-dashed rounded-3xl flex flex-col items-center justify-center transition-all bg-white group shadow-sm",
-                !isProcessing ? "border-gray-200 cursor-pointer hover:border-purple-500 hover:bg-purple-50 hover:shadow-xl active:scale-[0.99]" : "border-purple-200"
-              )}
-              onClick={() => !isProcessing && refInputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setIsDragActive(true); }}
-              onDragLeave={() => setIsDragActive(false)}
-              onDrop={(e) => { e.preventDefault(); handleFiles(Array.from(e.dataTransfer.files), 'replace', 'reference'); }}
-            >
-              <div className="bg-purple-100 p-4 rounded-2xl mb-4 group-hover:scale-110 transition-transform">
-                <FileText className="w-10 h-10 text-purple-600" />
-              </div>
-              <h2 className="text-xl font-black mb-1">上传答案解析</h2>
-              <p className="text-gray-400 text-xs px-8 text-center uppercase tracking-widest font-bold">参考池 · 提高 100% 识别准度</p>
-              {isProcessing && (
-                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-3xl">
-                  <Loader2 className="w-10 h-10 text-purple-600 animate-spin" />
                 </div>
               )}
             </motion.div>
@@ -219,26 +148,111 @@ export const UploadZone = () => {
               exit={{ opacity: 0, scale: 0.95 }}
               className="relative w-full max-w-xl rounded-3xl overflow-hidden glass-panel border shadow-2xl aspect-[3/4] group flex flex-col items-center justify-center"
             >
-              {preview && <img src={preview} alt="预览" className="w-full h-full object-contain p-4" />}
+              {preview && <img src={preview} alt="预览" className={cn("w-full h-full object-contain p-4 transition-opacity", isProcessing ? "opacity-30" : "opacity-100")} />}
               
-              {examPages.length > 1 && (
-                <div className="absolute top-4 left-4 flex gap-2 z-10">
-                  <button onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))} disabled={currentPage === 0} className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md"><ChevronLeft className="w-4 h-4" /></button>
-                  <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xs font-bold flex items-center backdrop-blur-md">{currentPage + 1} / {examPages.length}</div>
-                  <button onClick={() => setCurrentPage(prev => Math.min(examPages.length - 1, prev + 1))} disabled={currentPage === examPages.length - 1} className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md"><ChevronRight className="w-4 h-4" /></button>
+              {isProcessing && (
+                <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center">
+                  <div className="bg-white/90 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border border-brand-primary/10">
+                    <Loader2 className="w-12 h-12 text-brand-primary animate-spin" />
+                    <div className="flex flex-col items-center">
+                      <p className="text-sm font-black text-gray-900 tracking-widest uppercase">正在处理新素材</p>
+                      <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">AI 引擎正在解析预览图...</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <button onClick={handleClearPreview} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors backdrop-blur-md z-10"><X className="w-6 h-6" /></button>
+              {examPages.length > 1 && (
+                <div className="absolute top-4 left-4 flex gap-2 z-10">
+                  <button onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))} disabled={currentPage === 0 || isProcessing} className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md transition-all active:scale-90"><ChevronLeft className="w-4 h-4" /></button>
+                  <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xs font-bold flex items-center backdrop-blur-md">{currentPage + 1} / {examPages.length}</div>
+                  <button onClick={() => setCurrentPage(prev => Math.min(examPages.length - 1, prev + 1))} disabled={currentPage === examPages.length - 1 || isProcessing} className="p-2 bg-black/50 text-white rounded-lg disabled:opacity-30 backdrop-blur-md transition-all active:scale-90"><ChevronRight className="w-4 h-4" /></button>
+                </div>
+              )}
 
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 opacity-100 transition-opacity">
-                <button className="px-8 py-3 bg-brand-primary text-white rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2" onClick={() => setCanvasOpen(true)}><Wand2 className="w-5 h-5" /> 开始框选状态</button>
-                <button className="px-6 py-3 bg-purple-600 text-white rounded-full font-bold shadow-xl hover:bg-purple-700 transition-all flex items-center gap-2" onClick={() => refInputRef.current?.click()}><FileText className="w-5 h-5" /> 补充答案</button>
-              </div>
+              <button onClick={handleClearPreview} disabled={isProcessing} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 disabled:opacity-30 transition-all backdrop-blur-md z-10 active:scale-90"><X className="w-6 h-6" /></button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* [工业版控制中心] 全局化物理排布 - 让首页也具备读入入口 */}
+      {mounted && (
+        <div className="fixed inset-0 z-[100] pointer-events-none">
+          {/* 1. 左下角：读入演稿 (全局可见) */}
+          <div className="absolute left-6 bottom-6 pointer-events-auto">
+            <button 
+              disabled={isProcessing}
+              className="w-32 h-16 flex flex-col items-center justify-center bg-gray-900 text-white rounded-2xl shadow-xl border-b-2 border-gray-950 hover:bg-black transition-all active:scale-95 gap-1"
+              onClick={() => importProjectJSON()}
+            >
+              <FolderOpen className="w-5 h-5 opacity-60" />
+              <span className="text-sm font-black tracking-normal whitespace-nowrap">读入演稿</span>
+            </button>
+          </div>
+
+          {/* 仅在已有内容时显示的核心操作区 */}
+          {hasContent && (
+            <>
+              {/* 2. 中央：素材双核 (垂直+水平双向居中) */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center gap-12">
+                  {/* 试题添加 (精巧立牌) */}
+                  <button 
+                    disabled={isProcessing}
+                    className="w-24 h-32 flex flex-col items-center justify-center bg-white text-gray-900 rounded-[2rem] shadow-[0_20px_70px_rgba(0,0,0,0.15)] border-2 border-gray-50 hover:shadow-[0_35px_90px_rgba(0,0,0,0.25)] transition-all active:scale-95 group" 
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {isProcessing && processingTarget === 'exam' ? (
+                      <Loader2 className="w-8 h-8 animate-spin mb-2 text-brand-primary" />
+                    ) : (
+                      <div className="p-3 bg-gray-50 rounded-2xl group-hover:bg-brand-primary/10 transition-colors mb-2">
+                        <ImageIcon className="w-8 h-8 text-gray-400 group-hover:text-brand-primary" />
+                      </div>
+                    )}
+                    <div className="text-lg font-black tracking-tight whitespace-nowrap">
+                      试题添加
+                    </div>
+                  </button>
+
+                  {/* 补充答案 (精巧立牌) */}
+                  <button 
+                    disabled={isProcessing}
+                    className="w-24 h-32 flex flex-col items-center justify-center bg-[#E0E8FF] text-brand-primary rounded-[2rem] shadow-[0_20px_70px_rgba(40,113,255,0.1)] border-2 border-white/50 hover:bg-[#D4E0FF] transition-all active:scale-95 group" 
+                    onClick={() => refInputRef.current?.click()}
+                  >
+                    {isProcessing && processingTarget === 'reference' ? (
+                      <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                    ) : (
+                      <div className="p-3 bg-white/50 rounded-2xl mb-2">
+                        <FileText className="w-8 h-8" />
+                      </div>
+                    )}
+                    <div className="text-lg font-black tracking-tight whitespace-nowrap">
+                      补充答案
+                    </div>
+                  </button>
+              </div>
+
+              {/* 3. 右下角：执行终端 (开始制作) */}
+              <div className="absolute right-6 bottom-6 pointer-events-auto">
+                <button 
+                  disabled={isProcessing}
+                  style={{
+                    background: 'linear-gradient(135deg, #FF3D77 0%, #FFB100 30%, #00E4A1 50%, #0088FF 70%, #A155FF 100%)',
+                  }}
+                  className="w-32 h-16 flex flex-col items-center justify-center text-white rounded-2xl shadow-[0_15px_45px_rgba(255,61,119,0.35)] border border-white/30 backdrop-blur-xl hover:scale-110 active:scale-95 transition-all group gap-1"
+                  onClick={() => setCanvasOpen(true)}
+                >
+                  <Wand2 className="w-6 h-6 group-hover:rotate-12 transition-transform drop-shadow-md" />
+                  <div className="text-sm font-black tracking-normal leading-none drop-shadow-sm">
+                      开始制作
+                  </div>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {mounted && typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
@@ -249,20 +263,13 @@ export const UploadZone = () => {
                 referencePages={referencePages}
                 initialPageIndex={currentPage}
                 onComplete={() => setCanvasOpen(false)}
-                onClose={() => setCanvasOpen(false)}
+                onClose={() => { setCanvasOpen(false); resetUpload(); }}
               />
             </motion.div>
           )}
         </AnimatePresence>,
         document.body
       )}
-
-      <div className="fixed bottom-6 right-6 z-50">
-        <button onClick={() => importProjectJSON()} className="flex items-center gap-2 px-8 py-3.5 bg-gray-900 text-white rounded-2xl text-sm font-black shadow-xl hover:bg-black transition-all group">
-          <FolderOpen className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-          读档
-        </button>
-      </div>
     </div>
   );
 };
