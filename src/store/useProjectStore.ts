@@ -150,7 +150,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
             referencePages: data.referencePages || [],
             questions: data.questions || [],
             fileType: data.fileType || null,
-            currentView: 'upload'
+            currentView: 'editor'
           });
         } catch (err) {
           console.error('Failed to parse project JSON', err);
