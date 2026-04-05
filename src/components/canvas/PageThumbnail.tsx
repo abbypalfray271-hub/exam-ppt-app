@@ -8,9 +8,9 @@ export interface SectionLabelProps {
 }
 
 export const SectionLabel: React.FC<SectionLabelProps> = ({ label, count }) => (
-  <div className="pt-2 pb-1 flex items-center justify-between border-b border-gray-50 mb-2">
-    <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{label}</span>
-    <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">{count}</span>
+  <div className="pt-3 pb-2 flex items-center justify-between border-b border-gray-100 mb-4 px-1">
+    <span className="text-sm font-black text-slate-400 uppercase tracking-widest">{label}</span>
+    <span className="text-sm font-black px-3 py-1 bg-slate-900 text-white rounded-lg shadow-sm">{count}</span>
   </div>
 );
 
@@ -27,7 +27,7 @@ export const AddCard: React.FC<AddCardProps> = ({ onAdd, label = "试题页面" 
       className="relative rounded-xl overflow-hidden border-2 border-dashed border-gray-200 aspect-[3/4] cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group shrink-0 w-full hover:border-blue-400 hover:bg-blue-50/30"
     >
       <Plus className="w-8 h-8 text-gray-300 group-hover:text-blue-500" />
-      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</span>
+      <span className="text-xs font-black uppercase tracking-widest text-slate-400">{label}</span>
       <input type="file" multiple hidden ref={inputRef} onChange={(e) => e.target.files && onAdd(e.target.files)} accept="image/*,application/pdf" />
     </div>
   );
@@ -56,26 +56,28 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({ src, index, active, select
       <img src={src} className="w-full h-full object-cover" />
     </div>
 
-    <div className={cn("absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black text-white pointer-events-none", isRef ? "bg-purple-500" : "bg-blue-500")}>
-       {isRef ? "R" : "P"}{index}
+    <div className={cn("absolute top-2 left-2 px-2 py-0.5 rounded-lg text-[10px] font-black text-white pointer-events-none shadow-md", isRef ? "bg-slate-900" : "bg-blue-600")}>
+       {isRef ? "REF" : "PAGE"} {index + 1}
     </div>
 
     <button 
       onClick={(e) => { e.stopPropagation(); onSelectToggle(); }}
       className={cn(
-        "absolute bottom-2 right-2 p-1.5 rounded-lg border bg-white/80 transition-all",
-        selected ? "bg-blue-500 border-blue-500 text-white" : "text-gray-400"
+        "absolute bottom-2 right-2 w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-lg active:scale-90",
+        selected 
+          ? "bg-blue-600 text-white ring-4 ring-blue-500/30" 
+          : "bg-white/90 text-gray-300 hover:text-blue-500 border border-gray-100"
       )}
     >
-      {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+      {selected ? <CheckSquare className="w-5 h-5 fill-current" /> : <Square className="w-5 h-5" />}
     </button>
 
     <button 
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onDelete(); }}
-      className="absolute top-2 right-2 p-1.5 rounded-lg bg-red-500 text-white shadow-xl opacity-0 group-hover/thumb:opacity-100 transition-all"
+      className="absolute top-2 right-2 w-8 h-8 rounded-xl bg-red-500 text-white shadow-xl opacity-100 md:opacity-0 md:group-hover/thumb:opacity-100 flex items-center justify-center transition-all hover:scale-110 active:scale-90"
     >
-      <Trash2 className="w-3.5 h-3.5" />
+      <Trash2 className="w-4 h-4" />
     </button>
   </div>
 );

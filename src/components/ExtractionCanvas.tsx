@@ -67,9 +67,17 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
   const [selectedRefPageIndices, setSelectedRefPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [refPoolWidth, setRefPoolWidth] = useState(window.innerWidth / 3); // 默认 1/3 宽度
+  // SSR 安全：先使用默认值，客户端挂载后再同步为实际视口宽度（避免 SSR 阶段 window 不存在导致崩溃）
+  const [refPoolWidth, setRefPoolWidth] = useState(400);
   const [isDeepThinking, setIsDeepThinking] = useState(false);
   const [activeQIdx, setActiveQIdx] = useState(1);
+  const [isLeftOpen, setIsLeftOpen] = useState(true);
+  const [isRightOpen, setIsRightOpen] = useState(true);
+
+  // 客户端挂载后同步真实视口宽度
+  useEffect(() => {
+    setRefPoolWidth(window.innerWidth / 3);
+  }, []);
 
   // === Hooks ===
   // AI 提取 Hook：我们将两站页面的合集传给它
@@ -237,6 +245,12 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const initialRectRef = useRef<ExtendedRect | null>(null);
   const drawingRectRef = useRef<(Partial<ExtendedRect> & { source: 'exam' | 'reference' }) | null>(null);
 
+  // Ref 同步：让 useEffect 内部通过 Ref 读取最新值，避免高频依赖导致事件监听器反复重绑
+  const rectsRef = useRef(rects);
+  rectsRef.current = rects;
+  const activeQIdxRef = useRef(activeQIdx);
+  activeQIdxRef.current = activeQIdx;
+
   const startDrawing = (e: React.PointerEvent, source: 'exam' | 'reference') => {
     if (isProcessing || !activeDrawMode) return;
     const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
@@ -312,10 +326,10 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       if (interactionRef.current === 'drawing' && drawingRectRef.current) {
         const r = drawingRectRef.current;
         if (Math.abs(r.width || 0) > 10 && Math.abs(r.height || 0) > 10) {
-          let targetQIdx = activeQIdx;
+          let targetQIdx = activeQIdxRef.current;
           const isQuestion = r.type === 'question' || !r.type;
-          if (isQuestion && rects.some(exist => exist.qIdx === activeQIdx && (exist.type === 'question' || !exist.type))) {
-             targetQIdx = activeQIdx + 1;
+          if (isQuestion && rectsRef.current.some(exist => exist.qIdx === targetQIdx && (exist.type === 'question' || !exist.type))) {
+             targetQIdx = targetQIdx + 1;
              setActiveQIdx(targetQIdx);
           }
           const finalRect: ExtendedRect = {
@@ -345,7 +359,8 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       window.removeEventListener('pointermove', handleMouseMove);
       window.removeEventListener('pointerup', handleMouseUp);
     };
-  }, [zoom, selectedId, initialRectRef, resizeHandle, activeQIdx, rects]);
+  // 依赖项精简：rects/activeQIdx 通过 Ref 读取，initialRectRef 是稳定 Ref 对象
+  }, [zoom, selectedId, resizeHandle]);
 
   const startMoving = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
@@ -395,44 +410,55 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：页面概览 */}
-        <div className="bg-white border-r flex flex-col relative group" style={{ width: sidebarWidth }}>
-          <div className="p-4 border-b flex items-center justify-between">
-            <div className="flex flex-col">
-              <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">页面概览</h4>
-              {examPages.length > 0 && (
-                <span className="text-[9px] font-bold text-blue-500 mt-1 uppercase tracking-tighter">
-                  已选 {selectedPageIndices.size} / {examPages.length}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {examPages.length > 0 && (
-                <>
-                  <button 
-                    disabled={selectedPageIndices.size === 0}
-                    onClick={handleDeleteSelected}
-                    className={cn(
-                      "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
-                      selectedPageIndices.size > 0 ? "bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" : "text-gray-200 cursor-not-allowed"
-                    )}
-                    title="删除选中页面"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                  <button 
-                    onClick={handleToggleAll}
-                    className={cn(
-                      "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
-                      selectedPageIndices.size === examPages.length ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                    )}
-                  >
-                    {selectedPageIndices.size === examPages.length ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
-                    <span>全选</span>
-                  </button>
-                </>
-              )}
-              <LayoutList className="w-4 h-4 text-gray-300" />
+        {/* 左侧：页面概览 (含可折叠侧边栏外壳) */}
+        <div className="bg-white flex flex-col relative shrink-0 transition-[width] duration-300 ease-in-out" style={{ width: isLeftOpen ? sidebarWidth : 0 }}>
+          {/* 抽出把手悬浮按钮 (醒目重装修) */}
+          <button 
+            onClick={() => setIsLeftOpen(!isLeftOpen)}
+            className="absolute top-1/2 -right-4 -translate-y-1/2 w-5 h-24 bg-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.3)] flex items-center justify-center rounded-r-xl z-[60] text-white cursor-pointer hover:bg-black hover:w-6 transition-all group"
+          >
+            {isLeftOpen ? <ChevronLeft strokeWidth={4} className="w-4 h-4" /> : <ChevronRight strokeWidth={4} className="w-4 h-4" />}
+          </button>
+
+          {/* 真实可见内容区域容器 */}
+          <div className={cn("w-full h-full border-r overflow-hidden flex flex-col transition-opacity duration-300", !isLeftOpen && "opacity-0")} style={{ width: isLeftOpen ? '100%' : sidebarWidth }}>
+          <div className="p-4 border-b flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col">
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">页面概览</h4>
+                <div className="text-sm font-black text-blue-600 mt-1">已选 {selectedPageIndices.size} / {examPages.length}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                 <button 
+                  onClick={() => {
+                    if (selectedPageIndices.size === 0) return;
+                    if (confirm(`确定删除选中的 ${selectedPageIndices.size} 页吗？`)) {
+                      const indices = Array.from(selectedPageIndices).sort((a, b) => b - a);
+                      const newPages = [...examPages];
+                      indices.forEach(idx => newPages.splice(idx, 1));
+                      setExamPages(newPages);
+                      setSelectedPageIndices(new Set());
+                    }
+                  }}
+                  disabled={selectedPageIndices.size === 0}
+                  className="w-8 h-8 rounded-lg bg-rose-500 text-white flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 disabled:grayscale disabled:opacity-30 transition-all"
+                  title="删除选中"
+                 >
+                   <Trash2 className="w-4 h-4" />
+                 </button>
+                 <button 
+                  onClick={handleToggleAll}
+                  className={cn(
+                    "h-8 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95 shadow-md",
+                    selectedPageIndices.size === examPages.length
+                      ? "bg-slate-900 text-white"
+                      : "bg-blue-600 text-white"
+                  )}
+                 >
+                   {selectedPageIndices.size === examPages.length ? <Square className="w-3 h-3" /> : <CheckSquare className="w-3 h-3" />}
+                   {selectedPageIndices.size === examPages.length ? "取消" : "全选"}
+                 </button>
+              </div>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -456,11 +482,15 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
              ))}
              <AddCard label="试题页面" onAdd={(files) => handleAddFiles(files, 'exam')} />
           </div>
+          </div>
+          
           {/* Sidebar Resizer */}
-          <div 
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors z-50"
-            onPointerDown={() => interactionRef.current = 'resizing-sidebar'}
-          />
+          {isLeftOpen && (
+            <div 
+              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors z-50"
+              onPointerDown={() => interactionRef.current = 'resizing-sidebar'}
+            />
+          )}
         </div>
 
         {/* 中间：试卷主画布 */}
@@ -480,51 +510,56 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
            </div>
         </div>
 
-        {/* 右侧：分栏调节条 */}
-        <div 
-          className="w-1.5 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors z-[60] shadow-[0_0_10px_rgba(0,0,0,0.05)]"
-          onPointerDown={() => interactionRef.current = 'resizing-refpool'}
-        />
+        {/* 右侧：答案池/参考库 (含可折叠侧边栏外壳) */}
+        <div className="flex flex-col relative shrink-0 transition-[width] duration-300 ease-in-out" style={{ width: isRightOpen ? refPoolWidth : 0 }}>
+          {/* 抽入把手悬浮按钮 (醒目重装修) */}
+          <button 
+            onClick={() => setIsRightOpen(!isRightOpen)}
+            className="absolute top-1/2 -left-4 -translate-y-1/2 w-5 h-24 bg-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.3)] flex items-center justify-center rounded-l-xl z-[60] text-white cursor-pointer hover:bg-black hover:-left-5 hover:w-6 transition-all group"
+          >
+            {isRightOpen ? <ChevronRight strokeWidth={4} className="w-4 h-4" /> : <ChevronLeft strokeWidth={4} className="w-4 h-4" />}
+          </button>
 
-        {/* 右侧：答案池/参考库 */}
-        <div className="bg-white border-l flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.02)]" style={{ width: refPoolWidth }}>
-           <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                 <div className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-black rounded uppercase">Ref Pool</div>
-                 <h4 className="text-sm font-black text-gray-800">答案参考池</h4>
-                 {referencePages.length > 0 && (
-                   <span className="text-[9px] font-bold text-blue-500 uppercase tracking-tighter ml-1">
-                     已选 {selectedRefPageIndices.size}/{referencePages.length}
-                   </span>
-                 )}
+          {/* 真实可见内容容器 */}
+          <div className={cn("w-full h-full bg-white border-l shadow-[-10px_0_30px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col transition-opacity duration-300", !isRightOpen && "opacity-0")} style={{ width: isRightOpen ? '100%' : refPoolWidth }}>
+           <div className="px-4 py-4 bg-gray-50/50 border-b flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="px-2.5 py-1 bg-slate-900 text-white text-xs font-black rounded uppercase tracking-widest shadow-sm">Ref Pool</div>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">答案参考池</h4>
+                </div>
+                <div className="text-sm font-black text-rose-500">已选 {selectedRefPageIndices.size} 页</div>
               </div>
-              <div className="flex items-center gap-2">
-                 {referencePages.length > 0 && (
-                  <>
-                    <button 
-                      disabled={selectedRefPageIndices.size === 0}
-                      onClick={handleDeleteSelectedRef}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
-                        selectedRefPageIndices.size > 0 ? "bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" : "text-gray-200 cursor-not-allowed"
-                      )}
-                      title="删除选中页面"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                    <button 
-                      onClick={handleToggleAllRef}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
-                        selectedRefPageIndices.size === referencePages.length ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                      )}
-                    >
-                      {selectedRefPageIndices.size === referencePages.length ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
-                      <span>全选</span>
-                    </button>
-                  </>
-                )}
-                <Info className="w-4 h-4 text-gray-300" />
+              
+              <div className="flex items-center gap-2 justify-end">
+                  <button 
+                    onClick={() => {
+                      if (selectedRefPageIndices.size === 0) return;
+                      if (confirm(`确定删除选中的 ${selectedRefPageIndices.size} 页吗？`)) {
+                        const indices = Array.from(selectedRefPageIndices).sort((a, b) => b - a);
+                        const newPages = [...referencePages];
+                        indices.forEach(idx => newPages.splice(idx, 1));
+                        setReferencePages(newPages);
+                        setSelectedRefPageIndices(new Set());
+                      }
+                    }} 
+                    className="w-8 h-8 rounded-lg bg-rose-500 text-white flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 disabled:grayscale disabled:opacity-30 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (selectedRefPageIndices.size === referencePages.length) setSelectedRefPageIndices(new Set());
+                      else setSelectedRefPageIndices(new Set(referencePages.keys()));
+                    }}
+                    className={cn(
+                      "h-8 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95 shadow-md",
+                      selectedRefPageIndices.size === referencePages.length ? "bg-slate-900 text-white" : "bg-blue-600 text-white"
+                    )}
+                  >
+                    {selectedRefPageIndices.size === referencePages.length ? <Square className="w-3 h-3" /> : <CheckSquare className="w-3 h-3" />}
+                    全选
+                  </button>
               </div>
            </div>
            <div ref={refScrollRef} className="flex-1 overflow-auto bg-gray-100 p-4 relative scroll-smooth">
@@ -538,13 +573,23 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                     <div key={`img-ref-${idx}`} className="group/ref-item scroll-mt-4 relative">
                       <button
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); toggleRefPageSelection(idx); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedRefPageIndices(prev => {
+                            const next = new Set(prev);
+                            if (next.has(idx)) next.delete(idx);
+                            else next.add(idx);
+                            return next;
+                          });
+                        }}
                         className={cn(
-                           "absolute top-4 left-4 p-1 rounded z-30 transition-all shadow-lg",
-                           selectedRefPageIndices.has(idx) ? "bg-blue-500 text-white" : "bg-white/80 text-gray-400 hover:bg-gray-200 opacity-0 group-hover/ref-item:opacity-100"
+                          "absolute top-4 left-4 w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-xl z-30 active:scale-90",
+                          selectedRefPageIndices.has(idx) 
+                            ? "bg-blue-600 text-white ring-4 ring-blue-500/20" 
+                            : "bg-white/90 text-gray-300 border border-white hover:text-blue-500"
                         )}
                       >
-                         {selectedRefPageIndices.has(idx) ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
+                         {selectedRefPageIndices.has(idx) ? <CheckSquare className="w-6 h-6 fill-current" /> : <Square className="w-6 h-6" />}
                       </button>
                       <img ref={el => { refImgRefs.current[idx] = el; }} src={page} className={cn("block w-full select-none mb-4 border-b last:border-0", selectedRefPageIndices.has(idx) && "opacity-80 mix-blend-multiply border-blue-500 border-2")} />
                       <button 
@@ -566,6 +611,15 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                 </div>
               </div>
            </div>
+          </div>
+
+          {/* 右侧：分栏调节条 (移入容器) */}
+          {isRightOpen && (
+            <div 
+              className="absolute left-0 top-0 bottom-0 w-1.5 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors z-[60] shadow-[0_0_10px_rgba(0,0,0,0.05)]"
+              onPointerDown={() => interactionRef.current = 'resizing-refpool'}
+            />
+          )}
         </div>
       </div>
 

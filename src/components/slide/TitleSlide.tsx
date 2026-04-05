@@ -33,7 +33,7 @@ export const TitleSlide: React.FC<TitleSlideProps> = ({ editable = false }) => {
           {projectName}
         </h1>
       )}
-      <p className="text-[0.9em] text-[#64748b] mt-[4%] tracking-wide">
+      <p className="text-2xl font-black text-slate-400 mt-[5%] tracking-[0.3em] uppercase">
         助教工具：试卷题目极简分割
       </p>
     </div>

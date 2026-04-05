@@ -34,18 +34,22 @@ export const RectsLayer: React.FC<RectsLayerProps> = ({ rects, zoom, selectedId,
         {selectedId === r.id && ['nw','ne','sw','se','n','s','e','w'].map(h => (
           <div 
             key={h} 
-            className={cn("absolute w-3 h-3 bg-white border-2 rounded-full z-[100] shadow-md border-blue-500", {
-              '-top-1.5 -left-1.5 cursor-nw-resize': h === 'nw',
-              '-top-1.5 -right-1.5 cursor-ne-resize': h === 'ne',
-              '-bottom-1.5 -left-1.5 cursor-sw-resize': h === 'sw',
-              '-bottom-1.5 -right-1.5 cursor-se-resize': h === 'se',
-              '-top-1.5 left-1/2 -translate-x-1/2 cursor-n-resize': h === 'n',
-              '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-s-resize': h === 's',
-              'top-1/2 -right-1.5 -translate-y-1/2 cursor-e-resize': h === 'e',
-              'top-1/2 -left-1.5 -translate-y-1/2 cursor-w-resize': h === 'w',
+            // 外壳：提供巨大的 32x32 触控热区 (w-8 h-8)，拦截手势
+            className={cn("absolute w-8 h-8 z-[100] flex items-center justify-center -translate-x-1/2 -translate-y-1/2 touch-none", {
+              'top-0 left-0 cursor-nw-resize': h === 'nw',
+              'top-0 left-full cursor-ne-resize': h === 'ne',
+              'top-full left-0 cursor-sw-resize': h === 'sw',
+              'top-full left-full cursor-se-resize': h === 'se',
+              'top-0 left-1/2 cursor-n-resize': h === 'n',
+              'top-full left-1/2 cursor-s-resize': h === 's',
+              'top-1/2 left-full cursor-e-resize': h === 'e',
+              'top-1/2 left-0 cursor-w-resize': h === 'w',
             })}
             onPointerDown={(e) => startResizing(e, r.id, h)}
-          />
+          >
+            {/* 内核：真实可见的锚点，增加点击时的呼吸放大动效 */}
+            <div className="w-3.5 h-3.5 bg-white border-2 rounded-full shadow-md border-blue-500 transition-transform scale-100 group-active/handle:scale-150 pointer-events-none active:scale-150" />
+          </div>
         ))}
       </div>
     ))}

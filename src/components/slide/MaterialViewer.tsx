@@ -3,15 +3,15 @@ import { motion } from 'framer-motion';
 import { X, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Question, useProjectStore } from '@/store/useProjectStore';
+import { AnswerMasks } from './AnswerMasks';
 
 export interface MaterialViewerProps {
   firstQ: Question;
   questions: Question[];
   onClose: () => void;
-  renderAnswerMasks: (questions: Question[], isDrawMode?: boolean) => React.ReactNode[];
 }
 
-export const MaterialViewer: React.FC<MaterialViewerProps> = ({ firstQ, questions, onClose, renderAnswerMasks }) => {
+export const MaterialViewer: React.FC<MaterialViewerProps> = ({ firstQ, questions, onClose }) => {
   const { updateQuestion } = useProjectStore();
 
   const [zoomState, setZoomState] = useState({ scale: 1, x: 0, y: 0 });
@@ -151,7 +151,7 @@ export const MaterialViewer: React.FC<MaterialViewerProps> = ({ firstQ, question
               })}
             </div>
           )}
-          {renderAnswerMasks(questions, isMaskDrawMode)}
+          <AnswerMasks questions={questions} isDrawMode={isMaskDrawMode} />
 
           {drawingMask && (
             <div 

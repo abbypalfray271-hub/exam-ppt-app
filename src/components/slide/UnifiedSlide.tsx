@@ -27,6 +27,7 @@ import { ResizableHandle } from '../ResizableHandle';
 import { ImageLightbox } from './ImageLightbox';
 import { MaterialViewer } from './MaterialViewer';
 import { QuestionDetailModal } from './QuestionDetailModal';
+import { AnswerMasks } from './AnswerMasks';
 
 // Re-export from new modules for backward compatibility (Editor.tsx imports from here)
 
@@ -41,92 +42,6 @@ import { QuestionDetailModal } from './QuestionDetailModal';
 // 统一模板幻灯片：左素材 + 右侧多题目区块 (极简分割版)
 // ============================================================
 
-const renderAnswerMasks = (questions: Question[], isDrawMode = false) => {
-  const masks: React.ReactNode[] = [];
-  
-  questions.forEach(q => {
-    // 渲染答案遮挡区
-    if (q.answer_box && q.answer_box.length === 4) {
-      const [ymin, xmin, ymax, xmax] = q.answer_box;
-      const isTenThousand = q.answer_box.some(v => v > 1000);
-      const divisor = isTenThousand ? 100 : 10;
-      const top = ymin / divisor;
-      const left = xmin / divisor;
-      const height = (ymax - ymin) / divisor;
-      const width = (xmax - xmin) / divisor;
-      
-      masks.push(
-        <div
-          key={`mask-answer-${q.id}`}
-          className={cn(
-            "absolute z-10 backdrop-blur-2xl bg-white/95 border-2 border-dashed border-gray-400 rounded-lg shadow-xl flex flex-col items-center justify-center transition-all duration-300 group/mask",
-            isDrawMode ? "pointer-events-none opacity-20" : "cursor-help hover:opacity-0"
-          )}
-          style={{ top: `${top}%`, left: `${left}%`, height: `${height}%`, width: `${width}%` }}
-          title="此处答案已被打码遮挡 (鼠标移入可查看原图)"
-          onClick={(e) => { e.stopPropagation(); }}
-        >
-          <EyeOff className="w-5 h-5 text-gray-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
-          <span className="text-[10px] font-bold text-gray-400 group-hover/mask:opacity-0 transition-opacity">答案</span>
-          
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const { updateQuestion } = useProjectStore.getState();
-              updateQuestion(q.id, { answer_box: undefined });
-            }}
-            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/mask:opacity-100 transition-opacity shadow-lg hover:bg-red-600 z-20"
-            title="删除此错误遮罩"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      );
-    }
-
-    // 渲染试题分析区 (紫色主题)
-    if (q.analysis_box && q.analysis_box.length === 4) {
-      const [ymin, xmin, ymax, xmax] = q.analysis_box;
-      const isTenThousand = q.analysis_box.some(v => v > 1000);
-      const divisor = isTenThousand ? 100 : 10;
-      const top = ymin / divisor;
-      const left = xmin / divisor;
-      const height = (ymax - ymin) / divisor;
-      const width = (xmax - xmin) / divisor;
-      
-      masks.push(
-        <div
-          key={`mask-analysis-${q.id}`}
-          className={cn(
-            "absolute z-10 backdrop-blur-2xl bg-purple-50/95 border-2 border-dashed border-purple-400 rounded-lg shadow-xl flex flex-col items-center justify-center transition-all duration-300 group/mask",
-            isDrawMode ? "pointer-events-none opacity-20" : "cursor-help hover:opacity-0"
-          )}
-          style={{ top: `${top}%`, left: `${left}%`, height: `${height}%`, width: `${width}%` }}
-          title="此处试题分析已被隐藏 (鼠标移入可查看原图)"
-          onClick={(e) => { e.stopPropagation(); }}
-        >
-          <EyeOff className="w-5 h-5 text-purple-400 mb-1 group-hover/mask:opacity-0 transition-opacity" />
-          <span className="text-[10px] font-bold text-purple-400 group-hover/mask:opacity-0 transition-opacity">分析</span>
-          
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const { updateQuestion } = useProjectStore.getState();
-              updateQuestion(q.id, { analysis_box: undefined });
-            }}
-            className="absolute -top-2 -right-2 w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/mask:opacity-100 transition-opacity shadow-lg hover:bg-purple-600 z-20"
-            title="删除此分析遮罩"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      );
-    }
-  });
-  
-  return masks;
-};
-
 interface UnifiedSlideProps {
   questions: Question[];
   editable?: boolean;
@@ -138,11 +53,13 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
     updateQuestion, 
     removeQuestion,
     removeQuestions,
-    examPages
+    examPages,
+    layoutConfig,
+    updateLayoutConfig
   } = useProjectStore();
 
-  // ======= 素材区/题目区 宽度比例（可拖拽调整） =======
-  const [materialRatio, setMaterialRatio] = useState(55);
+  // ======= 素材区/题目区 宽度比例（可从全局 Store 获取并支持持久化） =======
+  const { materialRatio, isRightPanelOpen } = layoutConfig;
   const slideContainerRef = useRef<HTMLDivElement>(null);
 
   const handleMaterialResize = useCallback((dx: number) => {
@@ -150,8 +67,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
     const containerWidth = slideContainerRef.current.clientWidth;
     if (containerWidth <= 0) return;
     const deltaPercent = (dx / containerWidth) * 100;
-    setMaterialRatio(prev => Math.max(30, Math.min(80, prev + deltaPercent)));
-  }, []);
+    const newRatio = Math.max(30, Math.min(80, materialRatio + deltaPercent));
+    updateLayoutConfig({ materialRatio: newRatio });
+  }, [materialRatio, updateLayoutConfig]);
 
   // ======= 放大镜状态 =======
   const [selectedText, setSelectedText] = useState('');
@@ -201,7 +119,6 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [selectedQIds, setSelectedQIds] = useState<string[]>([]); // [NEW] 批量勾选的题目 ID
   
   // 原文素材分页状态
@@ -230,10 +147,10 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       {/* 左侧素材区：手机端占据上半部分，电脑端占据左半部分 */}
       <div className="flex-[4] md:flex-none md:h-full bg-[#f8fafc] flex flex-col p-2 md:p-[1.5%] border-b md:border-b-0 md:border-r border-gray-100 min-h-0 md:min-w-0 overflow-hidden relative">
         <div 
-          className="flex items-center gap-2 mb-1 md:mb-[3%] p-1 -ml-1 rounded self-start"
+          className="flex items-center gap-2 mb-2 md:mb-[4%] px-3 py-1.5 bg-slate-900 text-white rounded-lg self-start shadow-xl border border-white/20"
         >
-          <BookOpen className="w-[1.2em] h-[1.2em] text-[#64748b]" />
-          <span className="text-[0.65em] font-black text-[#64748b] tracking-wider uppercase flex items-center gap-1">
+          <BookOpen className="w-5 h-5" />
+          <span className="text-xs font-black uppercase tracking-widest">
             原文切片
           </span>
         </div>
@@ -247,7 +164,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             >
               <div className="relative inline-flex w-full overflow-hidden rounded-lg">
                 <img src={firstQ.materialImage} alt="素材原图" className="w-full h-auto object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-[1.02]" />
-                {renderAnswerMasks(questions)}
+                <AnswerMasks questions={questions} />
                 
                 {/* 悬浮全屏提示遮罩 */}
                 <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
@@ -281,7 +198,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 ))}
                 
                 {/* 遮罩由于原图已碎片化，仅附着于顶部容器，在画廊模式下通常很少使用去答案功能 */}
-                {renderAnswerMasks(questions)}
+                <AnswerMasks questions={questions} />
                 
                 {/* 悬浮全屏提示遮罩 */}
                 <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
@@ -319,7 +236,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         <div className="flex-[6] md:flex-none md:h-full flex flex-col p-4 md:p-[4%] gap-6 md:gap-[4%] overflow-y-auto custom-scrollbar bg-gray-50/50 min-h-0 min-w-0 overflow-x-hidden relative w-full items-center">
           {editable && (
             <button
-              onClick={() => setIsRightPanelOpen(false)}
+              onClick={() => updateLayoutConfig({ isRightPanelOpen: false })}
               className="absolute top-2 right-4 p-2 flex items-center justify-center bg-red-500 border border-red-600 shadow-lg text-white hover:bg-red-600 rounded-lg transition-all active:scale-95 z-20"
               title="收起右侧题目区"
             >
@@ -400,8 +317,8 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     </div>
                   )}
 
-                  <div className="bg-[#1e293b] text-white px-5 py-1.5 rounded-2xl shadow-xl shrink-0 transform -rotate-1">
-                    <span className="text-lg md:text-xl font-black italic tracking-tighter">第 {qIdx + 1} 题</span>
+                  <div className="bg-[#1e293b] text-white px-6 py-2.5 rounded-2xl shadow-2xl shrink-0 transform -rotate-1 border-2 border-white/10">
+                    <span className="text-xl md:text-2xl font-black italic tracking-tighter">第 {qIdx + 1} 题</span>
                   </div>
                   {editable ? (
                     <input
@@ -436,7 +353,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 
                 {/* 内容摘要 - 提升字号与对比度 */}
                 {q.content && (
-                  <p className="w-full text-center text-lg md:text-xl text-[#1e293b]/70 font-bold line-clamp-2 md:line-clamp-3 mt-4 px-4 leading-relaxed">
+                  <p className="w-full text-center text-xl md:text-3xl text-[#1e293b] font-black line-clamp-2 md:line-clamp-3 mt-6 px-4 leading-tight tracking-tight">
                     {cleanLatexSymbols(q.content.replace(/\{\{.*?\}\}/g, ' ________ '))
                       .replace(/\n/g, ' ')
                       .replace(/【答案】.*/g, '')
@@ -501,7 +418,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       ) : editable ? (
         <div className="absolute right-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-end h-32 w-10 group">
           <button
-            onClick={() => setIsRightPanelOpen(true)}
+            onClick={() => updateLayoutConfig({ isRightPanelOpen: true })}
             className="p-2 bg-red-500 border border-red-600 border-r-0 shadow-2xl rounded-l-2xl text-white hover:bg-red-600 group-hover:pr-3 group-hover:w-10 w-8 transition-all flex items-center justify-center"
             title="展开题目侧边栏"
           >
@@ -562,7 +479,6 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
              firstQ={firstQ} 
              questions={questions} 
              onClose={() => setIsMaterialExpanded(false)} 
-             renderAnswerMasks={renderAnswerMasks} 
            />
          )}
        </AnimatePresence>

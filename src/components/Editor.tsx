@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft,
@@ -12,7 +12,8 @@ import {
   FolderOpen,
   Trash2,
   Zap,
-  Sparkles
+  Sparkles,
+  Monitor
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,27 @@ import {
   UnifiedSlide 
 } from './SlidePreview';
 import { ResizableHandle } from './ResizableHandle';
+
+// ============================================================
+// 缩略图内容缓存组件：避免每次父组件状态变更时全量重绘幻灯片内容
+// 仅当 slide 类型或 questions 引用变化时才重新渲染
+// ============================================================
+const MemoizedThumbnailContent = React.memo(({ slide }: { slide: SlideData }) => {
+  switch (slide.type) {
+    case 'title':
+      return <TitleSlide editable={false} />;
+    case 'unified':
+      return <UnifiedSlide questions={slide.questions} editable={false} forceMask={true} />;
+  }
+}, (prev, next) => {
+  // 自定义浅比较：slide 类型相同且 questions 引用未变化时跳过重渲染
+  if (prev.slide.type !== next.slide.type) return false;
+  if (prev.slide.type === 'unified' && next.slide.type === 'unified') {
+    return prev.slide.questions === next.slide.questions;
+  }
+  return true;
+});
+MemoizedThumbnailContent.displayName = 'MemoizedThumbnailContent';
 
 export const Editor = () => {
   const { 
@@ -122,17 +144,17 @@ export const Editor = () => {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="px-3 py-3 border-b bg-white/50 flex flex-col gap-2 group/sidebar-header">
+            <div className="px-4 py-4 border-b bg-white/50 flex flex-col gap-3 group/sidebar-header">
               <div className="flex items-center justify-between">
-                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                  幻灯片 · {totalSlides}
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">
+                  幻灯片清单 · {totalSlides}
                 </h3>
                 <button 
                   onClick={() => setIsLeftPanelOpen(false)}
-                  className="p-1 hover:bg-red-600 rounded-lg shadow-sm text-white bg-red-500 transition-colors"
-                  title="收起幻灯片列表"
+                  className="w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-lg shadow-lg hover:bg-red-600 transition-all active:scale-90"
+                  title="收起列表"
                 >
-                  <ChevronLeft className="w-5 h-5" strokeWidth={3} />
+                  <ChevronLeft className="w-5 h-5" strokeWidth={4} />
                 </button>
               </div>
 
@@ -192,9 +214,9 @@ export const Editor = () => {
                         <Zap className="w-3 h-3 text-white fill-current" />
                       </div>
                     )}
-                    {/* 缩略图强制打码：forceMask=true */}
+                    {/* 缩略图强制打码：使用 React.memo 缓存避免无关状态变更触发的全量重绘 */}
                     <div className="pointer-events-none select-none">
-                      {renderSlideContent(slide, false, true)}
+                      <MemoizedThumbnailContent slide={slide} />
                     </div>
                   </SlideFrame>
                 </div>
@@ -214,10 +236,10 @@ export const Editor = () => {
         <div className="absolute left-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-start h-32 w-10 group">
           <button
             onClick={() => setIsLeftPanelOpen(true)}
-            className="p-2 bg-red-500 border border-red-600 border-l-0 shadow-2xl rounded-r-2xl text-white hover:bg-red-600 group-hover:pl-3 group-hover:w-10 w-8 transition-all"
-            title="展开幻灯片列表"
+            className="w-6 h-28 bg-slate-900 shadow-2xl rounded-r-2xl text-white hover:bg-black flex items-center justify-center transition-all group-hover:w-8"
+            title="展开列表"
           >
-            <ChevronRight className="w-6 h-6" strokeWidth={3} />
+            <ChevronRight className="w-5 h-5" strokeWidth={4} />
           </button>
         </div>
       )}
@@ -226,36 +248,46 @@ export const Editor = () => {
         {/* 顶部工具栏 - 高对比度药丸风格 */}
         <div className="w-full flex items-center justify-between px-4 mb-3">
           <div className="flex items-center gap-3">
-            <div className="bg-[#1e293b] text-white px-4 py-1.5 rounded-2xl shadow-lg shadow-gray-200/50 flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-widest opacity-60">
-                {currentSlide.type === 'title' ? 'PROJECT COVER' : 'QUESTION BLOCK'}
+            <div className="bg-[#1e293b] text-white px-4 py-2 rounded-xl shadow-xl flex items-center gap-3">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-50 bg-white/10 px-1.5 py-0.5 rounded">
+                MODE
               </span>
-              <div className="w-px h-3 bg-white/20 mx-1" />
-              <span className="text-sm font-black tracking-tight">
-                {currentSlide.type === 'title' ? '📋 封面页' : `📝 题组 (${currentSlide.questions.length} 题)`}
+              <span className="text-sm font-black tracking-widest uppercase">
+                {currentSlide.type === 'title' ? '📋 封面页' : `📝 第 ${currentSlideIdx} 组题目`}
               </span>
             </div>
-            <span className="text-xs font-bold text-gray-400 bg-white border border-gray-100 px-3 py-1.5 rounded-xl">
-              SLIDE {currentSlideIdx + 1} / {totalSlides}
-            </span>
+            <div className="bg-white border-2 border-slate-100 px-4 py-2 rounded-xl shadow-sm text-sm font-black text-slate-800">
+               SLIDE {currentSlideIdx + 1} / {totalSlides}
+            </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* 🦄 分式视觉美化按钮 [NEW MOVED] */}
+            {/* 📂 全局读入演稿备份按钮 (醒目重装修) */}
+            <button 
+              onClick={() => importProjectJSON()}
+              className="h-11 px-5 rounded-xl bg-orange-500 text-white font-black text-sm uppercase tracking-wider shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] hover:scale-105 transition-all active:scale-95 group flex items-center gap-2"
+              title="载入工程"
+            >
+              <FolderOpen className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+              <span>读入演稿</span>
+            </button>
+            
+            {/* 🦄 分式视觉美化按钮 (醒目重装修) */}
             <button
               onClick={() => setMathOptimized(!isMathOptimized)}
               className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest transition-all duration-300",
+                "h-11 px-5 rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 active:scale-95 flex items-center gap-2 shadow-lg",
                 isMathOptimized 
-                  ? "bg-brand-primary text-white shadow-lg shadow-brand-primary/30 scale-105" 
-                  : "bg-white/80 text-gray-500 hover:bg-white hover:text-brand-primary border border-gray-200"
+                  ? "bg-blue-600 text-white shadow-blue-500/30 ring-4 ring-blue-500/10" 
+                  : "bg-slate-900 text-white hover:bg-black"
               )}
               title={isMathOptimized ? "精修模式已开启：点击还原" : "点击开启公式精修 (将 a/b 转换为标准分式)"}
             >
-              <Sparkles className={cn("w-3.5 h-3.5", isMathOptimized ? "animate-pulse" : "")} />
+              <Sparkles className={cn("w-4 h-4", isMathOptimized ? "animate-pulse text-yellow-300" : "text-blue-400")} />
               <span>{isMathOptimized ? "精修中" : "优化显示"}</span>
             </button>
-            <div className="hidden md:flex items-center gap-2 text-[10px] font-black text-[#1e293b]/30 uppercase tracking-[0.2em] bg-gray-100/50 px-4 py-1.5 rounded-full">
-              Ready for Presentation · Use Arrow Keys
+            <div className="hidden md:flex items-center gap-3 text-xs font-black text-slate-400 bg-slate-900/5 px-4 py-2 rounded-xl border border-slate-100 uppercase tracking-widest">
+              <Monitor className="w-4 h-4" />
+              <span>Ready for Presentation · Use Arrow Keys</span>
             </div>
           </div>
         </div>

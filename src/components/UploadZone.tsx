@@ -31,7 +31,8 @@ export const UploadZone: React.FC = () => {
     setCanvasOpen,
     setPages, 
     setProcessing,
-    resetUpload
+    resetUpload,
+    removePage
   } = useProjectStore();
   
   const [isDragActive, setIsDragActive] = useState(false);
@@ -88,8 +89,34 @@ export const UploadZone: React.FC = () => {
   const hasContent = examPages.length > 0;
   const preview = examPages[currentPage];
 
+  const handleDeleteCurrent = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (examPages.length === 0) return;
+    
+    // 如果删除的是最后一页且有前页，自动切换到前一页
+    if (currentPage === examPages.length - 1 && currentPage > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+    
+    removePage(currentPage, 'exam');
+  };
+
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center py-4 relative">
+    <div className="w-full h-full flex flex-col items-center justify-center py-4 relative overflow-hidden bg-[#f8fafc]">
+      {/* 🌊 极光流体梯变背景 (Aurora Fluid Background) */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-400/10 blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-fuchsia-400/10 blur-[130px] animate-pulse [animation-delay:2s]" />
+        <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-orange-400/5 blur-[100px] animate-pulse [animation-delay:4s]" />
+      </div>
+      
+      {/* 🧩 极简动态坐标系 */}
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.08]" 
+           style={{ 
+             backgroundImage: 'radial-gradient(#64748b 1px, transparent 0)', 
+             backgroundSize: '30px 30px' 
+           }} 
+      />
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -114,11 +141,26 @@ export const UploadZone: React.FC = () => {
       />
 
       {/* 核心工作视窗 (沉浸式布局) */}
-      <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center min-h-0">
+      <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center min-h-0 z-10 px-4 md:px-0">
         <div className={cn(
-          "relative bg-white shadow-2xl rounded-3xl overflow-hidden border border-gray-100 transition-all duration-700 flex flex-col",
-          !hasContent ? "w-[65%] aspect-[3/4]" : "w-full h-full"
+          "relative bg-white/40 backdrop-blur-3xl border border-white rounded-[2.5rem] overflow-hidden shadow-[0_32px_80px_-20px_rgba(31,38,135,0.15)] transition-all duration-1000 flex flex-col",
+          !hasContent ? "w-[65%] max-w-md aspect-[3/4]" : "w-full h-full"
         )}>
+          {/* ✨ 极细白边补强 */}
+          <div className="absolute inset-0 border border-white/60 rounded-[2.5rem] pointer-events-none" />
+
+          {/* 📟 悬浮 HUD 状态监视器 */}
+          <div className="absolute top-6 left-10 z-40 flex items-center gap-4">
+             <div className="flex items-center gap-2 px-3 py-1 bg-slate-900/5 rounded-full border border-slate-900/10 backdrop-blur-md">
+               <div className={cn("w-2 h-2 rounded-full animate-pulse shadow-sm", isProcessing ? "bg-blue-500" : "bg-emerald-500")} />
+               <span className="text-[9px] font-mono font-bold text-slate-900/60 tracking-[0.2em] uppercase">
+                 SYST_{isProcessing ? 'SCANNING' : 'READY'}
+               </span>
+             </div>
+             <span className="text-[9px] font-mono font-bold text-slate-400 tracking-[0.2em]">
+               CORE_BUFF // {examPages.length} PAGES
+             </span>
+          </div>
           {/* 背景/预览大图 */}
           <AnimatePresence mode="wait">
              <motion.div
@@ -148,41 +190,65 @@ export const UploadZone: React.FC = () => {
                   </div>
                )}
                
-               {/* 正在处理时的遮罩 */}
+               {/* 🧬 丝滑光泽脉冲动效 */}
                {isProcessing && (
-                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/30 backdrop-blur-sm z-50">
-                    <Loader2 className="w-12 h-12 text-brand-primary animate-spin mb-4" />
-                    <div className="px-6 py-2 bg-white/80 rounded-full shadow-lg border border-brand-primary/10">
-                      <span className="text-xs font-black uppercase tracking-widest text-gray-900">
+                 <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0, 0.4, 0] }}
+                    transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+                    className="absolute inset-0 z-40 pointer-events-none bg-blue-500/20 shadow-[inset_0_0_100px_rgba(59,130,246,0.3)]"
+                 />
+               )}
+
+               {/* 正在处理时的清新遮罩 */}
+               {isProcessing && (
+                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 backdrop-blur-xl z-50">
+                    <div className="relative mb-8">
+                       <Loader2 className="w-16 h-16 text-blue-600 animate-spin opacity-20" strokeWidth={1} />
+                       <div className="absolute inset-0 flex items-center justify-center">
+                          <Wand2 className="w-8 h-8 text-blue-600 animate-pulse" />
+                       </div>
+                    </div>
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="px-8 py-3 rounded-full border border-blue-500/20 bg-blue-50 animate-in fade-in zoom-in"
+                    >
+                      <span className="text-xs font-black text-blue-600 uppercase tracking-[0.4em] animate-pulse">
                         {processingTarget === 'exam' ? '解析试题素材' : '同步参考答案'}
                       </span>
-                    </div>
+                    </motion.div>
                  </div>
                )}
              </motion.div>
           </AnimatePresence>
 
-          {/* 核心功能卡片 (悬浮枢纽) - 仅在非处理态显示 */}
           {!isProcessing && (
-            <div className="absolute inset-0 flex items-center justify-center gap-8 z-20">
+            <div className="absolute inset-0 flex items-center justify-center gap-8 md:gap-16 z-20">
                <button 
                  onClick={() => fileInputRef.current?.click()}
-                 className="flex flex-col items-center gap-3 p-7 bg-white/90 backdrop-blur-xl rounded-[2.5rem] shadow-[0_30px_90px_rgba(0,0,0,0.12)] border border-white hover:border-blue-400 hover:scale-110 active:scale-95 transition-all group/btn"
+                 className="flex flex-col items-center gap-4 p-8 bg-white border border-slate-200 rounded-[2.5rem] shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12)] hover:scale-105 active:scale-95 transition-all duration-500 group/btn relative overflow-hidden"
                >
-                 <div className="w-16 h-16 bg-blue-500 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30 group-hover/btn:rotate-12 transition-transform">
+                 <div className="absolute inset-0 bg-blue-50 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
+                 <div className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-[0_12px_24px_-5px_rgba(37,99,235,0.4)] relative z-10">
                     <Plus className="w-8 h-8" strokeWidth={3} />
                  </div>
-                 <span className="text-sm font-black text-gray-900 tracking-tighter uppercase">试题添加</span>
+                 <div className="text-center relative z-10">
+                   <span className="text-lg font-black text-slate-900 tracking-widest uppercase block">试题添加</span>
+                 </div>
                </button>
 
                <button 
                  onClick={() => refInputRef.current?.click()}
-                 className="flex flex-col items-center gap-3 p-7 bg-white/90 backdrop-blur-xl rounded-[2.5rem] shadow-[0_30px_90px_rgba(0,0,0,0.12)] border border-white hover:border-purple-400 hover:scale-110 active:scale-95 transition-all group/btn"
+                 className="flex flex-col items-center gap-4 p-8 bg-white border border-slate-200 rounded-[2.5rem] shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12)] hover:scale-105 active:scale-95 transition-all duration-500 group/btn relative overflow-hidden"
                >
-                 <div className="w-16 h-16 bg-purple-500 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-purple-500/30 group-hover/btn:-rotate-12 transition-transform">
+                 <div className="absolute inset-0 bg-fuchsia-50 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
+                 <div className="w-16 h-16 bg-fuchsia-600 text-white rounded-full flex items-center justify-center shadow-[0_12px_24px_-5px_rgba(192,38,211,0.4)] relative z-10">
                     <LayoutGrid className="w-8 h-8" strokeWidth={3} />
                  </div>
-                 <span className="text-sm font-black text-gray-900 tracking-tighter uppercase">补充答案</span>
+                 <div className="text-center relative z-10">
+                    <span className="text-lg font-black text-slate-900 tracking-widest uppercase block">补充答案</span>
+                 </div>
                </button>
             </div>
           )}
@@ -202,32 +268,35 @@ export const UploadZone: React.FC = () => {
              </div>
           )}
           
-          {/* 右上角快速重置 */}
-          {hasContent && (
+          {/* 🗑️ 右上角“删除当前页” (对应截图红圈) */}
+          {hasContent && !isProcessing && (
              <button 
-               onClick={resetUpload}
-               className="absolute top-6 right-6 p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-full backdrop-blur-md transition-all z-30 opacity-0 group-hover/canvas:opacity-100"
-               title="清空素材"
+               onClick={handleDeleteCurrent}
+               className="absolute top-6 right-6 p-3 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-full backdrop-blur-xl border border-red-500/20 shadow-xl shadow-red-500/10 transition-all z-40 group/del active:scale-95"
+               title="移除当前这一页"
              >
-               <Trash2 className="w-5 h-5" />
+               <Trash2 className="w-5 h-5 group-hover/del:scale-110 transition-transform" />
              </button>
           )}
         </div>
       </div>
 
       {/* 底部全局控制条 (常驻可见) */}
-      <div className="w-full max-w-4xl flex items-center justify-between px-2 mt-8 z-10">
-         <div className="flex items-center gap-4">
+      <div className="w-full max-w-4xl flex flex-col md:flex-row items-center justify-between px-4 mt-16 z-10 gap-8">
+         <div className="flex items-center gap-4 order-2 md:order-1">
             <button 
               onClick={() => importProjectJSON()}
-              className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white border border-gray-100 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-all shadow-sm active:scale-95 group"
+              className="h-16 px-10 rounded-full bg-orange-500 text-white font-black text-sm uppercase tracking-[0.2em] shadow-[0_8px_20px_-6px_rgba(249,115,22,0.6)] hover:scale-[1.03] hover:bg-orange-600 transition-all active:scale-95 group shrink-0 flex items-center gap-4"
             >
-              <FolderOpen className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity" />
-              <span className="text-xs font-black uppercase tracking-widest">读入演稿</span>
+              <div className="p-2 bg-white/20 rounded-full text-white">
+                <FolderOpen className="w-5 h-5" />
+              </div>
+              <span>读入演稿</span>
             </button>
             {hasContent && (
-              <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-500 rounded-lg text-[10px] font-black uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
-                素材就绪
+              <div className="hidden lg:flex items-center gap-3 px-6 py-2 bg-slate-900 text-white rounded-full text-[10px] font-mono font-black uppercase tracking-[0.3em] shadow-lg">
+                <div className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                DOCK_LIVE
               </div>
             )}
          </div>
@@ -236,14 +305,15 @@ export const UploadZone: React.FC = () => {
            disabled={!hasContent || isProcessing}
            onClick={() => setCanvasOpen(true)}
            className={cn(
-             "px-10 py-3.5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-2xl",
+             "h-16 px-16 rounded-full font-black text-xl uppercase tracking-[0.3em] transition-all duration-700 flex items-center gap-4 order-1 md:order-2 shadow-xl shadow-blue-500/20 overflow-hidden relative group",
              hasContent 
-               ? "bg-gradient-to-r from-blue-600 to-indigo-700 text-white hover:scale-105 active:scale-95 shadow-blue-500/20" 
-               : "bg-gray-200 text-gray-400 cursor-not-allowed grayscale"
+               ? "bg-blue-600 text-white hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/40" 
+               : "bg-slate-200 text-slate-400 cursor-not-allowed"
            )}
          >
-           {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
-           开始制作
+           <div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-white/10 to-blue-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+           {isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wand2 className="w-6 h-6" />}
+           <span className="relative z-10">开始制作</span>
          </button>
       </div>
     </div>

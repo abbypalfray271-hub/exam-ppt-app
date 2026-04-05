@@ -39,10 +39,10 @@ export const SlideFrame: React.FC<SlideFrameProps> = ({ children, selected, onCl
       {/* 页码标签 */}
       {label && (
         <div className={cn(
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-black px-2 py-0.5 rounded-full transition-colors",
+          "absolute -bottom-2 left-1/2 -translate-x-1/2 text-xs font-black px-4 py-1 rounded-full transition-all shadow-md z-10",
           selected 
-            ? "bg-brand-primary text-white"  
-            : "bg-gray-200 text-gray-500 group-hover:bg-gray-300"
+            ? "bg-brand-primary text-white scale-110"  
+            : "bg-slate-900 text-white opacity-40 group-hover:opacity-100"
         )}>
           {label}
         </div>
@@ -55,10 +55,10 @@ export const SlideFrame: React.FC<SlideFrameProps> = ({ children, selected, onCl
             e.stopPropagation();
             onDelete();
           }}
-          className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-90 z-20"
+          className="absolute -top-1.5 -right-1.5 w-9 h-9 bg-red-500 text-white rounded-xl shadow-2xl opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all hover:scale-110 active:scale-90 z-20 flex items-center justify-center"
           title="删除此页"
         >
-          <X className="w-3 h-3" />
+          <X className="w-5 h-5 stroke-[3px]" />
         </button>
       )}
     </div>

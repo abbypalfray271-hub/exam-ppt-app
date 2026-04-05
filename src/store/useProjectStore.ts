@@ -50,6 +50,13 @@ export interface Question {
   answerDiagrams?: string[]; // [NEW] 来自参考池的辅助插图/截图流 (Base64) 数组
 }
 
+export interface LayoutConfig {
+  materialRatio: number;
+  isRightPanelOpen: boolean;
+  sidebarWidth: number;
+  refPoolWidth: number;
+}
+
 interface ProjectState {
   projectName: string;
   examImageUrl?: string;
@@ -66,6 +73,7 @@ interface ProjectState {
   fileType: 'image' | 'pdf' | null; // -- 统一：文件类型 --
   processingTarget: 'exam' | 'reference' | null; // [NEW] 正在处理的目标
   isMathOptimized: boolean; // 是否开启前端分式美化 [NEW]
+  layoutConfig: LayoutConfig; // [NEW] 布局持久化配置
 
 
 
@@ -90,10 +98,12 @@ interface ProjectState {
   setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
   setCanvasOpen: (open: boolean) => void; // -- 新增：控制框选画布 --
   setFileType: (type: 'image' | 'pdf' | null) => void;
+  updateLayoutConfig: (updates: Partial<LayoutConfig>) => void; // [NEW] 更新布局参数
   setReferencePages: (pages: string[]) => void; // [NEW] 设置参考答案页
   setPages: (pages: string[], mode: 'append' | 'replace', target: 'exam' | 'reference') => void; // [NEW] 通用设置页面的 Action
 
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
+  removePage: (index: number, target: 'exam' | 'reference') => void; // [NEW] 删除单页
 
 }
 
@@ -113,6 +123,12 @@ export const useProjectStore = create<ProjectState>()(
   fileType: null,
   processingTarget: null,
   isMathOptimized: false, // 默认关闭 [NEW]
+  layoutConfig: {
+    materialRatio: 55,
+    isRightPanelOpen: true,
+    sidebarWidth: 280,
+    refPoolWidth: 400,
+  },
 
   
   setProjectName: (name) => set({ projectName: name }),
@@ -148,8 +164,17 @@ export const useProjectStore = create<ProjectState>()(
   setCanvasOpen: (open) => set({ isCanvasOpen: open }),
   setMathOptimized: (optimized) => set({ isMathOptimized: optimized }), // [NEW]
   setFileType: (type) => set({ fileType: type }),
+  updateLayoutConfig: (updates) => set((state) => ({
+    layoutConfig: { ...state.layoutConfig, ...updates }
+  })),
 
   setReferencePages: (pages) => set({ referencePages: pages }), // [NEW]
+  removePage: (index, target) => set((state) => {
+    const key = target === 'exam' ? 'examPages' : 'referencePages';
+    const newPages = [...state[key]];
+    newPages.splice(index, 1);
+    return { [key]: newPages };
+  }),
   resetUpload: () => set({ 
     examImageUrl: undefined, 
     examPages: [], 
@@ -163,9 +188,6 @@ export const useProjectStore = create<ProjectState>()(
     fileType: null,
     isMathOptimized: false, // 重置 [NEW]
   }),
-   importProjectJSON: () => {
-     // 已迁移至 lib/projectIO.ts，此处保留空实现保持向下兼容，建议调用方直接使用 lib/projectIO 的版本
-   },
     }),
     {
       name: 'exam-ppt-storage',
@@ -184,6 +206,7 @@ export const useProjectStore = create<ProjectState>()(
         isCanvasOpen: state.isCanvasOpen,
         fileType: state.fileType,
         isMathOptimized: state.isMathOptimized,
+        layoutConfig: state.layoutConfig,
         // 注意：isProcessing 故意排除，防止死锁
       }),
     }

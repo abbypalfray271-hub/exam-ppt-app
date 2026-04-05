@@ -59,8 +59,8 @@ export async function pdfToImages(file: File): Promise<string[]> {
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Canvas context failed');
 
-      // 自动计算目标尺寸，限制最大宽度以节省内存和提高速度
-      const maxWidth = 2000;
+      // 自动计算目标尺寸，限制最大宽度以节省内存并防止平板设备 OOM 崩溃 (防爆墙：2000 -> 1500)
+      const maxWidth = 1500;
       let width = viewport.width;
       let height = viewport.height;
       if (width > maxWidth) {
@@ -175,8 +175,8 @@ export async function cropImageByBox(base64Image: string, box?: [number, number,
       // 如果选区过小，忽略
       if (w <= 10 || h <= 10) return resolve('');
 
-      // 缩放，保证切出的图片质量，但不要过大
-      const MAX_DIM = 2000;
+      // 缩放，保证切出的图片质量，但不要过大 (防爆墙：2000 -> 1500)
+      const MAX_DIM = 1500;
       let targetW = w;
       let targetH = h;
       if (w > MAX_DIM || h > MAX_DIM) {
