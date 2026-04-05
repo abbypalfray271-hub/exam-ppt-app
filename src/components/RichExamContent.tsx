@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Image as ImageIcon } from 'lucide-react';
 import { parseExamContent, Token } from '@/lib/examTextParser';
 import { sanitizeExamContent } from '@/lib/contentSanitizer';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
  * 核心数学公式渲染单元
@@ -135,7 +136,7 @@ export const RichExamContent = ({
   let diagramIndex = diagramStartIndex;
 
   return (
-    <>
+    <ErrorBoundary>
       {groupedTokens.map((token, idx) => {
         // 处理组合类型的 Token (选项网格)
         if ('type' in token && token.type === 'options-group') {
@@ -174,7 +175,7 @@ export const RichExamContent = ({
 
         return <RichExamContentFragment key={idx} token={t} src={src} diagrams={diagrams} showClozeAnswers={showClozeAnswers} onImageClick={onImageClick} />;
       })}
-    </>
+    </ErrorBoundary>
   );
 };
 

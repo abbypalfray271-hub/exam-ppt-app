@@ -1,6 +1,21 @@
 'use client';
 
 import { create } from 'zustand';
+import { persist, StateStorage, createJSONStorage } from 'zustand/middleware';
+import { get, set, del } from 'idb-keyval';
+
+// 自定义 Storage：使用 IndexedDB 绕过 LocalStorage 的 5MB 限制（保护高清图片不抛出 QuotaExceededError）
+const idbStorage: StateStorage = {
+  getItem: async (name: string): Promise<string | null> => {
+    return (await get(name)) || null;
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    await set(name, value);
+  },
+  removeItem: async (name: string): Promise<void> => {
+    await del(name);
+  },
+};
 
 export interface Question {
   id: string;
@@ -73,8 +88,10 @@ interface ProjectState {
 
 }
 
-export const useProjectStore = create<ProjectState>((set) => ({
-  projectName: '新考试试卷讲解',
+export const useProjectStore = create<ProjectState>()(
+  persist(
+    (set) => ({
+      projectName: '新考试试卷讲解',
   examPages: [],
   referencePages: [], // [NEW]
   questions: [],
@@ -161,4 +178,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
     };
     input.click();
   },
-}));
+    }),
+    {
+      name: 'exam-ppt-storage', // 唯一的缓存键名
+      storage: createJSONStorage(() => idbStorage), // 接管至 IndexedDB
+      partialize: (state) => ({ ...state, isProcessing: false }), // 过滤掉正在处理状态，防止死锁
+    }
+  )
+);

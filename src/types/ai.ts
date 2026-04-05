@@ -4,6 +4,14 @@
  */
 
 import { Question } from '@/store/useProjectStore';
+import { type CanvasRect as Rect } from '@/lib/canvasCropper';
+
+/**
+ * 扩展的切片坐标基类，用于兼容多源画板操作
+ */
+export interface ExtendedRect extends Rect {
+  source: 'exam' | 'reference';
+}
 
 /**
  * AI API (parseQuestion) 返回的原始题目数据结构

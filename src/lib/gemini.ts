@@ -8,7 +8,8 @@ import type { AIQuestionResult, AIClip } from '@/types/ai';
 export const parseQuestion = async (
   clips: AIClip[],
   onStatus?: (status: string) => void,
-  isDeepThinking: boolean = false
+  isDeepThinking: boolean = false,
+  _retryCount: number = 0
 ): Promise<AIQuestionResult[]> => {
   const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
   const model31 = process.env.REASONING_MODEL_NAME || "gemini-3.1-pro-preview";
@@ -211,7 +212,12 @@ Return the result in this exact format:
     
     return robustParseJson(rawJson);
   } catch (error: any) {
-    console.error("[Parse API Error]:", error.message);
+    if (_retryCount < 1) {
+      console.warn(`[Parse API Retry]: JSON parsing failed (Attempt ${_retryCount + 1}), retrying once...`);
+      if (onStatus) onStatus("🔄 识别结构异常，正在进行自我纠错重试...");
+      return parseQuestion(clips, onStatus, isDeepThinking, _retryCount + 1);
+    }
+    console.error(`[Parse API Error after ${_retryCount} retries]:`, error.message);
     throw error;
   }
 };
@@ -291,15 +297,10 @@ function robustParseJson(raw: string): AIQuestionResult[] {
   try {
     return JSON.parse(cleaned);
   } catch (err: any) {
-    // [最终兜底] 如果还是失败，尝试通过正则更激进地清理
-    console.error("[RobustParse Initial Failure]:", err.message);
-    try {
-      const desperateClean = cleaned.replace(/\\/g, '\\\\').replace(/\\\\\\\\/g, '\\\\');
-      return JSON.parse(desperateClean);
-    } catch (innerErr) {
-      console.error("[RobustParse Critical Failure]:", innerErr);
-      throw err;
-    }
+    console.error("[RobustParse Critical Failure]:", err.message);
+    // 移除强破坏性的 desperateClean 盲区替换逻辑（保护 LaTeX 转义）
+    // 让外层触发 API 级别的静默重试机制
+    throw err;
   }
 }
 

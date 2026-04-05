@@ -1,6 +1,6 @@
 {
   "name": "exam-ppt-app",
-  "version": "2026040508005stable",
+  "version": "202604050930_robust",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
@@ -12,6 +12,7 @@
     "@types/katex": "^0.16.8",
     "clsx": "^2.1.1",
     "framer-motion": "^12.37.0",
+    "idb-keyval": "^6.2.2",
     "katex": "^0.16.44",
     "lodash": "^4.17.23",
     "lucide-react": "^0.577.0",

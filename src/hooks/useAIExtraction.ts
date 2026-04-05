@@ -3,12 +3,12 @@
 import { useState, useCallback, useRef } from 'react';
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cropRectFromCanvas, PageOffset, CanvasRect } from '@/lib/canvasCropper';
-import { AIClip, SSEPayload, AIQuestionResult } from '@/types/ai';
+import { AIClip, SSEPayload, AIQuestionResult, ExtendedRect } from '@/types/ai';
 import { compressImage, cropImageByBox } from '@/lib/documentProcessor';
 
 interface UseAIExtractionProps {
   pages: string[];
-  rects: any[]; // 兼容 ExtendedRect
+  rects: ExtendedRect[];
   onComplete: () => void;
 }
 
@@ -34,7 +34,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
     offsets: PageOffset[], 
     selectedPageIndices: Set<number>,
     isDeepThinking: boolean,
-    correctedRects?: any[] // [NEW] 接收已经处理过坐标偏移的 Rect
+    correctedRects?: ExtendedRect[] // [NEW] 接收已经处理过坐标偏移的 Rect
   ) => {
     if (isProcessing) return;
 
@@ -111,12 +111,12 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   }
 
   // --- 手动框选模式 (核心重构：基于颜色切片) ---
-  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: any[]) {
+  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: ExtendedRect[]) {
     setProcessing(true);
     setParsingFailures([]);
     
     // 按 qIdx 分组
-    const groupMap = new Map<number, any[]>();
+    const groupMap = new Map<number, ExtendedRect[]>();
     targetRects.forEach(r => {
       const qIdx = r.qIdx || 1;
       if (!groupMap.has(qIdx)) groupMap.set(qIdx, []);
@@ -195,11 +195,15 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
 
   // --- SSE 通信核心 ---
   async function callAIStream(clips: AIClip[], isDeepThinking: boolean, label: string): Promise<AIQuestionResult[] | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒硬性生命周期上限
+
     try {
       const res = await fetch('/api/ai-parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'parseQuestion', clips, isDeepThinking })
+        body: JSON.stringify({ action: 'parseQuestion', clips, isDeepThinking }),
+        signal: controller.signal
       });
 
       if (!res.body) throw new Error('ReadableStream not supported');
@@ -231,8 +235,11 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
       }
       return data;
     } catch (err: any) {
-      setParsingFailures(prev => [...prev, { id: Date.now().toString(), label, error: err.message }]);
+      const errorMessage = err.name === 'AbortError' ? 'AI 请求超时无响应（超过120秒），可能是网络波动或模型计算拥堵，请重试该题。' : err.message;
+      setParsingFailures(prev => [...prev, { id: Date.now().toString(), label, error: errorMessage }]);
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 

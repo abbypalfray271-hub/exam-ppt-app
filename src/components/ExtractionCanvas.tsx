@@ -26,6 +26,7 @@ import { compressImage, pdfToImages } from '@/lib/documentProcessor';
 import { type CanvasRect as Rect, type PageOffset } from '@/lib/canvasCropper';
 import { ParsingFailurePanel } from '@/components/canvas/ParsingFailurePanel';
 import { useAIExtraction } from '@/hooks/useAIExtraction';
+import { ExtendedRect } from '@/types/ai';
 
 interface ExtractionCanvasProps {
   examPages: string[];
@@ -36,10 +37,6 @@ interface ExtractionCanvasProps {
   onClose?: () => void;
 }
 
-// 扩展 Rect 类型，支持来源追踪
-interface ExtendedRect extends Rect {
-  source: 'exam' | 'reference';
-}
 
 export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex = 0, initialNormalizedRects, onComplete, onClose }: ExtractionCanvasProps) => {
   // === Refs ===
