@@ -11,6 +11,7 @@ import { type CanvasRect as Rect } from '@/lib/canvasCropper';
  */
 export interface ExtendedRect extends Rect {
   source: 'exam' | 'reference';
+  pageIdx?: number;
 }
 
 /**
@@ -45,6 +46,11 @@ export interface AIQuestionResult {
   contentImage?: string;
   materialImage?: string;
   pageIndex?: number;
+  
+  // 画廊扩容：多图/跨页碎片支持
+  images?: string[];
+  contentImages?: string[];
+  pageIndices?: number[];
 }
 
 /**
@@ -100,6 +106,9 @@ export function toQuestion(
     answer_box: raw.answer_box,
     analysis_box: raw.analysis_box,
     diagram_boxes: raw.diagram_boxes,
+    images: raw.images || [],
+    contentImages: raw.contentImages || [],
+    pageIndices: raw.pageIndices || [],
     ...overrides, // id, order, image, contentImage, diagrams 等由调用方提供
   };
 }

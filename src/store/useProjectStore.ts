@@ -36,7 +36,13 @@ export interface Question {
   contentBox?: [number, number, number, number];  
   materialImage?: string; // 裁剪后的素材图片 (Base64)
   contentImage?: string;  // 裁剪后的题目图片 (Base64)
-  pageIndex?: number;     // 所在页码，如果在多页 PDF 模式下
+  pageIndex?: number;     // 单页模式的残留（推荐废弃或作为第一个图的兜底索引）
+  
+  // -- 新增：支持多页散落片段组装（瀑布流兼容） --
+  images?: string[];         // 存储 1~N 个框选片段的高清原图 Base64 画廊
+  contentImages?: string[];  // 对应抠除答案后的切片图数组
+  pageIndices?: number[];    // 记录各碎片来源于原卷的确切页码数组，如 [0, 1]
+
   answer_box?: [number, number, number, number];  // 记录原图上答案区域的万分位坐标，以便打码
   analysis_box?: [number, number, number, number]; // 记录原图上解析区域的万分位坐标，以便打码
   diagram_boxes?: [number, number, number, number][]; // [NEW] 题中的插图万分位坐标数组

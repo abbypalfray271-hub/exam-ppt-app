@@ -277,14 +277,18 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 </button>
               )}
             </div>
-          ) : firstQ.image ? (
+          ) : (firstQ.images && firstQ.images.length > 0) || firstQ.image ? (
             <div 
-              className="w-full shrink-0 rounded-xl flex items-start justify-center bg-white shadow-inner p-1 relative border border-gray-100 group cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg"
+              className="w-full shrink-0 rounded-xl flex flex-col items-center justify-center bg-white shadow-inner p-1 relative border border-gray-100 group cursor-pointer overflow-hidden transition-all duration-300 hover:border-brand-primary/50 hover:shadow-lg gap-1"
               onClick={() => setIsMaterialExpanded(true)}
               title="点击全屏查看原文切片"
             >
-              <div className="relative inline-flex w-full overflow-hidden rounded-lg">
-                <img src={firstQ.image} alt="原文切片" className="w-full h-auto object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-[1.02]" />
+              <div className="relative flex flex-col w-full overflow-hidden rounded-lg bg-gray-100/50">
+                {(firstQ.images && firstQ.images.length > 0 ? firstQ.images : [firstQ.image]).map((imgSrc, idx) => (
+                  <img key={idx} src={imgSrc} alt={`原文切片-${idx}`} className={cn("w-full h-auto object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-[1.02]", idx > 0 && "border-t-[2px] border-dashed border-gray-400/50 mt-[1px]")} />
+                ))}
+                
+                {/* 遮罩由于原图已碎片化，仅附着于顶部容器，在画廊模式下通常很少使用去答案功能 */}
                 {renderAnswerMasks(questions)}
                 
                 {/* 悬浮全屏提示遮罩 */}
@@ -846,12 +850,28 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                     });
                   }}
                 >
-                  <img 
-                    src={firstQ.materialImage || firstQ.image} 
-                    alt="全屏原文切片" 
-                    className="w-full h-auto object-contain shadow-2xl bg-white block select-none pointer-events-none"
-                    draggable={false}
-                  />
+                  {firstQ.materialImage ? (
+                    <img 
+                      src={firstQ.materialImage} 
+                      alt="全屏缩略素材" 
+                      className="w-full h-auto object-contain shadow-2xl bg-white block select-none pointer-events-none"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="flex flex-col w-full bg-white shadow-2xl overflow-hidden rounded-md border border-gray-100">
+                      {(firstQ.images && firstQ.images.length > 0 ? firstQ.images : [firstQ.image]).map((imgSrc, idx) => (
+                        <div key={idx} className="relative w-full">
+                          {idx > 0 && <div className="w-full h-0 border-t-4 border-dashed border-brand-primary/30 opacity-70 flex items-center justify-center my-1"><span className="bg-brand-primary/10 text-brand-primary font-black text-[10px] px-2 py-0.5 rounded-full absolute -translate-y-1/2">✂️ 跨页缝合线</span></div>}
+                          <img 
+                            src={imgSrc} 
+                            alt={`全屏原文切片片段 ${idx}`} 
+                            className="w-full h-auto object-contain block select-none pointer-events-none"
+                            draggable={false}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {renderAnswerMasks(questions, isMaskDrawMode)}
 
                   {drawingMask && (

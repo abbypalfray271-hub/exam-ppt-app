@@ -138,7 +138,8 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
 
         // 1. 准备该题的所有切片
         const clips: AIClip[] = [];
-        let mainQuestionImage = "";
+        const questionImages: string[] = [];
+        const questionPageIndices: number[] = [];
 
         for (const r of groupRects) {
           const slice = await cropRectFromCanvas(r, offsets, pages);
@@ -152,7 +153,10 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
             image: slice.base64
           });
 
-          if (role === 'question') mainQuestionImage = slice.base64;
+          if (role === 'question') {
+            questionImages.push(slice.base64);
+            if (r.pageIdx !== undefined) questionPageIndices.push(r.pageIdx);
+          }
         }
 
         // 2. 调用 AI
@@ -173,8 +177,12 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
               ...q,
               id: Math.random().toString(36).substring(2),
               order: questions.length + allResults.length + subIdx + 1,
-              image: mainQuestionImage,
-              contentImage: mainQuestionImage,
+              images: questionImages,
+              contentImages: questionImages,
+              pageIndices: questionPageIndices,
+              // 向下兼容
+              image: questionImages[0] || "",
+              contentImage: questionImages[0] || "",
               diagrams: examDiagrams, // 仅存放试卷中的物理插图
               answerDiagrams: refDiagrams, // 仅存放参考池中的物理插图
             } as unknown as Question;
@@ -196,7 +204,8 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   // --- SSE 通信核心 ---
   async function callAIStream(clips: AIClip[], isDeepThinking: boolean, label: string): Promise<AIQuestionResult[] | null> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒硬性生命周期上限
+    const timeoutMs = isDeepThinking ? 300000 : 120000; // 深度思考 300s，普通 120s
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const res = await fetch('/api/ai-parse', {

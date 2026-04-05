@@ -158,7 +158,7 @@ Return the result in this exact format:
   };
 
   const controller = new AbortController();
-  const timeoutMs = isDeepThinking ? 600000 : 120000; // 3.1 Pro 给予 10 分钟思考时间
+  const timeoutMs = isDeepThinking ? 300000 : 120000; // 普通 120s，深度思考 300s
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -247,8 +247,8 @@ function robustParseJson(raw: string): AIQuestionResult[] {
   // 2. 基础清理 Markdown 代码块
   cleaned = cleaned.replace(/```json\s*/i, '').replace(/\s*```$/i, '');
 
-  // 3. 物理隔离非法的反斜杠
-  cleaned = cleaned.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
+  // 3. 物理隔离非法的反斜杠（保护已被双转义的正确 LaTeX，拒绝将 \\alpha 破坏为 \\\alpha）
+  cleaned = cleaned.replace(/(?<!\\)\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
 
   // 4. 强力清除不可见的控制字符
   cleaned = cleaned.replace(/[\x00-\x1F\x7F-\x9F]/g, (match) => {
