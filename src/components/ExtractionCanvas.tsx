@@ -24,6 +24,9 @@ import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { compressImage, pdfToImages } from '@/lib/documentProcessor';
 import { type CanvasRect as Rect, type PageOffset } from '@/lib/canvasCropper';
+import { CanvasHeader } from './canvas/CanvasHeader';
+import { SectionLabel, AddCard, Thumbnail } from './canvas/PageThumbnail';
+import { RectsLayer, DrawingPreview } from './canvas/RectsOverlay';
 import { ParsingFailurePanel } from '@/components/canvas/ParsingFailurePanel';
 import { useAIExtraction } from '@/hooks/useAIExtraction';
 import { ExtendedRect } from '@/types/ai';
@@ -62,6 +65,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [zoom, setZoom] = useState(1); 
   const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
+  const [selectedRefPageIndices, setSelectedRefPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [refPoolWidth, setRefPoolWidth] = useState(window.innerWidth / 3); // 默认 1/3 宽度
   const [isDeepThinking, setIsDeepThinking] = useState(false);
@@ -73,7 +77,6 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   
   const { 
     startExtraction,
-    progress,
     progressLabel,
     parsingFailures,
     isProcessing,
@@ -153,6 +156,29 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     setSelectedPageIndices(new Set());
     // 如果当前选中的页被删了，重置 activeIdx 到第一页
     setActiveExamPageIdx(0);
+  };
+
+  const handleToggleAllRef = () => {
+    if (selectedRefPageIndices.size === referencePages.length) {
+      setSelectedRefPageIndices(new Set());
+    } else {
+      setSelectedRefPageIndices(new Set(referencePages.map((_, i) => i)));
+    }
+  };
+
+  const handleDeleteSelectedRef = () => {
+    if (selectedRefPageIndices.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedRefPageIndices.size} 个答案页吗？`)) return;
+    const newPages = referencePages.filter((_, i) => !selectedRefPageIndices.has(i));
+    setReferencePages(newPages);
+    setSelectedRefPageIndices(new Set());
+  };
+
+  const toggleRefPageSelection = (idx: number) => {
+    const next = new Set(selectedRefPageIndices);
+    if (next.has(idx)) next.delete(idx);
+    else next.add(idx);
+    setSelectedRefPageIndices(next);
   };
 
   const handleConfirm = () => {
@@ -345,26 +371,19 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     initialRectRef.current = { ...rect };
   };
 
-  const handleDeleteSelectedImages = () => {
-    if (selectedPageIndices.size === 0) return;
-    if (!confirm(`确定删除选中的 ${selectedPageIndices.size} 个页面吗？`)) return;
-    // 逻辑：目前仅支持从 Exam 集里删。简化起见暂时不对 Reference 集做批量删除逻辑
-    const newExamPages = examPages.filter((_, i) => !selectedPageIndices.has(i));
-    setExamPages(newExamPages);
-    setSelectedPageIndices(new Set());
-  };
+
 
   return (
     <div className="flex flex-col h-full bg-[#f8f9fc] overflow-hidden relative">
       {/* 顶部进度条 */}
       {isProcessing && (
         <div className="absolute inset-x-0 top-0 z-[100] h-1.5 bg-gray-100 overflow-hidden">
-          <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} className="h-full bg-blue-600" />
+          <motion.div initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: 30, ease: 'linear' }} className="h-full bg-blue-600" />
         </div>
       )}
 
       {/* Header */}
-      <Header 
+      <CanvasHeader 
         onClose={onClose} 
         activeDrawMode={activeDrawMode} 
         setActiveDrawMode={setActiveDrawMode}
@@ -473,8 +492,40 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
               <div className="flex items-center gap-2">
                  <div className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-black rounded uppercase">Ref Pool</div>
                  <h4 className="text-sm font-black text-gray-800">答案参考池</h4>
+                 {referencePages.length > 0 && (
+                   <span className="text-[9px] font-bold text-blue-500 uppercase tracking-tighter ml-1">
+                     已选 {selectedRefPageIndices.size}/{referencePages.length}
+                   </span>
+                 )}
               </div>
-              <Info className="w-4 h-4 text-gray-300" />
+              <div className="flex items-center gap-2">
+                 {referencePages.length > 0 && (
+                  <>
+                    <button 
+                      disabled={selectedRefPageIndices.size === 0}
+                      onClick={handleDeleteSelectedRef}
+                      className={cn(
+                        "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
+                        selectedRefPageIndices.size > 0 ? "bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" : "text-gray-200 cursor-not-allowed"
+                      )}
+                      title="删除选中页面"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                    <button 
+                      onClick={handleToggleAllRef}
+                      className={cn(
+                        "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all",
+                        selectedRefPageIndices.size === referencePages.length ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                      )}
+                    >
+                      {selectedRefPageIndices.size === referencePages.length ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                      <span>全选</span>
+                    </button>
+                  </>
+                )}
+                <Info className="w-4 h-4 text-gray-300" />
+              </div>
            </div>
            <div ref={refScrollRef} className="flex-1 overflow-auto bg-gray-100 p-4 relative scroll-smooth">
               <div className="mx-auto" style={{ width: '95%' }}>
@@ -484,8 +535,18 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                   onPointerDown={(e) => startDrawing(e, 'reference')}
                 >
                   {referencePages.map((page, idx) => (
-                    <div key={`img-ref-${idx}`} className="group/ref-item scroll-mt-4">
-                      <img ref={el => { refImgRefs.current[idx] = el; }} src={page} className="block w-full select-none mb-4 border-b last:border-0" />
+                    <div key={`img-ref-${idx}`} className="group/ref-item scroll-mt-4 relative">
+                      <button
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); toggleRefPageSelection(idx); }}
+                        className={cn(
+                           "absolute top-4 left-4 p-1 rounded z-30 transition-all shadow-lg",
+                           selectedRefPageIndices.has(idx) ? "bg-blue-500 text-white" : "bg-white/80 text-gray-400 hover:bg-gray-200 opacity-0 group-hover/ref-item:opacity-100"
+                        )}
+                      >
+                         {selectedRefPageIndices.has(idx) ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
+                      </button>
+                      <img ref={el => { refImgRefs.current[idx] = el; }} src={page} className={cn("block w-full select-none mb-4 border-b last:border-0", selectedRefPageIndices.has(idx) && "opacity-80 mix-blend-multiply border-blue-500 border-2")} />
                       <button 
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); handlePageDelete(idx, 'reference'); }}
@@ -514,181 +575,4 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   );
 };
 
-// --- Sub components to keep code clean ---
 
-const Header = ({ onClose, activeDrawMode, setActiveDrawMode, isDeepThinking, setIsDeepThinking, isProcessing, onConfirm, onComplete }: any) => {
-  return (
-    <div className="flex items-center justify-between px-6 py-4 bg-white border-b z-20 shadow-sm">
-      <div className="flex items-center gap-4">
-        {onClose && (
-          <button onClick={onClose} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-all">
-            <X className="w-5 h-5 stroke-[3px]" />
-          </button>
-        )}
-        <div className="h-8 w-px bg-gray-200 mx-2" />
-        <div className="flex bg-gray-100 p-1 rounded-xl">
-          {(['question', 'answer', 'analysis', 'diagram'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setActiveDrawMode((p: any) => p === mode ? null : mode)}
-              className={cn(
-                "px-5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2",
-                activeDrawMode === mode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <div className={cn("w-2 h-2 rounded-full", {
-                'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]': mode === 'question',
-                'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]': mode === 'answer',
-                'bg-fuchsia-500 shadow-[0_0_8px_rgba(217,70,239,0.5)]': mode === 'analysis',
-                'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]': mode === 'diagram'
-              })} />
-              {mode === 'question' ? '题目' : mode === 'answer' ? '答案' : mode === 'analysis' ? '分析' : '插图'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-4">
-          <button 
-            onClick={onComplete}
-            className="flex items-center gap-2 px-5 py-2 rounded-full border-2 border-gray-100 bg-white text-gray-500 hover:border-blue-200 hover:text-blue-600 transition-all group"
-          >
-            <Presentation className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            <span className="text-[10px] font-black uppercase tracking-widest">演示页</span>
-          </button>
-          <button
-            onClick={() => setIsDeepThinking(!isDeepThinking)}
-            className={cn(
-              "flex items-center gap-2 px-5 py-2 rounded-full border-2 transition-all",
-              isDeepThinking ? "bg-indigo-600 border-indigo-600 text-white shadow-lg" : "bg-white border-gray-200 text-gray-500"
-            )}
-          >
-            {isDeepThinking ? <Brain className="w-4 h-4 animate-pulse" /> : <Zap className="w-4 h-4" />}
-            <span className="text-[10px] font-black uppercase tracking-widest">深度思考</span>
-          </button>
-          <button 
-            onClick={onConfirm} 
-            disabled={isProcessing} 
-            className="px-10 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white text-sm font-black rounded-full shadow-xl hover:scale-105 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
-          >
-            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-            识别并解析
-          </button>
-      </div>
-    </div>
-  );
-};
-
-const SectionLabel = ({ label, count }: any) => (
-  <div className="pt-2 pb-1 flex items-center justify-between border-b border-gray-50 mb-2">
-    <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{label}</span>
-    <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">{count}</span>
-  </div>
-);
-
-const AddCard = ({ onAdd, label = "试题页面" }: { onAdd: (files: FileList) => void, label?: string }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  return (
-    <div 
-      onClick={() => inputRef.current?.click()}
-      className="relative rounded-xl overflow-hidden border-2 border-dashed border-gray-200 aspect-[3/4] cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group shrink-0 w-full hover:border-blue-400 hover:bg-blue-50/30"
-    >
-      <Plus className="w-8 h-8 text-gray-300 group-hover:text-blue-500" />
-      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</span>
-      <input type="file" multiple hidden ref={inputRef} onChange={(e) => e.target.files && onAdd(e.target.files)} accept="image/*,application/pdf" />
-    </div>
-  );
-};
-
-const Thumbnail = ({ src, index, active, selected, onClick, onSelectToggle, onDelete, isRef }: any) => (
-  <div 
-    className={cn(
-      "relative rounded-xl overflow-hidden border-2 aspect-[3/4] cursor-pointer transition-all hover:shadow-md group/thumb", 
-      active ? "border-blue-500 scale-[1.05] z-10 shadow-lg" : isRef ? "border-purple-200 opacity-80" : "border-gray-100",
-      selected && "ring-2 ring-blue-500 ring-offset-2"
-    )}
-  >
-    <div className="w-full h-full" onClick={onClick}>
-      <img src={src} className="w-full h-full object-cover" />
-    </div>
-
-    <div className={cn("absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black text-white pointer-events-none", isRef ? "bg-purple-500" : "bg-blue-500")}>
-       {isRef ? "R" : "P"}{index}
-    </div>
-
-    <button 
-      onClick={(e) => { e.stopPropagation(); onSelectToggle(); }}
-      className={cn(
-        "absolute bottom-2 right-2 p-1.5 rounded-lg border bg-white/80 transition-all",
-        selected ? "bg-blue-500 border-blue-500 text-white" : "text-gray-400"
-      )}
-    >
-      {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-    </button>
-
-    <button 
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); onDelete(); }}
-      className="absolute top-2 right-2 p-1.5 rounded-lg bg-red-500 text-white shadow-xl opacity-0 group-hover/thumb:opacity-100 transition-all"
-    >
-      <Trash2 className="w-3.5 h-3.5" />
-    </button>
-  </div>
-);
-
-const RectsLayer = ({ rects, zoom, selectedId, startMoving, startResizing, onRemove }: any) => (
-  <>
-    {rects.map((r: any) => (
-      <div
-        key={r.id}
-        onPointerDown={(e: any) => startMoving(e, r.id)}
-        style={{ left: r.x * zoom, top: r.y * zoom, width: r.width * zoom, height: r.height * zoom }}
-        className={cn("absolute border-2 shadow-lg group transition-colors", {
-          'border-blue-500 bg-blue-500/10': r.type === 'question' || !r.type,
-          'border-rose-500 bg-rose-500/10': r.type === 'answer',
-          'border-fuchsia-500 bg-fuchsia-500/10': r.type === 'analysis',
-          'border-emerald-500 bg-emerald-500/10': r.type === 'diagram',
-          'ring-4 ring-yellow-400 z-50': selectedId === r.id
-        })}
-      >
-        <div className="absolute -top-7 left-0 px-2 py-1 bg-black/80 text-white text-[9px] font-black rounded backdrop-blur-md flex items-center gap-2 whitespace-nowrap">
-           #{r.qIdx} {r.type === 'question' ? '题目' : r.type === 'answer' ? '答案' : r.type === 'analysis' ? '分析' : '插图'}
-           <button onClick={(e) => { e.stopPropagation(); onRemove(r.id); }} className="hover:text-rose-400 p-0.5"><Trash2 className="w-3 h-3" /></button>
-        </div>
-        {selectedId === r.id && ['nw','ne','sw','se','n','s','e','w'].map(h => (
-          <div 
-            key={h} 
-            className={cn("absolute w-3 h-3 bg-white border-2 rounded-full z-[100] shadow-md border-blue-500", {
-              '-top-1.5 -left-1.5 cursor-nw-resize': h === 'nw',
-              '-top-1.5 -right-1.5 cursor-ne-resize': h === 'ne',
-              '-bottom-1.5 -left-1.5 cursor-sw-resize': h === 'sw',
-              '-bottom-1.5 -right-1.5 cursor-se-resize': h === 'se',
-              '-top-1.5 left-1/2 -translate-x-1/2 cursor-n-resize': h === 'n',
-              '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-s-resize': h === 's',
-              'top-1/2 -right-1.5 -translate-y-1/2 cursor-e-resize': h === 'e',
-              'top-1/2 -left-1.5 -translate-y-1/2 cursor-w-resize': h === 'w',
-            })}
-            onPointerDown={(e) => startResizing(e, r.id, h)}
-          />
-        ))}
-      </div>
-    ))}
-  </>
-);
-
-const DrawingPreview = ({ rect, zoom }: any) => (
-  <div 
-    className={cn("absolute border-2 border-dashed border-black/40 bg-black/5", {
-      'border-blue-500 bg-blue-500/10': rect.type === 'question',
-      'border-rose-500 bg-rose-500/10': rect.type === 'answer',
-      'border-fuchsia-500 bg-fuchsia-500/10': rect.type === 'analysis',
-      'border-emerald-500 bg-emerald-500/10': rect.type === 'diagram'
-    })}
-    style={{ 
-      left: (rect.width! > 0 ? rect.x! : rect.x! + rect.width!) * zoom,
-      top: (rect.height! > 0 ? rect.y! : rect.y! + rect.height!) * zoom,
-      width: Math.abs(rect.width!) * zoom,
-      height: Math.abs(rect.height!) * zoom
-    }}
-  />
-);

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useProjectStore, Question } from '@/store/useProjectStore';
 import { cropRectFromCanvas, PageOffset, CanvasRect } from '@/lib/canvasCropper';
-import { AIClip, SSEPayload, AIQuestionResult, ExtendedRect } from '@/types/ai';
+import { AIClip, SSEPayload, AIQuestionResult, ExtendedRect, toQuestion } from '@/types/ai';
 import { compressImage, cropImageByBox } from '@/lib/documentProcessor';
 
 interface UseAIExtractionProps {
@@ -21,14 +21,13 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
     questions 
   } = useProjectStore();
 
-  const [progress, setProgress] = useState(0);
+
   const [progressLabel, setProgressLabel] = useState("");
   const [parsingFailures, setParsingFailures] = useState<{ id: string; label: string; error: string }[]>([]);
   const [currentItemIdx, setCurrentItemIdx] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
 
-  // 模拟进度条
-  const lastProgressRef = useRef(0);
+
 
   const startExtraction = useCallback(async (
     offsets: PageOffset[], 
@@ -83,18 +82,19 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
           // 处理模型返回的坐标裁剪
           const processed = await Promise.all(streamResults.map(async (q) => {
              let contentImg = compressedPage;
-             if (q.contentBox) {
-                const crop = await cropImageByBox(compressedPage, q.contentBox);
+             // 兼容 AI 返回的 snake_case 和 camelCase 坐标字段
+             const box = q.content_box || q.contentBox;
+             if (box) {
+                const crop = await cropImageByBox(compressedPage, box);
                 if (crop) contentImg = crop;
              }
-             return {
-               ...q,
+             return toQuestion(q, {
                id: Math.random().toString(36).substring(2),
                order: questions.length + allResults.length + 1,
                image: compressedPage,
                contentImage: contentImg,
                pageIndex: pageIdx
-             } as unknown as Question;
+             });
           }));
           allResults.push(...processed);
         }
@@ -173,19 +173,17 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
               .filter(c => c.source === 'reference' && c.role === 'diagram')
               .map(c => c.image);
 
-            return {
-              ...q,
+            return toQuestion(q, {
               id: Math.random().toString(36).substring(2),
               order: questions.length + allResults.length + subIdx + 1,
               images: questionImages,
               contentImages: questionImages,
               pageIndices: questionPageIndices,
-              // 向下兼容
               image: questionImages[0] || "",
               contentImage: questionImages[0] || "",
-              diagrams: examDiagrams, // 仅存放试卷中的物理插图
-              answerDiagrams: refDiagrams, // 仅存放参考池中的物理插图
-            } as unknown as Question;
+              diagrams: examDiagrams,
+              answerDiagrams: refDiagrams,
+            });
           });
           allResults.push(...processed);
         }
@@ -254,7 +252,6 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
 
   return {
     startExtraction,
-    progress,
     progressLabel,
     parsingFailures,
     isProcessing,

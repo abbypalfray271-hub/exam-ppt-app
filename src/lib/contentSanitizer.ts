@@ -20,8 +20,8 @@ const decodeHtmlEntities = (text: string): string => {
  * 2. 换行符恢复
  */
 const restoreNewlines = (text: string): string => {
-  // 恢复过大的转义换行 (\\n) 为实际换行
-  return text.replace(/\\(?!b|f|n|r|t|u)/g, '').replace(/\\n/g, '\n');
+  // 仅将转义换行符 (\\n) 恢复为实际换行，不再无差别清除反斜杠（保护 LaTeX 命令如 \frac, \sqrt）
+  return text.replace(/\\n/g, '\n');
 };
 
 /**

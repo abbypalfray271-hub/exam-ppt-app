@@ -1,6 +1,6 @@
 {
   "name": "exam-ppt-app",
-  "version": "202604051145_math_pro",
+  "version": "202604052200_ux_polymath",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",

@@ -24,6 +24,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResizableHandle } from '../ResizableHandle';
+import { ImageLightbox } from './ImageLightbox';
+import { MaterialViewer } from './MaterialViewer';
+import { QuestionDetailModal } from './QuestionDetailModal';
 
 // Re-export from new modules for backward compatibility (Editor.tsx imports from here)
 
@@ -134,6 +137,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   const { 
     updateQuestion, 
     removeQuestion,
+    removeQuestions,
     examPages
   } = useProjectStore();
 
@@ -196,25 +200,13 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
 
   const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  // 3-state click cycle: hidden → answer → analysis → hidden
-  const [revealState, setRevealState] = useState<'hidden' | 'answer' | 'analysis'>('hidden');
-  const [isEditingContent, setIsEditingContent] = useState(false); // 新增状态：控制是否处于富文本编辑状态
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
-  const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [selectedQIds, setSelectedQIds] = useState<string[]>([]); // [NEW] 批量勾选的题目 ID
   
   // 原文素材分页状态
   const firstQ = questions[0];
   const [materialPageIndex, setMaterialPageIndex] = useState(firstQ?.pageIndex || 0);
-
-  // 素材全图缩放和平移状态
-  const [zoomState, setZoomState] = useState({ scale: 1, x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
-  // 手动打码区状态
-  const [isMaskDrawMode, setIsMaskDrawMode] = useState(false);
-  const [drawingMask, setDrawingMask] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
   // 当弹窗打开时，确保索引与当前题目同步 (如果题目有 pageIndex)
   useEffect(() => {
@@ -334,6 +326,44 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               <ChevronRight className="w-6 h-6" strokeWidth={3} />
             </button>
           )}
+
+          {/* 批量操作工具栏 */}
+          {editable && questions.length > 0 && (
+            <div className="w-full max-w-xl flex items-center justify-between bg-white px-4 py-3 rounded-2xl shadow-sm border border-gray-100 mb-2 shrink-0 z-10 sticky top-0 md:static">
+              <label className="flex items-center gap-2 cursor-pointer group select-none">
+                <input 
+                  type="checkbox" 
+                  className="w-5 h-5 rounded-md border-gray-300 text-brand-primary focus:ring-brand-primary transition-all cursor-pointer"
+                  checked={selectedQIds.length > 0 && selectedQIds.length === questions.length}
+                  onChange={(e) => {
+                     if (e.target.checked) setSelectedQIds(questions.map(q => q.id));
+                     else setSelectedQIds([]);
+                  }}
+                />
+                <span className="text-sm font-bold text-gray-600 group-hover:text-brand-primary transition-colors">全选 ({questions.length})</span>
+              </label>
+              
+              <AnimatePresence>
+                {selectedQIds.length > 0 && (
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={() => {
+                        if (confirm(`确定要删除选中的 ${selectedQIds.length} 题吗？（相应的画框也会自动移除）`)) {
+                          removeQuestions(selectedQIds);
+                          setSelectedQIds([]);
+                        }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg text-sm font-black transition-all active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    一键删除
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
           
           {questions.map((q, qIdx) => (
           <div key={q.id} className="flex flex-col shrink-0 w-full max-w-xl mx-auto my-auto md:my-0">
@@ -344,8 +374,6 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               onClick={() => {
                 if (q.contentImage) {
                   setExpandedQuestion(q);
-                  setRevealState('hidden');
-                  setIsEditingContent(false);
                 }
               }}
               className={cn(
@@ -356,7 +384,22 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               )}
             >
               <div className="flex flex-col w-full">
-                <div className="flex items-center justify-center gap-4 w-full border-b-2 border-gray-100 pb-4 mb-4">
+                <div className="flex items-center justify-center gap-4 w-full border-b-2 border-gray-100 pb-4 mb-4 relative pl-8 md:pl-10">
+                  {/* 单题勾选框 */}
+                  {editable && (
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10" onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        className="w-5 h-5 rounded-md border-gray-300 text-brand-primary focus:ring-brand-primary cursor-pointer shrink-0"
+                        checked={selectedQIds.includes(q.id)}
+                        onChange={(e) => {
+                           if (e.target.checked) setSelectedQIds([...selectedQIds, q.id]);
+                           else setSelectedQIds(selectedQIds.filter(id => id !== q.id));
+                        }}
+                      />
+                    </div>
+                  )}
+
                   <div className="bg-[#1e293b] text-white px-5 py-1.5 rounded-2xl shadow-xl shrink-0 transform -rotate-1">
                     <span className="text-lg md:text-xl font-black italic tracking-tighter">第 {qIdx + 1} 题</span>
                   </div>
@@ -502,562 +545,39 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
       {/* 题目原图看大图弹窗 (Modal - 上图下文) */}
       <AnimatePresence>
         {expandedQuestion && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className={cn(
-              "fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-all duration-300",
-              isDetailFullScreen ? "p-0" : "p-8"
-            )}
-            onClick={() => {
-              setExpandedQuestion(null);
-              setIsDetailFullScreen(false);
-            }} // 点击遮罩层关闭
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className={cn(
-                "relative bg-white shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ease-in-out",
-                isDetailFullScreen 
-                  ? "w-screen h-screen rounded-none" 
-                  : "max-w-5xl w-full max-h-[90vh] rounded-2xl"
-              )}
-              style={isDetailFullScreen ? { paddingTop: 'max(56px, env(safe-area-inset-top, 56px))' } : undefined}
-              onClick={(e) => {
-                e.stopPropagation();
-                // 3-state cycle: hidden → answer → analysis → hidden
-                setRevealState(prev => prev === 'hidden' ? 'answer' : prev === 'answer' ? 'analysis' : 'hidden');
-              }} // 点击弹窗内部空白区，触发 3 阶段切换
-            >
-              {/* 弹窗头部栏 */}
-              <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-gray-50/50 gap-2">
-                <h3 className="text-base md:text-lg font-black text-gray-800 tracking-tight flex-1 truncate">
-                  题目详情：{expandedQuestion.title}
-                </h3>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => setIsDetailFullScreen(!isDetailFullScreen)}
-                    className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-primary text-white rounded-xl font-black text-sm shadow-lg shadow-brand-primary/20 hover:bg-brand-primary/90 active:scale-95 transition-all"
-                    title={isDetailFullScreen ? "还原窗口" : "全屏显示"}
-                  >
-                    {isDetailFullScreen ? (
-                      <><Minimize2 className="w-5 h-5" /> 缩小</>
-                    ) : (
-                      <><Maximize2 className="w-5 h-5" /> 全屏</>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setExpandedQuestion(null)}
-                    className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl font-black text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 transition-all"
-                  >
-                    <X className="w-5 h-5" /> 关闭
-                  </button>
-                </div>
-              </div>
-              
-              {/* 图文混合展示区 (可滚动) */}
-              <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
-                  {(() => {
-                    const fullContent = expandedQuestion.content || '';
-                    // 健壮的分割逻辑：支持 【答案】 和 【解析】 的多级分割
-                    const segments = fullContent.split(/([\r\n]*【(?:答案|参考答案|解析|详解|分析)】)/);
-                    
-                    let questionPart = segments[0] || '';
-                    let answerPart = '';
-                    let analysisPart = '';
-
-                    for (let i = 1; i < segments.length; i += 2) {
-                      const tag = segments[i];
-                      const content = segments[i + 1] || '';
-                      const cleanContent = content.replace(/\{\{(.*?)\}\}/g, '$1'); // 去掉 {{ }} 装饰
-                      
-                      if (tag.includes('答案')) {
-                        answerPart = tag + cleanContent;
-                      } else if (tag.includes('解析') || tag.includes('分析') || tag.includes('详解')) {
-                        analysisPart = tag + cleanContent;
-                      }
-                    }
-                    
-                    if (!analysisPart && expandedQuestion.analysis) {
-                      analysisPart = `\n\n【解析】\n${expandedQuestion.analysis}`;
-                    }
-
-                    return (
-                      <div className="w-full flex flex-col gap-2">
-                        <div className="flex items-center justify-between ml-1 text-gray-500 text-sm font-semibold">
-                          <div className="flex items-center gap-2">
-                            <BookOpen className="w-4 h-4" />
-                            <span>题目内容 (选项与正文)</span>
-                          </div>
-                          {editable && (
-                             <button
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 setIsEditingContent(!isEditingContent);
-                               }}
-                               className={cn(
-                                 "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black transition-all shadow-xl active:scale-95 group border-none",
-                                 isEditingContent 
-                                   ? "bg-brand-primary text-white" 
-                                   : "bg-orange-500 text-white hover:bg-orange-600"
-                               )}
-                             >
-                               <span className="group-hover:-translate-y-0.5 transition-transform">{isEditingContent ? '✅' : '✏️'}</span>
-                               <span>{isEditingContent ? '完成编辑' : '编辑源码'}</span>
-                             </button>
-                           )}
-                        </div>
-                        <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[12em]">
-                          {editable && isEditingContent ? (
-                            <textarea
-                              className="w-full text-xl font-bold text-[#1e293b] leading-loose bg-transparent border-none outline-none resize-y focus:ring-0 min-h-[12em] custom-scrollbar"
-                              value={fullContent}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const newContent = e.target.value;
-                                updateQuestion(expandedQuestion.id, { content: newContent });
-                                setExpandedQuestion({ ...expandedQuestion, content: newContent });
-                              }}
-                              placeholder="可以在此补充或修正题目内容... 使用 {{文本}} 语法可以添加可隐现的答案特效"
-                              autoFocus
-                            />
-                          ) : (
-                            <div className="text-xl font-bold text-[#1e293b] leading-loose cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                              {/* [题干渲染] */}
-                              <RichExamContent 
-                                content={questionPart} 
-                                showClozeAnswers={revealState === 'answer' || revealState === 'analysis'}
-                                diagrams={expandedQuestion.diagrams}
-                                onImageClick={setZoomedImage}
-                              />
-                              
-                              {/* [答案区域] */}
-                              {(answerPart || expandedQuestion.answer) && (revealState === 'answer' || revealState === 'analysis') && (
-                                <div className="mt-8 pt-6 border-t-2 border-dashed border-brand-primary/10 flex flex-col gap-4">
-                                  <div className="flex items-center gap-2 text-brand-primary">
-                                    <CheckSquare className="w-6 h-6" />
-                                    <span className="text-sm font-black uppercase tracking-widest bg-brand-primary/5 px-3 py-1 rounded-full">参考答案</span>
-                                  </div>
-                                  <div className="text-brand-primary font-black text-2xl md:text-4xl pl-2 drop-shadow-sm">
-                                    <RichExamContent 
-                                      content={answerPart ? answerPart.replace(/【.*?答案.*?】/, '').trim() : (expandedQuestion.answer || '无')} 
-                                      showClozeAnswers={true} 
-                                      diagrams={expandedQuestion.diagrams}
-                                      diagramStartIndex={(questionPart.match(/\[附图\]/g) || []).length}
-                                      onImageClick={setZoomedImage}
-                                    />
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* [解析区域] */}
-                              {analysisPart && revealState === 'analysis' && (
-                                <div className="mt-8 pt-6 border-t-2 border-dashed border-purple-200">
-                                  <div className="flex items-center gap-2 text-purple-700 mb-4">
-                                    <BookOpen className="w-6 h-6" />
-                                    <span className="text-sm font-black uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-full">详解步骤</span>
-                                  </div>
-                                  <div className="text-xl md:text-2xl font-bold text-slate-700 leading-relaxed">
-                                    <RichExamContent 
-                                      content={analysisPart} 
-                                      showClozeAnswers={true} 
-                                      diagrams={expandedQuestion.diagrams}
-                                      diagramStartIndex={(questionPart.match(/\[附图\]/g) || []).length + (answerPart?.match(/\[附图\]/g) || []).length}
-                                      onImageClick={setZoomedImage}
-                                    />
-                                  </div>
-
-                                  {/* [辅助配图廊] - 精细化分流展示 */}
-                                  {expandedQuestion.answerDiagrams && expandedQuestion.answerDiagrams.length > 0 && (
-                                    <div className="mt-8 flex flex-wrap justify-center gap-6">
-                                      {expandedQuestion.answerDiagrams.map((dg, dgIdx) => (
-                                        <div key={dgIdx} className="group/dg relative">
-                                          <div className="absolute -top-3 -left-2 z-10 bg-brand-primary text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-lg">
-                                            补充知识点 #{dgIdx + 1}
-                                          </div>
-                                          <img 
-                                            src={dg} 
-                                            alt={`Supplement ${dgIdx}`}
-                                            className="max-h-64 md:max-h-80 rounded-2xl shadow-xl border-4 border-white cursor-zoom-in hover:scale-[1.03] transition-transform active:scale-95"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setZoomedImage(dg);
-                                            }}
-                                          />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  
-                                  {/* AI 渲染的 SVG 辅助配图 */}
-                                  {expandedQuestion.auxiliary_svg && (
-                                    <div className="w-full flex flex-col items-center gap-3 mt-8 bg-white rounded-2xl p-6 border-2 border-purple-100 shadow-inner">
-                                      <div className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-1.5 self-start">
-                                        <Zap className="w-4 h-4 fill-purple-400" /> AI 几何作图引擎
-                                      </div>
-                                      <div 
-                                        className="w-full max-w-sm aspect-square flex items-center justify-center p-2 overflow-hidden"
-                                        dangerouslySetInnerHTML={{ __html: expandedQuestion.auxiliary_svg }}
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                       {/* 交互指引提示：根据当前状态动态切换 */}
-                       <div className={cn(
-                         "text-center mt-6 mb-2 text-[11px] font-black tracking-widest uppercase animate-pulse pointer-events-none",
-                         revealState === 'hidden' ? 'text-gray-400' : revealState === 'answer' ? 'text-brand-primary' : 'text-purple-500'
-                       )}>
-                         {isEditingContent
-                            ? "👆 在文本中加入类似 {{答案}} 即可创建下划线特效"
-                            : revealState === 'hidden' ? "👆 点击屏幕任意空白处即可显示答案"
-                            : revealState === 'answer' ? "👆 再次点击即可查看解析"
-                            : "👆 再次点击即可隐藏答案/解析"
-                         }
-                       </div>
-                     </div>
-                   );
-                 })()}
-              </div>
-            </motion.div>
-          </motion.div>
+          <QuestionDetailModal
+            expandedQuestion={expandedQuestion}
+            setExpandedQuestion={setExpandedQuestion}
+            editable={editable}
+            updateQuestion={updateQuestion}
+            setZoomedImage={setZoomedImage}
+          />
         )}
       </AnimatePresence>
 
        {/* 原文素材全屏放大弹窗 */}
        <AnimatePresence>
          {isMaterialExpanded && (
-           <motion.div
-             initial={{ opacity: 0 }}
-             animate={{ opacity: 1 }}
-             exit={{ opacity: 0 }}
-             className="fixed inset-0 z-[110] flex items-start justify-center p-0 bg-black/90 backdrop-blur-md overflow-y-auto custom-scrollbar"
-             onClick={() => {
-               setIsMaterialExpanded(false);
-               setZoomState({ scale: 1, x: 0, y: 0 });
-               setIsMaskDrawMode(false);
-               setDrawingMask(null);
-             }}
-           >
-             <motion.div
-               initial={{ scale: 0.9, opacity: 0 }}
-               animate={{ scale: 1, opacity: 1 }}
-               exit={{ scale: 0.9, opacity: 0 }}
-               className="relative w-full min-h-screen flex flex-col items-center py-12"
-               onClick={(e) => e.stopPropagation()}
-             >
-                <button
-                  onClick={() => setIsMaterialExpanded(false)}
-                  className="fixed top-4 right-6 p-3 bg-black/50 hover:bg-red-500 text-white rounded-full transition-colors z-50 backdrop-blur-sm shadow-xl"
-                  title="关闭全屏"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-
-                {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
-
-                {/* 素材主体图片: 优先使用选中的页码图片，若无则回退到 materialImage */}
-                <div 
-                  className={cn("relative group inline-block w-[80vw]", isMaskDrawMode ? "cursor-crosshair" : (zoomState.scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""))}
-                  style={{
-                    transform: `translate(${zoomState.x}px, ${zoomState.y}px) scale(${zoomState.scale})`,
-                    transformOrigin: 'center top',
-                    transition: (isDragging || isMaskDrawMode) ? 'none' : 'transform 0.2s ease-out'
-                  }}
-                  onPointerDown={(e) => {
-                    if (isMaskDrawMode) {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const pctX = (e.clientX - rect.left) / rect.width;
-                      const pctY = (e.clientY - rect.top) / rect.height;
-                      setDrawingMask({ startX: pctX, startY: pctY, currentX: pctX, currentY: pctY });
-                    } else if (zoomState.scale > 1) {
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      setIsDragging(true);
-                      setDragStart({ x: e.clientX - zoomState.x, y: e.clientY - zoomState.y });
-                    }
-                  }}
-                  onPointerMove={(e) => {
-                    if (isMaskDrawMode && drawingMask) {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      let pctX = (e.clientX - rect.left) / rect.width;
-                      let pctY = (e.clientY - rect.top) / rect.height;
-                      pctX = Math.max(0, Math.min(1, pctX));
-                      pctY = Math.max(0, Math.min(1, pctY));
-                      setDrawingMask(prev => prev ? { ...prev, currentX: pctX, currentY: pctY } : null);
-                    } else if (isDragging && zoomState.scale > 1) {
-                      setZoomState(prev => ({
-                        ...prev,
-                        x: e.clientX - dragStart.x,
-                        y: e.clientY - dragStart.y
-                      }));
-                    }
-                  }}
-                  onPointerUp={(e) => {
-                    if (isMaskDrawMode && drawingMask) {
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                      const minX = Math.min(drawingMask.startX, drawingMask.currentX);
-                      const maxX = Math.max(drawingMask.startX, drawingMask.currentX);
-                      const minY = Math.min(drawingMask.startY, drawingMask.currentY);
-                      const maxY = Math.max(drawingMask.startY, drawingMask.currentY);
-                      
-                      if (maxX - minX > 0.01 && maxY - minY > 0.01) {
-                         const answer_box: [number, number, number, number] = [
-                           Math.round(minY * 10000),
-                           Math.round(minX * 10000),
-                           Math.round(maxY * 10000),
-                           Math.round(maxX * 10000)
-                         ];
-                         updateQuestion(firstQ.id, { answer_box });
-                      }
-                      
-                      setDrawingMask(null);
-                      setIsMaskDrawMode(false);
-                    } else {
-                      setIsDragging(false);
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                    }
-                  }}
-                  onPointerCancel={() => {
-                     setIsDragging(false);
-                     setDrawingMask(null);
-                  }}
-                  onWheel={(e) => {
-                    if (isMaskDrawMode) return;
-                    // 阻止页面默认滚动
-                    e.preventDefault();
-                    // 动态调整整体缩放倍数 (1.0 到 5.0)，以当前鼠标位置缩放会比较复杂，这里用简单的中心缩放
-                    setZoomState(prev => {
-                      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-                      let newScale = Math.min(Math.max(1, prev.scale * zoomFactor), 5.0);
-                      
-                      // 如果缩放回 1，重置位置
-                      if (newScale === 1) {
-                        return { scale: 1, x: 0, y: 0 };
-                      }
-                      
-                      return { ...prev, scale: newScale };
-                    });
-                  }}
-                >
-                  {firstQ.materialImage ? (
-                    <img 
-                      src={firstQ.materialImage} 
-                      alt="全屏缩略素材" 
-                      className="w-full h-auto object-contain shadow-2xl bg-white block select-none pointer-events-none"
-                      draggable={false}
-                    />
-                  ) : (
-                    <div className="flex flex-col w-full bg-white shadow-2xl overflow-hidden rounded-md border border-gray-100">
-                      {(firstQ.images && firstQ.images.length > 0 ? firstQ.images : [firstQ.image]).map((imgSrc, idx) => (
-                        <div key={idx} className="relative w-full">
-                          {idx > 0 && <div className="w-full h-0 border-t-4 border-dashed border-brand-primary/30 opacity-70 flex items-center justify-center my-1"><span className="bg-brand-primary/10 text-brand-primary font-black text-[10px] px-2 py-0.5 rounded-full absolute -translate-y-1/2">✂️ 跨页缝合线</span></div>}
-                          <img 
-                            src={imgSrc} 
-                            alt={`全屏原文切片片段 ${idx}`} 
-                            className="w-full h-auto object-contain block select-none pointer-events-none"
-                            draggable={false}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {renderAnswerMasks(questions, isMaskDrawMode)}
-
-                  {drawingMask && (
-                    <div 
-                      className="absolute z-50 border-2 border-brand-primary bg-brand-primary/20 shadow-lg"
-                      style={{
-                         left: `${Math.min(drawingMask.startX, drawingMask.currentX) * 100}%`,
-                         top: `${Math.min(drawingMask.startY, drawingMask.currentY) * 100}%`,
-                         width: `${Math.abs(drawingMask.currentX - drawingMask.startX) * 100}%`,
-                         height: `${Math.abs(drawingMask.currentY - drawingMask.startY) * 100}%`
-                      }}
-                    />
-                  )}
-                 
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-4 px-6 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
-                  <p className="text-white text-sm font-bold tracking-widest uppercase">
-                    原文切片预览
-                  </p>
-                 
-                 <button
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     if (!isMaskDrawMode) {
-                       setZoomState({ scale: 1, x: 0, y: 0 }); 
-                     } else {
-                       setDrawingMask(null);
-                     }
-                     setIsMaskDrawMode(!isMaskDrawMode);
-                   }}
-                   className={cn(
-                     "px-4 py-1.5 rounded-full flex items-center gap-2 transition-all shadow-md active:scale-95",
-                     isMaskDrawMode 
-                       ? "bg-red-500 hover:bg-red-600 text-white" 
-                       : "bg-white/20 hover:bg-brand-primary text-white"
-                   )}
-                 >
-                   <EyeOff className="w-4 h-4" />
-                   <span className="text-sm font-bold tracking-widest">
-                     {isMaskDrawMode ? '在此处拖拽鼠标画框 (点击取消)' : '手动框选隐藏区'}
-                   </span>
-                 </button>
-               </div>
-             </motion.div>
-           </motion.div>
-          )}
-        </AnimatePresence>
+           <MaterialViewer 
+             firstQ={firstQ} 
+             questions={questions} 
+             onClose={() => setIsMaterialExpanded(false)} 
+             renderAnswerMasks={renderAnswerMasks} 
+           />
+         )}
+       </AnimatePresence>
 
        {/* [NEW] 交互式全屏灯箱 (Portal) - 支持滚轮缩放与拖拽平移 */}
-       {typeof document !== 'undefined' && zoomedImage && createPortal(
-         <Lightbox 
+       {zoomedImage && (
+         <ImageLightbox 
            src={zoomedImage} 
            onClose={() => setZoomedImage(null)} 
-         />,
-         document.body
+         />
        )}
     </div>
   );
 };
 
-/**
- * 内部功能组件：交互式滚动缩放灯箱
- * 技术栈：Framer Motion (Spring Physics) + React Hooks
- */
-const Lightbox: React.FC<{ src: string; onClose: () => void }> = ({ src, onClose }) => {
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // 核心逻辑：平滑滚轮缩放
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    // 灵敏度控制：向上滚放大，向下滚缩小
-    const delta = e.deltaY < 0 ? 1.15 : 0.85; 
-    const newScale = Math.min(Math.max(0.5, scale * delta), 12); // 最高支持 12 倍放大
-    setScale(newScale);
-
-    // 回弹重置：当缩放接近原始比例时，清空偏移量
-    if (newScale <= 1.05) {
-      setOffset({ x: 0, y: 0 });
-    }
-  };
-
-  // 核心逻辑：拖拽平移 (仅在放大状态激活)
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging || scale <= 1) return;
-    setOffset(prev => ({
-      x: prev.x + e.movementX,
-      y: prev.y + e.movementY
-    }));
-  };
-
-  return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-3xl flex items-center justify-center overflow-hidden touch-none"
-        onWheel={handleWheel}
-        onClick={onClose}
-        onPointerDown={(e) => {
-          if (scale > 1) {
-            setIsDragging(true);
-            (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          }
-        }}
-        onPointerUp={(e) => {
-          setIsDragging(false);
-          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-        }}
-        onPointerMove={handlePointerMove}
-      >
-        {/* 右上角悬浮控制栏 */}
-        <div className="absolute top-8 right-8 z-50 flex items-center gap-4">
-          <div className="bg-white/10 px-5 py-2.5 rounded-2xl border border-white/20 backdrop-blur-xl text-white text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-3">
-             <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
-                <span>Zoomed {Math.round(scale * 100)}%</span>
-             </div>
-             <div className="w-px h-3 bg-white/20" />
-             <span className="opacity-60">Interactive Mode</span>
-          </div>
-          
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            className="w-14 h-14 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,0.5)] hover:scale-110 active:scale-90 transition-all text-2xl font-black border-4 border-black/10 z-50"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* 动态渲染容器 */}
-        <motion.div
-          animate={{ 
-            scale: scale,
-            x: offset.x,
-            y: offset.y,
-            rotate: isDragging ? 0.2 : 0 // 增加微小的物理扭曲感
-          }}
-          transition={{ 
-            type: 'spring', 
-            damping: 30, 
-            stiffness: 250, 
-            mass: 0.8
-          }}
-          className={cn(
-            "relative flex items-center justify-center p-4 transition-all duration-300",
-            scale > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-          )}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <img
-            src={src}
-            alt="Large preview"
-            className="max-w-[70vw] max-h-[70vh] md:max-w-[85vw] md:max-h-[85vh] object-contain rounded-2xl shadow-[0_0_120px_rgba(0,0,0,0.8)] border-4 border-white/30 select-none pointer-events-none"
-            draggable={false}
-          />
-        </motion.div>
-        
-        {/* 底部操作反馈 */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 opacity-30 group pointer-events-none">
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col items-center gap-1">
-               <div className="w-8 h-8 rounded-lg border border-white/40 flex items-center justify-center mb-1">
-                 <div className="w-1 h-3 bg-white/60 rounded-full" />
-               </div>
-               <span className="text-[9px] font-black text-white uppercase tracking-tighter">Scroll Zoom</span>
-            </div>
-            <div className="w-px h-8 bg-white/20" />
-            <div className="flex flex-col items-center gap-1">
-               <div className="w-8 h-8 rounded-lg border border-white/40 flex items-center justify-center mb-1">
-                 <div className="w-3 h-3 border-2 border-white/60 rounded-sm" />
-               </div>
-               <span className="text-[9px] font-black text-white uppercase tracking-tighter">Drag Pan</span>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    </AnimatePresence>
-  );
-};
 
 // SlideFrame 已提取到 @/components/slide/SlideFrame.tsx

@@ -4,7 +4,7 @@
  * 核心变化：不再强制识别 LaTeX Math 块，全面拥抱原生 Unicode 符号展示。
  */
 
-export type TokenType = 'text' | 'cloze' | 'image' | 'option' | 'math';
+export type TokenType = 'text' | 'cloze' | 'image' | 'option' | 'math' | 'table';
 
 export interface Token {
   type: TokenType;
@@ -22,12 +22,14 @@ const TOKEN_PATTERNS = {
   resource: /\[附图\]|\[表格\]/g,
   // 3. Defensive Math Block (仅作为极端情况下的兼容，不主动诱导 AI 输出)
   math: /(\$\$\s*[\s\S]*?\s*\$\$)|(\$\s*[\s\S]*?\s*\$)/g,
+  // 4. Markdown Table (多行以 | 开头并以 | 结尾的文本，至少两行，防误判单行绝对值)
+  table: /(?:^[ \t]*\|.*?\|[ \t]*(?:\r?\n|$)){2,}/g,
 };
 
-// 合并正则
+// 合并正则 (开启多行 m 模式以支持 ^ 和 $)
 const combinedRegex = new RegExp(
   Object.values(TOKEN_PATTERNS).map(p => p.source).join('|'),
-  'g'
+  'gm'
 );
 
 /**
@@ -55,6 +57,8 @@ const splitTextAndOptions = (text: string): Token[] => {
 export const parseExamContent = (text: string): Token[] => {
   if (!text) return [];
 
+  // 重置共享正则的 lastIndex，防止前次调用残留的索引导致匹配异常
+  combinedRegex.lastIndex = 0;
   const tokens: Token[] = [];
   let lastIndex = 0;
   let match;
@@ -77,6 +81,8 @@ export const parseExamContent = (text: string): Token[] => {
       type = 'math';
     } else if (matchText === '[附图]' || matchText === '[表格]') {
       type = 'image';
+    } else if (matchText.trim().startsWith('|')) {
+      type = 'table';
     }
 
     tokens.push({ type, content: matchText });

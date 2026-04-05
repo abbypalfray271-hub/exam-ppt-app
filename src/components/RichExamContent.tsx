@@ -21,13 +21,19 @@ const autoFormatFractions = (text: string): string => {
   // 1. 定义可嵌套一层的小括号/中括号匹配正则
   // 该正则支持: (a+b), [a-b], [2(x-3)], (a/(b+c)) 等
   const nestedParen = `(?:[\\(\\\[](?:[^()\\\[\\\]]|[\\(\\\[][^()\\\[\\\]]*[\\)\\\]])*[\\)\\\]])`;
-  // 定义简单项 (字母、数字、幂、上标、下标)
-  const simpleTerm = `[a-zA-Z\\d\\^\\{\\}_.]+`;
+  
+  // 指数/上下标部分：匹配 ^2, ^{2}, ², ³ 等后缀
+  const exponentExp = `(?:\\^(?:[a-zA-Z\\d]+|\\{[^}]+\\})|[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾]+)*`;
+  
+  // 定义简单项 (字母、数字、下标、点号、花括号等)
+  const simpleTerm = `[a-zA-Z\\d_\\.\\{\\}]+`;
+
+  // 操作数：(括号项+可选指数) 或 (简单项+可选指数)
+  const operand = `(?:${nestedParen}${exponentExp}|${simpleTerm}${exponentExp})`;
 
   // 组合匹配逻辑：
-  // 匹配 [左侧] / [右侧]
-  // 其中 [左侧] 或 [右侧] 可以是 nestedParen 或 simpleTerm
-  const fractionRegex = new RegExp(`(${nestedParen}|${simpleTerm})\\s*[\\/÷]\\s*(${nestedParen}|${simpleTerm})`, 'g');
+  // 匹配 operand / operand
+  const fractionRegex = new RegExp(`(${operand})\\s*[\\/÷]\\s*(${operand})`, 'g');
 
   processed = processed.replace(fractionRegex, (match, p1, p2) => {
     // 排除日期 2024/05
@@ -120,6 +126,53 @@ const ClozeItem = ({ raw, showAnswer, diagrams = [] }: { raw: string, showAnswer
       </span>
     );
   }
+};
+
+/**
+ * 表格排版渲染单元
+ */
+const TableItem = ({ content, diagrams, showClozeAnswers, onImageClick }: { content: string, diagrams: string[], showClozeAnswers: boolean, onImageClick?: (src: string) => void }) => {
+  const lines = content.trim().split('\n').filter(l => l.trim().startsWith('|'));
+  if (lines.length < 2) return <span className="whitespace-pre-wrap">{content}</span>;
+
+  const parseRow = (row: string) => {
+    const trimmed = row.trim();
+    // 移除收尾的 '|' 管道符
+    const inner = trimmed.substring(1, trimmed.length - 1);
+    return inner.split('|').map(cell => cell.trim());
+  };
+
+  const headers = parseRow(lines[0]);
+  //跳过 md 代码的分界分隔线，比如 |:---:|---:|
+  const dataRowsStr = lines.length > 2 && lines[1].includes('---') ? lines.slice(2) : lines.slice(1);
+  const rows = dataRowsStr.map(parseRow);
+
+  return (
+    <div className="w-full overflow-x-auto my-6 px-1">
+      <table className="w-full border-collapse border border-brand-primary/20 bg-white shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] rounded-lg overflow-hidden text-sm md:text-base">
+        <thead className="bg-[#f8fafc] border-b-2 border-brand-primary/10">
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} className="border-x border-gray-100 px-4 py-3 text-center font-bold text-[#1e293b] whitespace-nowrap align-middle">
+                <RichExamContent content={h} isInternal={true} diagrams={diagrams} showClozeAnswers={showClozeAnswers} onImageClick={onImageClick} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="hover:bg-slate-50 transition-colors border-b border-gray-100 last:border-b-0">
+              {row.map((cell, j) => (
+                <td key={j} className="border-x border-gray-100 px-4 py-3 text-center text-slate-700 align-middle font-medium">
+                  <RichExamContent content={cell} isInternal={true} diagrams={diagrams} showClozeAnswers={showClozeAnswers} onImageClick={onImageClick} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };
 
 /**
@@ -259,6 +312,8 @@ const RichExamContentFragment = ({
       return <ImageItem content={token.content} src={src} onClick={() => src && onImageClick?.(src)} />;
     case 'option':
       return <span className="font-black text-brand-primary min-w-[1.8em] text-[1.1em] drop-shadow-sm ml-2">{token.content}</span>;
+    case 'table':
+      return <TableItem content={token.content} diagrams={diagrams} showClozeAnswers={showClozeAnswers} onImageClick={onImageClick} />
     case 'text':
       return <TextItem content={token.content} />;
     default:

@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore } from '@/store/useProjectStore';
 import { pdfToImages } from '@/lib/documentProcessor';
+import { importProjectJSON } from '@/lib/projectIO';
 import { cn } from '@/lib/utils';
 
 export const UploadZone: React.FC = () => {
@@ -30,8 +31,7 @@ export const UploadZone: React.FC = () => {
     setCanvasOpen,
     setPages, 
     setProcessing,
-    resetUpload,
-    importProjectJSON 
+    resetUpload
   } = useProjectStore();
   
   const [isDragActive, setIsDragActive] = useState(false);

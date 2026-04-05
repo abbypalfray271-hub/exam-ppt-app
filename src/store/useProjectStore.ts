@@ -94,7 +94,6 @@ interface ProjectState {
   setPages: (pages: string[], mode: 'append' | 'replace', target: 'exam' | 'reference') => void; // [NEW] 通用设置页面的 Action
 
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
-  importProjectJSON: () => void; // [NEW] 导入项目 JSON 演稿
 
 }
 
@@ -164,39 +163,29 @@ export const useProjectStore = create<ProjectState>()(
     fileType: null,
     isMathOptimized: false, // 重置 [NEW]
   }),
-  importProjectJSON: () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target?.result as string);
-          set({
-            projectName: data.projectName || '导入的试卷',
-            examPages: data.examPages || [],
-            referencePages: data.referencePages || [],
-            questions: data.questions || [],
-            fileType: data.fileType || null,
-            currentView: 'editor'
-          });
-        } catch (err) {
-          console.error('Failed to parse project JSON', err);
-          alert('读取演稿失败，请检查文件格式。');
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
-  },
+   importProjectJSON: () => {
+     // 已迁移至 lib/projectIO.ts，此处保留空实现保持向下兼容，建议调用方直接使用 lib/projectIO 的版本
+   },
     }),
     {
-      name: 'exam-ppt-storage', // 唯一的缓存键名
-      storage: createJSONStorage(() => idbStorage), // 接管至 IndexedDB
-      partialize: (state) => ({ ...state, isProcessing: false }), // 过滤掉正在处理状态，防止死锁
+      name: 'exam-ppt-storage',
+      storage: createJSONStorage(() => idbStorage),
+      // 只序列化数据字段，排除 Action 函数，避免无用 IO 消耗
+      partialize: (state) => ({
+        projectName: state.projectName,
+        examImageUrl: state.examImageUrl,
+        examPages: state.examPages,
+        referencePages: state.referencePages,
+        questions: state.questions,
+        currentMode: state.currentMode,
+        isPresenting: state.isPresenting,
+        currentSlideIndex: state.currentSlideIndex,
+        currentView: state.currentView,
+        isCanvasOpen: state.isCanvasOpen,
+        fileType: state.fileType,
+        isMathOptimized: state.isMathOptimized,
+        // 注意：isProcessing 故意排除，防止死锁
+      }),
     }
   )
 );
