@@ -11,7 +11,8 @@ import {
   Save,
   FolderOpen,
   Trash2,
-  Zap
+  Zap,
+  Sparkles
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -27,7 +28,10 @@ import {
 import { ResizableHandle } from './ResizableHandle';
 
 export const Editor = () => {
-  const { projectName, questions, setView, removeQuestions, resetUpload, setCanvasOpen, setQuestions } = useProjectStore();
+  const { 
+    projectName, questions, setView, removeQuestions, resetUpload, 
+    setCanvasOpen, setQuestions, isMathOptimized, setMathOptimized 
+  } = useProjectStore();
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   // 左侧缩略图栏宽度（可拖拽调整）
@@ -235,8 +239,24 @@ export const Editor = () => {
               SLIDE {currentSlideIdx + 1} / {totalSlides}
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-2 text-[10px] font-black text-[#1e293b]/30 uppercase tracking-[0.2em] bg-gray-100/50 px-4 py-1.5 rounded-full">
-            Ready for Presentation · Use Arrow Keys
+          <div className="flex items-center gap-3">
+            {/* 🦄 分式视觉美化按钮 [NEW MOVED] */}
+            <button
+              onClick={() => setMathOptimized(!isMathOptimized)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest transition-all duration-300",
+                isMathOptimized 
+                  ? "bg-brand-primary text-white shadow-lg shadow-brand-primary/30 scale-105" 
+                  : "bg-white/80 text-gray-500 hover:bg-white hover:text-brand-primary border border-gray-200"
+              )}
+              title={isMathOptimized ? "精修模式已开启：点击还原" : "点击开启公式精修 (将 a/b 转换为标准分式)"}
+            >
+              <Sparkles className={cn("w-3.5 h-3.5", isMathOptimized ? "animate-pulse" : "")} />
+              <span>{isMathOptimized ? "精修中" : "优化显示"}</span>
+            </button>
+            <div className="hidden md:flex items-center gap-2 text-[10px] font-black text-[#1e293b]/30 uppercase tracking-[0.2em] bg-gray-100/50 px-4 py-1.5 rounded-full">
+              Ready for Presentation · Use Arrow Keys
+            </div>
           </div>
         </div>
 

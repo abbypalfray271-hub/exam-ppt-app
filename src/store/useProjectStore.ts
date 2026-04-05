@@ -65,6 +65,8 @@ interface ProjectState {
   isCanvasOpen: boolean; // -- 新增：框选画布是否打开 --
   fileType: 'image' | 'pdf' | null; // -- 统一：文件类型 --
   processingTarget: 'exam' | 'reference' | null; // [NEW] 正在处理的目标
+  isMathOptimized: boolean; // 是否开启前端分式美化 [NEW]
+
 
 
   
@@ -83,6 +85,8 @@ interface ProjectState {
   setProcessing: (processing: boolean, target?: 'exam' | 'reference' | null) => void;
   setPresenting: (presenting: boolean) => void;    // -- 新增：进入/退出全屏 --
   setCurrentSlideIndex: (index: number) => void; // -- 新增：切页 --
+  setMathOptimized: (optimized: boolean) => void; // [NEW] 设置分式美化
+
   setView: (view: 'upload' | 'editor') => void; // -- 新增：切换视图 --
   setCanvasOpen: (open: boolean) => void; // -- 新增：控制框选画布 --
   setFileType: (type: 'image' | 'pdf' | null) => void;
@@ -109,6 +113,7 @@ export const useProjectStore = create<ProjectState>()(
   isCanvasOpen: false,
   fileType: null,
   processingTarget: null,
+  isMathOptimized: false, // 默认关闭 [NEW]
 
   
   setProjectName: (name) => set({ projectName: name }),
@@ -142,7 +147,9 @@ export const useProjectStore = create<ProjectState>()(
   setCurrentSlideIndex: (index) => set({ currentSlideIndex: index }),
   setView: (view) => set({ currentView: view }),
   setCanvasOpen: (open) => set({ isCanvasOpen: open }),
+  setMathOptimized: (optimized) => set({ isMathOptimized: optimized }), // [NEW]
   setFileType: (type) => set({ fileType: type }),
+
   setReferencePages: (pages) => set({ referencePages: pages }), // [NEW]
   resetUpload: () => set({ 
     examImageUrl: undefined, 
@@ -155,6 +162,7 @@ export const useProjectStore = create<ProjectState>()(
     currentView: 'upload',
     isCanvasOpen: false,
     fileType: null,
+    isMathOptimized: false, // 重置 [NEW]
   }),
   importProjectJSON: () => {
     const input = document.createElement('input');

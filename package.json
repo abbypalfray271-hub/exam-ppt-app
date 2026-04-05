@@ -1,6 +1,6 @@
 {
   "name": "exam-ppt-app",
-  "version": "202604051030_gallery",
+  "version": "202604051145_math_pro",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",

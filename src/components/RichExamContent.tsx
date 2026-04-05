@@ -8,6 +8,56 @@ import { Image as ImageIcon } from 'lucide-react';
 import { parseExamContent, Token } from '@/lib/examTextParser';
 import { sanitizeExamContent } from '@/lib/contentSanitizer';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useProjectStore } from '@/store/useProjectStore';
+
+/**
+ * 自动将文本中的 a/b 或 (a)/(b) 转换为 LaTeX 分式格式
+ * 这是一个极简实现的正则引擎，用于提升视觉观感
+ */
+const autoFormatFractions = (text: string): string => {
+  let processed = text;
+  const MARKER = '@@F@@'; // 内部临时标记
+
+  // 1. 定义可嵌套一层的小括号/中括号匹配正则
+  // 该正则支持: (a+b), [a-b], [2(x-3)], (a/(b+c)) 等
+  const nestedParen = `(?:[\\(\\\[](?:[^()\\\[\\\]]|[\\(\\\[][^()\\\[\\\]]*[\\)\\\]])*[\\)\\\]])`;
+  // 定义简单项 (字母、数字、幂、上标、下标)
+  const simpleTerm = `[a-zA-Z\\d\\^\\{\\}_.]+`;
+
+  // 组合匹配逻辑：
+  // 匹配 [左侧] / [右侧]
+  // 其中 [左侧] 或 [右侧] 可以是 nestedParen 或 simpleTerm
+  const fractionRegex = new RegExp(`(${nestedParen}|${simpleTerm})\\s*[\\/÷]\\s*(${nestedParen}|${simpleTerm})`, 'g');
+
+  processed = processed.replace(fractionRegex, (match, p1, p2) => {
+    // 排除日期 2024/05
+    if (/^\d{4}$/.test(p1) && /^\d+$/.test(p2)) return match;
+    // 排除选项 A/B/C
+    if (p1.length === 1 && p2.length === 1 && /[A-Z]/.test(p1)) return match;
+    // 如果已经带有 LaTeX 特征，跳过
+    if (p1.includes('\\') || p2.includes('\\')) return match;
+
+    // 清理首尾括号，因为 \frac 不需要外层括号包裹内容
+    const clean = (s: string) => {
+        s = s.trim();
+        if ((s.startsWith('(') && s.endsWith(')')) || (s.startsWith('[') && s.endsWith(']'))) {
+            return s.slice(1, -1).trim();
+        }
+        return s;
+    };
+
+    return `$${MARKER}\\frac{${clean(p1)}}{${clean(p2)}}$`;
+  });
+
+  // 2. 将剩余孤立的 ÷ 符号转换为标准的 \div
+  processed = processed.replace(/÷/g, '$\\div$');
+
+  // 3. 收尾清理
+  processed = processed.replaceAll(MARKER, '');
+  processed = processed.replace(/\${2,}/g, '$');
+
+  return processed;
+};
 
 /**
  * 核心数学公式渲染单元
@@ -90,10 +140,15 @@ export const RichExamContent = ({
   isInternal?: boolean; 
   onImageClick?: (src: string) => void;
 }) => {
+  const isMathOptimized = useProjectStore(state => state.isMathOptimized);
+
   const tokens = useMemo(() => {
-    const cleaned = isInternal ? content : sanitizeExamContent(content);
+    let cleaned = isInternal ? content : sanitizeExamContent(content);
+    if (isMathOptimized && !isInternal) {
+       cleaned = autoFormatFractions(cleaned);
+    }
     return parseExamContent(cleaned);
-  }, [content, isInternal]);
+  }, [content, isInternal, isMathOptimized]);
 
   // --- 高级排版逻辑：对 Token 序列进行二次处理 (Step 5) ---
   const groupedTokens = useMemo(() => {
