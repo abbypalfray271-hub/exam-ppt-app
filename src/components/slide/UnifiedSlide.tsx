@@ -20,7 +20,8 @@ import {
   EyeOff,
   CheckSquare,
   Image as ImageIcon,
-  Zap
+  Zap,
+  Brain
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResizableHandle } from '../ResizableHandle';
@@ -301,59 +302,73 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               )}
             >
               <div className="flex flex-col w-full">
-                <div className="flex items-center justify-center gap-4 w-full border-b-2 border-gray-100 pb-4 mb-4 relative pl-8 md:pl-10">
-                  {/* 单题勾选框 */}
-                  {editable && (
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10" onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="checkbox" 
-                        className="w-5 h-5 rounded-md border-gray-300 text-brand-primary focus:ring-brand-primary cursor-pointer shrink-0"
-                        checked={selectedQIds.includes(q.id)}
-                        onChange={(e) => {
-                           if (e.target.checked) setSelectedQIds([...selectedQIds, q.id]);
-                           else setSelectedQIds(selectedQIds.filter(id => id !== q.id));
-                        }}
-                      />
+                  {!forceMask && (
+                    <div className="flex items-center justify-center gap-4 w-full border-b-2 border-gray-100 pb-4 mb-4 relative pl-8 md:pl-10">
+                      {/* 单题勾选框 */}
+                      {editable && (
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10" onClick={(e) => e.stopPropagation()}>
+                          <input 
+                            type="checkbox" 
+                            className="w-5 h-5 rounded-md border-gray-300 text-brand-primary focus:ring-brand-primary cursor-pointer shrink-0"
+                            checked={selectedQIds.includes(q.id)}
+                            onChange={(e) => {
+                               if (e.target.checked) setSelectedQIds([...selectedQIds, q.id]);
+                               else setSelectedQIds(selectedQIds.filter(id => id !== q.id));
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      <div className="bg-[#1e293b] text-white px-6 py-2.5 rounded-2xl shadow-2xl shrink-0 transform -rotate-1 border-2 border-white/10">
+                        <span className="text-xl md:text-2xl font-black italic tracking-tighter">第 {qIdx + 1} 题</span>
+                      </div>
+                      {editable ? (
+                        <input
+                          className="flex-1 min-w-0 text-xl md:text-2xl font-black text-center text-[#1e293b] bg-transparent border-none outline-none hover:bg-gray-50 focus:bg-gray-50 rounded-xl px-4 transition-all"
+                          value={q.title}
+                          onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          placeholder="修改题号/标题..."
+                        />
+                      ) : (
+                        <h3 className="flex-1 min-w-0 text-xl md:text-2xl font-black text-[#1e293b] leading-tight text-center tracking-tight">
+                          {q.title || '题目内容'}
+                        </h3>
+                      )}
+
+                      {/* 状态标识：AI 几何 或 思维导图 */}
+                      <div className="flex items-center gap-2 shrink-0 ml-1">
+                        {q.mindmapTree && (
+                          <div className="p-2 bg-indigo-500 text-white rounded-full shadow-lg shadow-indigo-200 animate-pulse" title="包含互动思维导图">
+                            <Brain className="w-5 h-5" />
+                          </div>
+                        )}
+                        {q.contentImage && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm('确定要删除这道题目吗？')) {
+                                removeQuestion(q.id);
+                              }
+                            }}
+                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all shrink-0"
+                            title="删除题目"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
-
-                  <div className="bg-[#1e293b] text-white px-6 py-2.5 rounded-2xl shadow-2xl shrink-0 transform -rotate-1 border-2 border-white/10">
-                    <span className="text-xl md:text-2xl font-black italic tracking-tighter">第 {qIdx + 1} 题</span>
-                  </div>
-                  {editable ? (
-                    <input
-                      className="flex-1 min-w-0 text-xl md:text-2xl font-black text-center text-[#1e293b] bg-transparent border-none outline-none hover:bg-gray-50 focus:bg-gray-50 rounded-xl px-4 transition-all"
-                      value={q.title}
-                      onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
-                      onClick={(e) => e.stopPropagation()}
-                      placeholder="修改题号/标题..."
-                    />
-                  ) : (
-                    <h3 className="flex-1 min-w-0 text-xl md:text-2xl font-black text-[#1e293b] leading-tight text-center tracking-tight">
-                      {q.title || '题目内容'}
-                    </h3>
-                  )}
-
-                  {/* 删除按钮 */}
-                  {q.contentImage && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm('确定要删除这道题目吗？')) {
-                          removeQuestion(q.id);
-                        }
-                      }}
-                      className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all shrink-0 ml-1"
-                      title="删除题目"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
                 
-                {/* 内容摘要 - 提升字号与对比度 */}
+                {/* 内容摘要 - 缩略图模式下大幅缩小字体并显示更多行 */}
                 {q.content && (
-                  <p className="w-full text-center text-xl md:text-3xl text-[#1e293b] font-black line-clamp-2 md:line-clamp-3 mt-6 px-4 leading-tight tracking-tight">
+                  <p className={cn(
+                    "w-full text-center text-[#1e293b] font-black leading-tight tracking-tight px-4",
+                    forceMask 
+                      ? "text-[12px] line-clamp-6 mt-2 opacity-80" 
+                      : "text-xl md:text-3xl line-clamp-2 md:line-clamp-3 mt-6"
+                  )}>
                     {cleanLatexSymbols(q.content.replace(/\{\{.*?\}\}/g, ' ________ '))
                       .replace(/\n/g, ' ')
                       .replace(/【答案】.*/g, '')

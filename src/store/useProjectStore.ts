@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist, StateStorage, createJSONStorage } from 'zustand/middleware';
 import { get, set, del } from 'idb-keyval';
+import { MindMapNode } from '@/types/ai';
 
 // 自定义 Storage：使用 IndexedDB 绕过 LocalStorage 的 5MB 限制（保护高清图片不抛出 QuotaExceededError）
 const idbStorage: StateStorage = {
@@ -48,6 +49,7 @@ export interface Question {
   diagram_boxes?: [number, number, number, number][]; // [NEW] 题中的插图万分位坐标数组
   diagrams?: string[]; // [NEW] 裁剪后的插图图片流 (Base64) 数组
   answerDiagrams?: string[]; // [NEW] 来自参考池的辅助插图/截图流 (Base64) 数组
+  mindmapTree?: MindMapNode; // [NEW] 交互式思维导图
 }
 
 export interface LayoutConfig {

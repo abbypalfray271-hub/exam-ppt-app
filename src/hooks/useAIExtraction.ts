@@ -33,7 +33,8 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
     offsets: PageOffset[], 
     selectedPageIndices: Set<number>,
     isDeepThinking: boolean,
-    correctedRects?: ExtendedRect[] // [NEW] 接收已经处理过坐标偏移的 Rect
+    correctedRects?: ExtendedRect[], // [NEW] 接收已经处理过坐标偏移的 Rect
+    action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion' // [NEW] 动作分流
   ) => {
     if (isProcessing) return;
 
@@ -46,16 +47,16 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
         alert('请先勾选需要全自动解析的页面。');
         return;
       }
-      await runFullAutoExtraction(Array.from(selectedPageIndices), isDeepThinking);
+      await runFullAutoExtraction(Array.from(selectedPageIndices), isDeepThinking, action);
     } 
     // 情况 B: 手动/半自动框选识别
     else {
-      await runManualBoxExtraction(offsets, isDeepThinking, targetRects);
+      await runManualBoxExtraction(offsets, isDeepThinking, targetRects, action);
     }
   }, [rects, isProcessing, pages]);
 
   // --- 全自动模式 ---
-  async function runFullAutoExtraction(pageIndices: number[], isDeepThinking: boolean) {
+  async function runFullAutoExtraction(pageIndices: number[], isDeepThinking: boolean, action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion') {
     setProcessing(true);
     setParsingFailures([]);
     setTotalItems(pageIndices.length);
@@ -77,7 +78,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
           image: compressedPage
         }];
 
-        const streamResults = await callAIStream(clips, isDeepThinking, `第 ${pageIdx + 1} 页`);
+          const streamResults = await callAIStream(clips, isDeepThinking, `第 ${pageIdx + 1} 页`, action);
         if (streamResults) {
           // 处理模型返回的坐标裁剪
           const processed = await Promise.all(streamResults.map(async (q) => {
@@ -111,7 +112,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   }
 
   // --- 手动框选模式 (核心重构：基于颜色切片) ---
-  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: ExtendedRect[]) {
+  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: ExtendedRect[], action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion') {
     setProcessing(true);
     setParsingFailures([]);
     
@@ -160,7 +161,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
         }
 
         // 2. 调用 AI
-        const streamResults = await callAIStream(clips, isDeepThinking, `题号 ${qIdx}`);
+        const streamResults = await callAIStream(clips, isDeepThinking, `题号 ${qIdx}`, action);
         
         if (streamResults && streamResults.length > 0) {
           const processed = streamResults.map((q, subIdx) => {
@@ -200,7 +201,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   }
 
   // --- SSE 通信核心 ---
-  async function callAIStream(clips: AIClip[], isDeepThinking: boolean, label: string): Promise<AIQuestionResult[] | null> {
+  async function callAIStream(clips: AIClip[], isDeepThinking: boolean, label: string, action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion'): Promise<AIQuestionResult[] | null> {
     const controller = new AbortController();
     const timeoutMs = isDeepThinking ? 300000 : 120000; // 深度思考 300s，普通 120s
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -209,7 +210,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
       const res = await fetch('/api/ai-parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'parseQuestion', clips, isDeepThinking }),
+        body: JSON.stringify({ action, clips, isDeepThinking }),
         signal: controller.signal
       });
 

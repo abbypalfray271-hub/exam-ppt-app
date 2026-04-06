@@ -211,7 +211,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     setSelectedRefPageIndices(next);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = (action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion') => {
     // 关键点：我们在调用 startExtraction 前，需要将 rect 映射到 allPages 的绝对索引
     const examOffsets = getPageOffsets('exam');
     const refOffsets = getPageOffsets('reference');
@@ -228,7 +228,13 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       return { ...r, y: r.y + examTotalHeight };
     });
 
-    startExtraction(combinedOffsets, selectedPageIndices, isDeepThinking, correctedRects);
+    startExtraction(
+      combinedOffsets, 
+      selectedPageIndices, 
+      isDeepThinking, 
+      correctedRects,
+      action
+    );
   };
 
   const handleAddFiles = async (files: FileList, source: 'exam' | 'reference') => {

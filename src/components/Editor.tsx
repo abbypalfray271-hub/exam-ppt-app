@@ -14,7 +14,9 @@ import {
   Zap,
   Sparkles,
   Monitor,
-  MoreHorizontal
+  MoreHorizontal,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -60,6 +62,22 @@ export const Editor = () => {
   // 左侧缩略图栏宽度（可拖拽调整）
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  
+  // 监听浏览器原生全屏状态
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(e => console.error(e));
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+    }
+  };
 
   const handleLeftResize = useCallback((dx: number) => {
     setLeftPanelWidth(prev => Math.max(140, Math.min(600, prev + dx)));
@@ -274,6 +292,20 @@ export const Editor = () => {
           <div className="flex items-center gap-2 md:gap-3 relative">
             {/* PC 端直接显示的功能按钮 */}
             <div className="hidden md:flex items-center gap-3">
+              
+              {/* 大尺寸、高对比度的全屏演示按钮 */}
+              <button 
+                onClick={toggleFullscreen}
+                className="h-11 px-6 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-black text-sm uppercase tracking-widest shadow-[0_8px_20px_-6px_rgba(20,184,166,0.5)] hover:scale-105 transition-all active:scale-95 group flex items-center gap-2 ring-1 ring-white/20"
+              >
+                {isFullscreen ? (
+                  <Minimize className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                ) : (
+                  <Maximize className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                )}
+                <span>{isFullscreen ? '退出全屏' : '全屏演示'}</span>
+              </button>
+
               <button 
                 onClick={() => importProjectJSON()}
                 className="h-11 px-5 rounded-xl bg-orange-500 text-white font-black text-sm uppercase tracking-wider shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] hover:scale-105 transition-all active:scale-95 group flex items-center gap-2"

@@ -9,6 +9,7 @@ export const parseQuestion = async (
   clips: AIClip[],
   onStatus?: (status: string) => void,
   isDeepThinking: boolean = false,
+  action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion', // [NEW] 支持分流
   _retryCount: number = 0
 ): Promise<AIQuestionResult[]> => {
   const model30 = process.env.NEXT_PUBLIC_MODEL_NAME || "gemini-3-flash-preview";
@@ -103,6 +104,35 @@ export const parseQuestion = async (
     }
   ]`;
 
+  const mindMapPrompt = `你是一个顶级的解题思维教练和逻辑学家。你的任务是根据提供的题目素材，生成一份全景式的交互思维导图。
+  
+  [核心使命]
+  你需要将复杂的题目拆解成一套逻辑严密、详细可读的 JSON 树结构。
+  
+  [内容规范]
+  1. 全景覆盖：导图必须包含：[题目核心目标] -> [解题关键件/已知条件] -> [精细化推导步骤] -> [知识点总结/最终结论]。
+  2. 详细文本：每个节点的 label 必须是完整的“教学语言”或“详细推导描述”，绝对禁止使用简短单词。例如使用“第一步：利用勾股定理计算出 AC 的长度为 10”而不是“求 AC”。
+  3. 逻辑分层：通常建议拆解为 2-4 层深度。
+
+  [输出格式锁定]
+  你必须仅输出一个 JSON 数组，其中包含一个对象，该对象必须包含 mindmap_tree 字段。
+  mindmap_tree 的结构如下：{ "label": "题目核心", "children": [ { "label": "子节点1", "children": [...] } ] }
+  
+  [示例]
+  [{
+    "order": 1,
+    "type": "essay",
+    "content": "...",
+    "mindmap_tree": {
+      "label": "题目全景解析",
+      "children": [
+        { "label": "考点：一元二次方程根的判别式", "children": [...] }
+      ]
+    }
+  }]`;
+
+  const selectedPrompt = action === 'generateMindMap' ? mindMapPrompt : prompt;
+
   // 构建多模态消息内容
   const messageContent: any[] = [];
   
@@ -133,14 +163,14 @@ export const parseQuestion = async (
   // 2. 注入提示词
   messageContent.push({
     type: "text",
-    text: `${prompt}
+    text: `${selectedPrompt}
 
 [CRITICAL INSTRUCTION: ATOMIC SPLIT REQUIRED]
 Output ONLY the raw JSON array. 
 IMPORTANT: Every numbered sub-question in the image MUST be a separate element in the array. 
 DO NOT include any preamble or conversational filler.
 Return the result in this exact format:
-[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "" }]
+[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "", "mindmap_tree": null }]
 `
   });
 
@@ -215,7 +245,7 @@ Return the result in this exact format:
     if (_retryCount < 1) {
       console.warn(`[Parse API Retry]: JSON parsing failed (Attempt ${_retryCount + 1}), retrying once...`);
       if (onStatus) onStatus("🔄 识别结构异常，正在进行自我纠错重试...");
-      return parseQuestion(clips, onStatus, isDeepThinking, _retryCount + 1);
+      return parseQuestion(clips, onStatus, isDeepThinking, action, _retryCount + 1);
     }
     console.error(`[Parse API Error after ${_retryCount} retries]:`, error.message);
     throw error;

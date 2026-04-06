@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json();
-        const { action, clips, isDeepThinking } = body;
+        const { action = 'parseQuestion', clips, isDeepThinking } = body;
         
         console.log(`[API-STREAM] Action: ${action} (Clips: ${clips?.length || 0}) (DeepThinking: ${!!isDeepThinking})`);
 
@@ -53,12 +53,13 @@ export async function POST(request: NextRequest) {
           }
         };
 
-        if (action === 'parseQuestion') {
+        if (action === 'parseQuestion' || action === 'generateMindMap') {
           // clips 现在是一个 AIClip[] 数组
           const result = await parseQuestion(
             clips || [], 
             onStatus,
-            !!isDeepThinking
+            !!isDeepThinking,
+            action as any
           );
           send({ type: 'data', data: extractAnalysis(result) });
         } else {

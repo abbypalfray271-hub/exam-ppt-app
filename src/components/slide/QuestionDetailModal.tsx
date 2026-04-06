@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Maximize2, Minimize2, BookOpen, CheckSquare, Zap } from 'lucide-react';
+import { X, Maximize2, Minimize2, BookOpen, CheckSquare, Zap, Brain } from 'lucide-react';
+import { InteractiveMindMap } from './InteractiveMindMap';
 import { cn } from '@/lib/utils';
 import { Question } from '@/store/useProjectStore';
 import { RichExamContent } from '@/components/RichExamContent';
@@ -25,6 +26,7 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
   const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
   const [revealState, setRevealState] = useState<'hidden' | 'answer' | 'analysis'>('hidden');
   const [isEditingContent, setIsEditingContent] = useState(false);
+  const [showMindMap, setShowMindMap] = useState(false); // [NEW]
   const [mounted, setMounted] = useState(false); // SSR 安全：仅客户端渲染 Portal
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   
@@ -156,6 +158,19 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
             题目详情：{expandedQuestion.title}
           </h3>
           <div className="flex items-center gap-2 shrink-0">
+            {expandedQuestion.mindmapTree && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMindMap(true);
+                }}
+                className="flex items-center gap-2 min-h-[44px] px-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 active:scale-95 transition-all"
+                title="查看交互思维导图"
+              >
+                <Brain className="w-5 h-5 animate-pulse" />
+                <span className="hidden sm:inline">思维导图</span>
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -321,6 +336,20 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
           </div>
         </div>
       </motion.div>
+
+      {/* [NEW] 嵌套导图 Portal */}
+      <AnimatePresence>
+        {showMindMap && expandedQuestion.mindmapTree && (
+          <InteractiveMindMap 
+            data={expandedQuestion.mindmapTree} 
+            onClose={() => setShowMindMap(false)} 
+            onUpdate={(newTree) => {
+              // 实时保存修改后的导图到 Store
+              updateQuestion(expandedQuestion.id, { mindmapTree: newTree });
+            }}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>,
     document.body  // 🏆 Portal: 彻底脱离祖先滚动容器的 DOM 树
   );

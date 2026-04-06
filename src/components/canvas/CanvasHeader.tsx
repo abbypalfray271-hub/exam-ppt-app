@@ -1,5 +1,6 @@
-import React from 'react';
-import { X, Presentation, Brain, Zap, Loader2, CheckCircle2, FolderOpen } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Presentation, Brain, Zap, Loader2, CheckCircle2, FolderOpen, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { importProjectJSON } from '@/lib/projectIO';
 
@@ -14,7 +15,7 @@ export interface CanvasHeaderProps {
   setIsDeepThinking: React.Dispatch<React.SetStateAction<boolean>>;
   isProcessing: boolean;
   statusMessage?: string;
-  onConfirm: () => void;
+  onConfirm: (action: 'parseQuestion' | 'generateMindMap') => void;
   onComplete: () => void;
 }
 
@@ -29,8 +30,15 @@ export const CanvasHeader: React.FC<CanvasHeaderProps> = ({
   onConfirm, 
   onComplete 
 }) => {
+  const [showDropdown, setShowDropdown] = useState(false); // [NEW]
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
-    <div className="flex items-center !overflow-x-auto scrollbar-hide px-4 md:px-6 py-4 bg-white border-b z-20 shadow-sm flex-nowrap min-w-0">
+    <div className="flex items-center px-4 md:px-6 py-3 md:py-4 bg-white border-b z-[100] shadow-sm flex-nowrap min-w-0 overflow-x-auto scrollbar-hide touch-pan-x w-full">
       <div className="flex items-center gap-3 md:gap-4 shrink-0 flex-nowrap">
         {onClose && (
           <button 
@@ -115,14 +123,64 @@ export const CanvasHeader: React.FC<CanvasHeaderProps> = ({
             <span className="text-[9px] md:text-sm md:inline">深度思考</span>
           </button>
 
-          <button 
-            onClick={onConfirm} 
-            disabled={isProcessing} 
-            className="flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 h-[52px] md:h-11 px-4 md:px-8 shrink-0 bg-blue-600 text-white font-black uppercase tracking-wider rounded-xl shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:scale-[1.02] hover:bg-blue-700 active:scale-95 disabled:opacity-50 transition-all mx-1 md:mx-2 whitespace-nowrap"
-          >
-            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5" />}
-            <span className="text-[9px] md:text-sm md:inline">识别并解析</span>
-          </button>
+          <div className="relative group/split shrink-0 mx-1 md:mx-2">
+            <div className="flex h-[52px] md:h-11 shadow-[0_8px_20px_-6px_rgba(37,99,235,0.4)] relative">
+              <button 
+                onClick={() => onConfirm('parseQuestion')} 
+                disabled={isProcessing} 
+                className="flex items-center gap-2 px-4 md:px-6 bg-blue-600 text-white font-black uppercase tracking-wider hover:bg-blue-700 active:scale-95 disabled:opacity-50 transition-all border-r border-blue-500/30 rounded-l-xl"
+              >
+                {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5" />}
+                <span className="text-[9px] md:text-sm whitespace-nowrap">识别并解析</span>
+              </button>
+              
+              <div 
+                onClick={() => !isProcessing && setShowDropdown(!showDropdown)}
+                className={cn(
+                  "px-2 md:px-3 bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center justify-center group/arrow relative cursor-pointer rounded-r-xl",
+                  isProcessing && "opacity-50 pointer-events-none"
+                )}
+              >
+                <ChevronDown className={cn("w-4 h-4 transition-transform", showDropdown && "rotate-180")} />
+                
+                {/* 下拉菜单 (全局 Portal 绝对逃脱定位，彻底脱离 CSS 堆叠上下文与 Transform 的魔爪) */}
+                {mounted && createPortal(
+                  <>
+                    {/* 透明防误触与点击外部关闭遮罩层 */}
+                    {showDropdown && (
+                       <div 
+                         className="fixed inset-0 z-[99998] bg-transparent"
+                         onClick={(e) => { e.stopPropagation(); setShowDropdown(false); }}
+                         onTouchStart={(e) => { e.stopPropagation(); setShowDropdown(false); }}
+                       />
+                    )}
+                    <div className={cn(
+                        "fixed top-[80px] right-4 md:right-6 w-60 bg-white/95 backdrop-blur-[20px] rounded-2xl shadow-[0_24px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-200/50 py-3 transition-all z-[99999]",
+                        showDropdown ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-4 pointer-events-none"
+                    )}>
+                      <div className="px-4 py-2 border-b mb-1">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">选择处理模式</p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setShowDropdown(false); onConfirm('generateMindMap'); }}
+                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-teal-50 text-slate-900 transition-colors text-left group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center shrink-0 group-hover:bg-teal-600 group-hover:text-white transition-all">
+                          <Brain className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold">生成互动思维导图</p>
+                          <p className="text-[9px] text-slate-400 font-medium leading-tight">全景逻辑拆解与交互展示</p>
+                        </div>
+                      </button>
+                    </div>
+                  </>,
+                  document.body
+                )}
+              </div>
+            </div>
+          </div>
       </div>
     </div>
   );

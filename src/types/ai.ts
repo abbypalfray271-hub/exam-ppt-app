@@ -20,6 +20,12 @@ export interface ExtendedRect extends Rect {
  * 注意：这是 AI 模型返回的原始 JSON 结构，字段名可能使用 snake_case。
  * 下游在转换为 Question 时需要做字段映射。
  */
+export interface MindMapNode {
+  label: string;
+  children?: MindMapNode[];
+  isExpanded?: boolean; // 运行时状态
+}
+
 export interface AIQuestionResult {
   title?: string;
   content: string;
@@ -30,6 +36,7 @@ export interface AIQuestionResult {
   steps?: string[];
   summary?: string;
   auxiliary_svg?: string;
+  mindmap_tree?: MindMapNode; // [NEW] 用于生成思维导图
 
   // AI 返回的坐标信息 (snake_case: AI 原始输出)
   content_box?: [number, number, number, number];
@@ -102,6 +109,7 @@ export function toQuestion(
     steps: raw.steps,
     summary: raw.summary,
     auxiliary_svg: raw.auxiliary_svg,
+    mindmapTree: raw.mindmap_tree, // [NEW]
     contentBox: raw.content_box || raw.contentBox,
     answer_box: raw.answer_box,
     analysis_box: raw.analysis_box,
