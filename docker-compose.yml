@@ -12,6 +12,7 @@ services:
     restart: always
     ports:
       - "3004:3000"
+    environment:
       - NODE_ENV=production
       # API_KEY 是服务端运行时使用的，必须在此注入
       - API_KEY=sk-6PSePN7C8I36tBHLQ20tqnyVeOgjQGVvVJSOW7LuaXPLJ09A
