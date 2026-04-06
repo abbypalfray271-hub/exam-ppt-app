@@ -144,23 +144,12 @@ export const UploadZone: React.FC = () => {
       <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center min-h-0 z-10 px-4 md:px-0">
         <div className={cn(
           "relative bg-white/40 backdrop-blur-3xl border border-white rounded-[2.5rem] overflow-hidden shadow-[0_32px_80px_-20px_rgba(31,38,135,0.15)] transition-all duration-1000 flex flex-col",
-          !hasContent ? "w-[65%] max-w-md aspect-[3/4]" : "w-full h-full"
+          !hasContent ? "w-[65%] max-w-md aspect-[3/4] landscape:aspect-[4/3] landscape:w-[50%]" : "w-full h-full"
         )}>
           {/* ✨ 极细白边补强 */}
           <div className="absolute inset-0 border border-white/60 rounded-[2.5rem] pointer-events-none" />
 
-          {/* 📟 悬浮 HUD 状态监视器 */}
-          <div className="absolute top-6 left-10 z-40 flex items-center gap-4">
-             <div className="flex items-center gap-2 px-3 py-1 bg-slate-900/5 rounded-full border border-slate-900/10 backdrop-blur-md">
-               <div className={cn("w-2 h-2 rounded-full animate-pulse shadow-sm", isProcessing ? "bg-blue-500" : "bg-emerald-500")} />
-               <span className="text-[9px] font-mono font-bold text-slate-900/60 tracking-[0.2em] uppercase">
-                 SYST_{isProcessing ? 'SCANNING' : 'READY'}
-               </span>
-             </div>
-             <span className="text-[9px] font-mono font-bold text-slate-400 tracking-[0.2em]">
-               CORE_BUFF // {examPages.length} PAGES
-             </span>
-          </div>
+
           {/* 背景/预览大图 */}
           <AnimatePresence mode="wait">
              <motion.div
@@ -179,11 +168,11 @@ export const UploadZone: React.FC = () => {
                  )}
                />
 
-               {/* 页面顶部的格式导引标签 */}
+               {/* 页面顶部的格式导引标签 (黑化增强对比度) */}
                {!hasContent && (
                   <div className="absolute top-10 left-1/2 -translate-x-1/2 z-30 animate-in fade-in zoom-in duration-700">
-                    <div className="px-6 py-2 bg-white/40 backdrop-blur-md rounded-full border border-white/20 shadow-sm">
-                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] whitespace-nowrap">
+                    <div className="px-6 py-2 bg-slate-900 backdrop-blur-md rounded-full border border-white/10 shadow-xl shadow-slate-900/20">
+                      <span className="text-[10px] font-black text-white uppercase tracking-[0.4em] whitespace-nowrap">
                         PDF / 图片 / 拍照
                       </span>
                     </div>
@@ -224,30 +213,30 @@ export const UploadZone: React.FC = () => {
           </AnimatePresence>
 
           {!isProcessing && (
-            <div className="absolute inset-0 flex items-center justify-center gap-8 md:gap-16 z-20">
+            <div className="absolute inset-0 flex items-center justify-center gap-4 md:gap-16 z-20">
                <button 
                  onClick={() => fileInputRef.current?.click()}
-                 className="flex flex-col items-center gap-4 p-8 bg-white border border-slate-200 rounded-[2.5rem] shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12)] hover:scale-105 active:scale-95 transition-all duration-500 group/btn relative overflow-hidden"
+                 className="flex flex-col items-center gap-2 landscape:gap-1 p-4 landscape:p-3 md:p-8 bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12)] hover:scale-105 active:scale-95 transition-all duration-500 group/btn relative overflow-hidden"
                >
                  <div className="absolute inset-0 bg-blue-50 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
-                 <div className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-[0_12px_24px_-5px_rgba(37,99,235,0.4)] relative z-10">
-                    <Plus className="w-8 h-8" strokeWidth={3} />
+                 <div className="w-12 h-12 landscape:w-10 landscape:h-10 md:w-16 md:h-16 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-[0_12px_24px_-5px_rgba(37,99,235,0.4)] relative z-10">
+                    <Plus className="w-6 h-6 landscape:w-5 landscape:h-5 md:w-8 md:h-8" strokeWidth={3} />
                  </div>
                  <div className="text-center relative z-10">
-                   <span className="text-lg font-black text-slate-900 tracking-widest uppercase block">试题添加</span>
+                   <span className="text-sm landscape:text-xs md:text-lg font-black text-slate-900 tracking-widest uppercase block">试题添加</span>
                  </div>
                </button>
 
                <button 
                  onClick={() => refInputRef.current?.click()}
-                 className="flex flex-col items-center gap-4 p-8 bg-white border border-slate-200 rounded-[2.5rem] shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12)] hover:scale-105 active:scale-95 transition-all duration-500 group/btn relative overflow-hidden"
+                 className="flex flex-col items-center gap-2 landscape:gap-1 p-4 landscape:p-3 md:p-8 bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_24px_48px_-12px_rgba(15,23,42,0.12)] hover:scale-105 active:scale-95 transition-all duration-500 group/btn relative overflow-hidden"
                >
                  <div className="absolute inset-0 bg-fuchsia-50 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
-                 <div className="w-16 h-16 bg-fuchsia-600 text-white rounded-full flex items-center justify-center shadow-[0_12px_24px_-5px_rgba(192,38,211,0.4)] relative z-10">
-                    <LayoutGrid className="w-8 h-8" strokeWidth={3} />
+                 <div className="w-12 h-12 landscape:w-10 landscape:h-10 md:w-16 md:h-16 bg-fuchsia-600 text-white rounded-full flex items-center justify-center shadow-[0_12px_24px_-5px_rgba(192,38,211,0.4)] relative z-10">
+                    <LayoutGrid className="w-6 h-6 landscape:w-5 landscape:h-5 md:w-8 md:h-8" strokeWidth={3} />
                  </div>
                  <div className="text-center relative z-10">
-                    <span className="text-lg font-black text-slate-900 tracking-widest uppercase block">补充答案</span>
+                    <span className="text-sm landscape:text-xs md:text-lg font-black text-slate-900 tracking-widest uppercase block">补充答案</span>
                  </div>
                </button>
             </div>
@@ -282,37 +271,32 @@ export const UploadZone: React.FC = () => {
       </div>
 
       {/* 底部全局控制条 (常驻可见) */}
-      <div className="w-full max-w-4xl flex flex-col md:flex-row items-center justify-between px-4 mt-16 z-10 gap-8">
-         <div className="flex items-center gap-4 order-2 md:order-1">
+      <div className="w-full max-w-4xl flex flex-row items-center justify-between px-4 mt-4 landscape:mt-2 md:mt-16 z-10 gap-4">
+         <div className="flex items-center gap-4">
             <button 
               onClick={() => importProjectJSON()}
-              className="h-16 px-10 rounded-full bg-orange-500 text-white font-black text-sm uppercase tracking-[0.2em] shadow-[0_8px_20px_-6px_rgba(249,115,22,0.6)] hover:scale-[1.03] hover:bg-orange-600 transition-all active:scale-95 group shrink-0 flex items-center gap-4"
+              className="h-12 landscape:h-10 md:h-16 px-6 md:px-10 rounded-full bg-orange-500 text-white font-black text-xs md:text-sm uppercase tracking-[0.2em] shadow-[0_8px_20px_-6px_rgba(249,115,22,0.6)] hover:scale-[1.03] hover:bg-orange-600 transition-all active:scale-95 group shrink-0 flex items-center gap-2 md:gap-4"
             >
-              <div className="p-2 bg-white/20 rounded-full text-white">
-                <FolderOpen className="w-5 h-5" />
+              <div className="p-1.5 md:p-2 bg-white/20 rounded-full text-white">
+                <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
               </div>
               <span>读入演稿</span>
             </button>
-            {hasContent && (
-              <div className="hidden lg:flex items-center gap-3 px-6 py-2 bg-slate-900 text-white rounded-full text-[10px] font-mono font-black uppercase tracking-[0.3em] shadow-lg">
-                <div className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
-                DOCK_LIVE
-              </div>
-            )}
+
          </div>
 
          <button 
            disabled={!hasContent || isProcessing}
            onClick={() => setCanvasOpen(true)}
            className={cn(
-             "h-16 px-16 rounded-full font-black text-xl uppercase tracking-[0.3em] transition-all duration-700 flex items-center gap-4 order-1 md:order-2 shadow-xl shadow-blue-500/20 overflow-hidden relative group",
+             "h-12 landscape:h-10 md:h-16 px-8 md:px-16 rounded-full font-black text-base md:text-xl uppercase tracking-[0.3em] transition-all duration-700 flex items-center gap-3 md:gap-4 shadow-xl shadow-blue-500/20 overflow-hidden relative group",
              hasContent 
                ? "bg-blue-600 text-white hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/40" 
                : "bg-slate-200 text-slate-400 cursor-not-allowed"
            )}
          >
            <div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-white/10 to-blue-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-           {isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wand2 className="w-6 h-6" />}
+           {isProcessing ? <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" /> : <Wand2 className="w-5 h-5 md:w-6 md:h-6" />}
            <span className="relative z-10">开始制作</span>
          </button>
       </div>

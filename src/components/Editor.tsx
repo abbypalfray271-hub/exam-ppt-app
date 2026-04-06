@@ -13,7 +13,8 @@ import {
   Trash2,
   Zap,
   Sparkles,
-  Monitor
+  Monitor,
+  MoreHorizontal
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
@@ -58,6 +59,7 @@ export const Editor = () => {
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   // 左侧缩略图栏宽度（可拖拽调整）
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   const handleLeftResize = useCallback((dx: number) => {
     setLeftPanelWidth(prev => Math.max(140, Math.min(600, prev + dx)));
@@ -108,6 +110,15 @@ export const Editor = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [totalSlides]);
 
+  // --- 移动端手单滑动切页逻辑 ---
+  const handleSwipe = (direction: number) => {
+    if (direction > 0) {
+      setCurrentSlideIdx(prev => Math.max(0, prev - 1));
+    } else {
+      setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1));
+    }
+  };
+
   /** 渲染一张幻灯片内容（不含外框） */
   const renderSlideContent = (slide: SlideData, editable: boolean, forceMask: boolean = false) => {
     switch (slide.type) {
@@ -131,7 +142,7 @@ export const Editor = () => {
 
 
   return (
-    <div className="flex flex-1 h-full w-full overflow-hidden bg-gray-50/50 p-2 md:p-4 gap-2 md:gap-3 relative">
+    <div className="flex flex-1 h-full w-full overflow-hidden bg-gray-50/50 p-2 md:p-4 pb-safe gap-2 md:gap-3 relative">
       
       {/* ============================== */}
       {/* 左侧：幻灯片缩略图列表 */}
@@ -245,49 +256,90 @@ export const Editor = () => {
       )}
 
       <div className="flex-1 flex flex-col items-center justify-center relative min-h-0 w-full overflow-hidden">
-        {/* 顶部工具栏 - 高对比度药丸风格 */}
-        <div className="w-full flex items-center justify-between px-4 mb-3">
-          <div className="flex items-center gap-3">
-            <div className="bg-[#1e293b] text-white px-4 py-2 rounded-xl shadow-xl flex items-center gap-3">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-50 bg-white/10 px-1.5 py-0.5 rounded">
+        <div className="w-full flex items-center justify-between px-2 md:px-4 mb-2 md:mb-3">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="bg-[#1e293b] text-white px-3 md:px-4 py-1.5 md:py-2 rounded-xl shadow-xl flex items-center gap-2 md:gap-3">
+              <span className="hidden xs:block text-[10px] font-black uppercase tracking-widest opacity-50 bg-white/10 px-1.5 py-0.5 rounded">
                 MODE
               </span>
-              <span className="text-sm font-black tracking-widest uppercase">
-                {currentSlide.type === 'title' ? '📋 封面页' : `📝 第 ${currentSlideIdx} 组题目`}
+              <span className="text-[10px] md:text-sm font-black tracking-widest uppercase truncate max-w-[80px] md:max-w-none">
+                {currentSlide.type === 'title' ? '📋 封面' : `📝 题目${currentSlideIdx}`}
               </span>
             </div>
-            <div className="bg-white border-2 border-slate-100 px-4 py-2 rounded-xl shadow-sm text-sm font-black text-slate-800">
-               SLIDE {currentSlideIdx + 1} / {totalSlides}
+            <div className="bg-white border-2 border-slate-100 px-3 md:px-4 py-1.5 md:py-2 rounded-xl shadow-sm text-[10px] md:text-sm font-black text-slate-800">
+               {currentSlideIdx + 1} / {totalSlides}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {/* 📂 全局读入演稿备份按钮 (醒目重装修) */}
-            <button 
-              onClick={() => importProjectJSON()}
-              className="h-11 px-5 rounded-xl bg-orange-500 text-white font-black text-sm uppercase tracking-wider shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] hover:scale-105 transition-all active:scale-95 group flex items-center gap-2"
-              title="载入工程"
-            >
-              <FolderOpen className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-              <span>读入演稿</span>
-            </button>
-            
-            {/* 🦄 分式视觉美化按钮 (醒目重装修) */}
-            <button
-              onClick={() => setMathOptimized(!isMathOptimized)}
-              className={cn(
-                "h-11 px-5 rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 active:scale-95 flex items-center gap-2 shadow-lg",
-                isMathOptimized 
-                  ? "bg-blue-600 text-white shadow-blue-500/30 ring-4 ring-blue-500/10" 
-                  : "bg-slate-900 text-white hover:bg-black"
-              )}
-              title={isMathOptimized ? "精修模式已开启：点击还原" : "点击开启公式精修 (将 a/b 转换为标准分式)"}
-            >
-              <Sparkles className={cn("w-4 h-4", isMathOptimized ? "animate-pulse text-yellow-300" : "text-blue-400")} />
-              <span>{isMathOptimized ? "精修中" : "优化显示"}</span>
-            </button>
-            <div className="hidden md:flex items-center gap-3 text-xs font-black text-slate-400 bg-slate-900/5 px-4 py-2 rounded-xl border border-slate-100 uppercase tracking-widest">
+
+          <div className="flex items-center gap-2 md:gap-3 relative">
+            {/* PC 端直接显示的功能按钮 */}
+            <div className="hidden md:flex items-center gap-3">
+              <button 
+                onClick={() => importProjectJSON()}
+                className="h-11 px-5 rounded-xl bg-orange-500 text-white font-black text-sm uppercase tracking-wider shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] hover:scale-105 transition-all active:scale-95 group flex items-center gap-2"
+              >
+                <FolderOpen className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                <span>读入演稿</span>
+              </button>
+              
+              <button
+                onClick={() => setMathOptimized(!isMathOptimized)}
+                className={cn(
+                  "h-11 px-5 rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 active:scale-95 flex items-center gap-2 shadow-lg",
+                  isMathOptimized ? "bg-blue-600 text-white shadow-blue-500/30" : "bg-slate-900 text-white"
+                )}
+              >
+                <Sparkles className={cn("w-4 h-4", isMathOptimized ? "animate-pulse text-yellow-300" : "text-blue-400")} />
+                <span>优化解析</span>
+              </button>
+            </div>
+
+            {/* 移动端收纳菜单 */}
+            <div className="md:hidden">
+              <button 
+                onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+                className="w-10 h-10 flex items-center justify-center bg-white border-2 border-slate-100 rounded-xl text-slate-600 active:scale-90 transition-all"
+              >
+                <MoreHorizontal className="w-6 h-6" />
+              </button>
+              
+              <AnimatePresence>
+                {isMoreMenuOpen && (
+                  <>
+                    <motion.div 
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm"
+                      onClick={() => setIsMoreMenuOpen(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      className="absolute right-0 top-12 z-[101] w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 space-y-1"
+                    >
+                      <button 
+                        onClick={() => { importProjectJSON(); setIsMoreMenuOpen(false); }}
+                        className="w-full px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+                      >
+                        <FolderOpen className="w-4 h-4 text-orange-500" />
+                        读入演稿
+                      </button>
+                      <button 
+                        onClick={() => { setMathOptimized(!isMathOptimized); setIsMoreMenuOpen(false); }}
+                        className="w-full px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+                      >
+                        <Sparkles className={cn("w-4 h-4", isMathOptimized ? "text-blue-500" : "text-slate-400")} />
+                        {isMathOptimized ? "还原显示" : "优化解析"}
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-3 text-xs font-black text-slate-400 bg-slate-900/5 px-4 py-2 rounded-xl border border-slate-100 uppercase tracking-widest">
               <Monitor className="w-4 h-4" />
-              <span>Ready for Presentation · Use Arrow Keys</span>
+              <span>Ready for Presentation</span>
             </div>
           </div>
         </div>
@@ -300,8 +352,15 @@ export const Editor = () => {
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.15 }}
-              className="w-full h-full flex items-center justify-center"
+              transition={{ duration: 0.2 }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.15}
+              onDragEnd={(_, info) => {
+                if (info.offset.x > 80) handleSwipe(1);
+                else if (info.offset.x < -80) handleSwipe(-1);
+              }}
+              className="w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
             >
               {/* 利用 md:aspect-video 确保在电脑端维持 PPT 比例，但在手机端 (竖屏) 则直接撑满全部剩余空间 */}
               <div className="w-full h-full md:max-h-full md:aspect-[16/9] rounded-2xl overflow-hidden flex flex-col shadow-2xl border border-gray-200 bg-white shadow-brand-primary/10">
@@ -313,34 +372,30 @@ export const Editor = () => {
           </AnimatePresence>
         </div>
 
-        {/* 底部导航栏：移动端采用竖向堆叠（翻页器上，按钮下），PC端采用水平分布 */}
-        <div className="w-full flex flex-col md:flex-row items-center justify-between px-2 md:px-4 py-2 md:py-3 gap-3 md:gap-0 shrink-0">
-          {/* 左侧留空，仅 PC 端保持居中平衡 */}
+        {/* 底部导航栏 */}
+        <div className="w-full flex flex-col md:flex-row items-center justify-between px-2 md:px-4 py-2 md:py-3 gap-2 md:gap-0 shrink-0 mb-safe">
           <div className="hidden md:block md:w-[200px] shrink-0" />
           
-          {/* 居中翻页器 */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <button
               onClick={() => setCurrentSlideIdx(prev => Math.max(0, prev - 1))}
               disabled={currentSlideIdx === 0}
-              className="p-2.5 bg-white rounded-full shadow-md border hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-white transition-all active:scale-95"
+              className="p-3 bg-white rounded-full shadow-lg border-2 border-slate-100 hover:bg-slate-50 disabled:opacity-20 disabled:grayscale transition-all active:scale-75"
             >
-              <ChevronLeft className="w-5 h-5 text-gray-600" />
+              <ChevronLeft className="w-6 h-6 text-slate-600" />
             </button>
             
-            {/* 快速跳转圆点 */}
-            <div className="flex items-center gap-1.5 max-w-md overflow-x-auto scrollbar-hide px-2">
-              {slides.map((slide, idx) => (
+            <div className="flex items-center gap-2 max-w-[200px] md:max-w-md overflow-x-auto scrollbar-hide px-4 py-2 bg-slate-100/50 rounded-full">
+              {slides.map((_, idx) => (
                 <button
                   key={idx}
                   onClick={() => setCurrentSlideIdx(idx)}
                   className={cn(
-                    "shrink-0 rounded-full transition-all duration-200",
+                    "shrink-0 rounded-full transition-all duration-300",
                     idx === currentSlideIdx 
-                      ? "w-6 h-2.5 bg-brand-primary" 
-                      : "w-2.5 h-2.5 bg-gray-300 hover:bg-gray-400"
+                      ? "w-8 h-3 bg-blue-600 shadow-md shadow-blue-500/30" 
+                      : "w-3 h-3 bg-slate-300 hover:bg-slate-400"
                   )}
-                  title={getSlideLabel(slide, idx)}
                 />
               ))}
             </div>
@@ -348,31 +403,27 @@ export const Editor = () => {
             <button
               onClick={() => setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1))}
               disabled={currentSlideIdx >= totalSlides - 1}
-              className="p-2.5 bg-white rounded-full shadow-md border hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-white transition-all active:scale-95"
+              className="p-3 bg-white rounded-full shadow-lg border-2 border-slate-100 hover:bg-slate-50 disabled:opacity-20 disabled:grayscale transition-all active:scale-75"
             >
-              <ChevronRight className="w-5 h-5 text-gray-600" />
+              <ChevronRight className="w-6 h-6 text-slate-600" />
             </button>
           </div>
 
-          {/* 右侧操作按钮：移动端铺满，PC 端居右靠齐 */}
-          <div className="flex flex-row flex-nowrap items-center gap-3 w-full md:w-[320px] justify-center md:justify-end shrink-0 pb-4 md:pb-0 pt-1">
+          <div className="flex flex-row items-center gap-3 w-full md:w-[320px] justify-center md:justify-end pb-2 md:pb-0">
             <button
-              onClick={() => {
-                setView('upload');
-                setCanvasOpen(true);
-              }}
-              className="flex-1 min-w-0 h-12 md:h-12 bg-orange-500 text-white rounded-xl font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-[0_8px_20px_-6px_rgba(249,115,22,0.5)] hover:bg-orange-600 hover:scale-[1.02] transition-all active:scale-95 group"
+              onClick={() => { setView('upload'); setCanvasOpen(true); }}
+              className="flex-1 h-12 bg-orange-500 text-white rounded-2xl font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
             >
-              <FileSearch className="w-5 h-5 shrink-0 group-hover:-translate-y-0.5 transition-transform" />
-              <span className="truncate">返回</span>
+              <FileSearch className="w-5 h-5 shrink-0" />
+              <span>返回</span>
             </button>
 
             <button
               onClick={() => exportProjectJSON()}
-              className="flex-1 min-w-0 h-12 md:h-12 bg-gray-900 text-white rounded-xl font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-[0_8px_20px_-6px_rgba(17,24,39,0.5)] hover:bg-black hover:scale-[1.02] transition-all active:scale-95 group"
+              className="flex-1 h-12 bg-slate-900 text-white rounded-2xl font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
             >
-              <Save className="w-5 h-5 shrink-0 group-hover:-translate-y-0.5 transition-transform" />
-              <span className="truncate">存档</span>
+              <Save className="w-5 h-5 shrink-0" />
+              <span>存档</span>
             </button>
           </div>
         </div>

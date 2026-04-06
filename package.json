@@ -1,12 +1,13 @@
 {
   "name": "exam-ppt-app",
-  "version": "2026.04.06-UX.Aurora",
+  "version": "1.1.0-Aurora.20260406.1054",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "release-all": "git push origin main --tags && git push gitee main --tags"
   },
   "dependencies": {
     "@types/katex": "^0.16.8",

@@ -24,10 +24,12 @@ export const AddCard: React.FC<AddCardProps> = ({ onAdd, label = "试题页面" 
   return (
     <div 
       onClick={() => inputRef.current?.click()}
-      className="relative rounded-xl overflow-hidden border-2 border-dashed border-gray-200 aspect-[3/4] cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group shrink-0 w-full hover:border-blue-400 hover:bg-blue-50/30"
+      className="relative rounded-xl overflow-hidden border-2 border-orange-400 bg-orange-50/30 aspect-[3/4] cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group shrink-0 w-full hover:border-orange-500 hover:bg-orange-100/50 shadow-[0_0_15px_rgba(249,115,22,0.1)] hover:shadow-[0_0_25px_rgba(249,115,22,0.2)]"
     >
-      <Plus className="w-8 h-8 text-gray-300 group-hover:text-blue-500" />
-      <span className="text-xs font-black uppercase tracking-widest text-slate-400">{label}</span>
+      <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
+        <Plus className="w-8 h-8 text-orange-600 animate-pulse" strokeWidth={3} />
+      </div>
+      <span className="text-[10px] font-black uppercase tracking-[2px] text-orange-700/70">{label}</span>
       <input type="file" multiple hidden ref={inputRef} onChange={(e) => e.target.files && onAdd(e.target.files)} accept="image/*,application/pdf" />
     </div>
   );
@@ -63,10 +65,10 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({ src, index, active, select
     <button 
       onClick={(e) => { e.stopPropagation(); onSelectToggle(); }}
       className={cn(
-        "absolute bottom-2 right-2 w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-lg active:scale-90",
+        "absolute bottom-2 right-2 w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90",
         selected 
-          ? "bg-blue-600 text-white ring-4 ring-blue-500/30" 
-          : "bg-white/90 text-gray-300 hover:text-blue-500 border border-gray-100"
+          ? "bg-blue-600 text-white ring-4 ring-blue-500/30 shadow-[0_4px_12px_rgba(37,99,235,0.4)]" 
+          : "bg-white/95 text-slate-400 hover:text-blue-500 border border-slate-300 shadow-sm"
       )}
     >
       {selected ? <CheckSquare className="w-5 h-5 fill-current" /> : <Square className="w-5 h-5" />}

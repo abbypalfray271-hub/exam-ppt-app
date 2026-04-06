@@ -70,3 +70,39 @@ body {
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* 移动端专用平滑过渡动画：用于 Tab 切换与面板展开 */
+.mobile-transition-all {
+  transition: all 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.mobile-fade-in {
+  animation: mobileFadeIn 0.3s ease-out forwards;
+}
+
+.mobile-slide-up {
+  animation: mobileSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes mobileFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mobileSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 禁用 iOS 图片/链接长按菜单 */
+.no-callout {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}

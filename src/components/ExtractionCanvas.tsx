@@ -52,11 +52,13 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const refImgRefs = useRef<(HTMLImageElement | null)[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastPinchDistanceRef = useRef<number | null>(null); // 双指初始距离
 
   // === State ===
   const [rects, setRects] = useState<ExtendedRect[]>([]);
   const [drawingRect, setDrawingRect] = useState<(Partial<ExtendedRect> & { source: 'exam' | 'reference' }) | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isInteracting, setIsInteracting] = useState(false); // 交互锁定状态
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   
@@ -73,6 +75,26 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const [activeQIdx, setActiveQIdx] = useState(1);
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const [isRightOpen, setIsRightOpen] = useState(true);
+  const [mobileTab, setMobileTab] = useState<'exam' | 'canvas' | 'ref'>('canvas');
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 视口监听：判断是否为移动端
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setIsLeftOpen(false);
+        setIsRightOpen(false);
+      } else {
+        setIsLeftOpen(true);
+        setIsRightOpen(true);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 客户端挂载后同步真实视口宽度
   useEffect(() => {
@@ -256,7 +278,13 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
     if (!container) return;
 
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch(e) {}
+    try { 
+      e.currentTarget.setPointerCapture(e.pointerId); 
+      // 阻止移动端默认行为（如下拉刷新、长按菜单）
+      if (e.pointerType === 'touch') {
+        (e.nativeEvent as any).preventDefault?.();
+      }
+    } catch(e) {}
     
     const cr = container.getBoundingClientRect();
     const currentZoom = source === 'exam' ? zoom : 1;
@@ -271,6 +299,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     setDrawingRect(newRect);
     drawingRectRef.current = newRect;
     setIsDrawing(true);
+    setIsInteracting(true); // 锁定滚动
     interactionRef.current = 'drawing';
   };
 
@@ -350,40 +379,125 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       setDrawingRect(null);
       drawingRectRef.current = null;
       setIsDrawing(false);
+      setIsInteracting(false); // 解锁滚动
       setResizeHandle(null);
     };
 
     window.addEventListener('pointermove', handleMouseMove);
     window.addEventListener('pointerup', handleMouseUp);
+
+    // 🏆 \双重锁定：原生事件拦截「被动监听」，确保 e.preventDefault 生效
+    const preventScroll = (e: TouchEvent) => {
+      // 🦄 自研双指缩放核心算法
+      if (e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+
+        if (lastPinchDistanceRef.current === null) {
+          lastPinchDistanceRef.current = dist;
+        } else {
+          const delta = dist - lastPinchDistanceRef.current;
+          // 灵敏度系数：0.005 是移动端手感较为平滑的比例
+          const sens = 0.005;
+          setZoom(prev => Math.max(0.5, Math.min(prev + delta * sens, 2.5)));
+          lastPinchDistanceRef.current = dist;
+        }
+
+        // 进入缩放行为后，强制中断正在产生的绘图/移动
+        if (interactionRef.current !== 'none') {
+            interactionRef.current = 'none';
+            setDrawingRect(null);
+            setIsDrawing(false);
+            setIsInteracting(false);
+        }
+        
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
+      // 单指逻辑重置缓存
+      if (e.touches.length < 2) {
+        lastPinchDistanceRef.current = null;
+        
+        // 🚀 核心优化：如果没有选中绘图工具且没有正在进行的拉伸/移动，放行单指滑动
+        if (!activeDrawMode && interactionRef.current === 'none') {
+            return; 
+        }
+      }
+
+      if (interactionRef.current !== 'none') {
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    const examContainer = examContainerRef.current;
+    const refContainer = refContainerRef.current;
+
+    if (examContainer) {
+      examContainer.addEventListener('touchstart', preventScroll as any, { passive: false });
+      examContainer.addEventListener('touchmove', preventScroll as any, { passive: false });
+    }
+    if (refContainer) {
+      refContainer.addEventListener('touchstart', preventScroll as any, { passive: false });
+      refContainer.addEventListener('touchmove', preventScroll as any, { passive: false });
+    }
+
     return () => {
       window.removeEventListener('pointermove', handleMouseMove);
       window.removeEventListener('pointerup', handleMouseUp);
+      if (examContainer) {
+        examContainer.removeEventListener('touchstart', preventScroll as any);
+        examContainer.removeEventListener('touchmove', preventScroll as any);
+      }
+      if (refContainer) {
+        refContainer.removeEventListener('touchstart', preventScroll as any);
+        refContainer.removeEventListener('touchmove', preventScroll as any);
+      }
     };
   // 依赖项精简：rects/activeQIdx 通过 Ref 读取，initialRectRef 是稳定 Ref 对象
   }, [zoom, selectedId, resizeHandle]);
 
-  const startMoving = (e: React.PointerEvent, id: string) => {
+  const startMoving = (e: React.PointerEvent, id: string, source: 'exam' | 'reference') => {
     e.stopPropagation();
     if (isProcessing) return;
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
+    
+    // 核心修复：捕获指针至主容器，并禁用系统手势干扰
+    const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
+    try { 
+      if (container) container.setPointerCapture(e.pointerId); 
+      if (e.pointerType === 'touch') (e.nativeEvent as any).preventDefault?.();
+    } catch(ex) {}
+
     setSelectedId(id);
     if (rect.qIdx) setActiveQIdx(rect.qIdx);
     interactionRef.current = 'moving';
+    setIsInteracting(true); // 锁定滚动
     startPosRef.current = { x: e.clientX, y: e.clientY };
-    initialRectRef.current = { ...rect };
+    initialRectRef.current = { ...rect, source };
   };
 
-  const startResizing = (e: React.PointerEvent, id: string, handle: string) => {
+  const startResizing = (e: React.PointerEvent, id: string, handle: string, source: 'exam' | 'reference') => {
     e.stopPropagation();
     if (isProcessing) return;
     const rect = rects.find(r => r.id === id);
     if (!rect) return;
+
+    // 核心修复：捕获指针至主容器，并禁用系统手势干扰
+    const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
+    try { 
+      if (container) container.setPointerCapture(e.pointerId); 
+      if (e.pointerType === 'touch') (e.nativeEvent as any).preventDefault?.();
+    } catch(ex) {}
+
     setSelectedId(id);
     setResizeHandle(handle);
     interactionRef.current = 'resizing';
+    setIsInteracting(true); // 锁定滚动
     startPosRef.current = { x: e.clientX, y: e.clientY };
-    initialRectRef.current = { ...rect };
+    initialRectRef.current = { ...rect, source };
   };
 
 
@@ -405,20 +519,70 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
         isDeepThinking={isDeepThinking}
         setIsDeepThinking={setIsDeepThinking}
         isProcessing={isProcessing}
+        statusMessage={progressLabel}
         onConfirm={handleConfirm}
         onComplete={onComplete}
       />
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：页面概览 (含可折叠侧边栏外壳) */}
-        <div className="bg-white flex flex-col relative shrink-0 transition-[width] duration-300 ease-in-out" style={{ width: isLeftOpen ? sidebarWidth : 0 }}>
-          {/* 抽出把手悬浮按钮 (醒目重装修) */}
+      {/* 移动端专属 Tab 切换器 */}
+      {isMobile && (
+        <div className="flex bg-white border-b px-2 py-1.5 gap-1 shrink-0 z-[100] shadow-md overflow-x-auto scrollbar-hide sticky top-0">
           <button 
-            onClick={() => setIsLeftOpen(!isLeftOpen)}
-            className="absolute top-1/2 -right-4 -translate-y-1/2 w-5 h-24 bg-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.3)] flex items-center justify-center rounded-r-xl z-[60] text-white cursor-pointer hover:bg-black hover:w-6 transition-all group"
+            onClick={() => { setMobileTab('exam'); setIsLeftOpen(true); setIsRightOpen(false); }}
+            className={cn(
+              "flex-1 min-w-[80px] py-2.5 rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 touch-manipulation",
+              mobileTab === 'exam' ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-slate-500 hover:bg-slate-50"
+            )}
           >
-            {isLeftOpen ? <ChevronLeft strokeWidth={4} className="w-4 h-4" /> : <ChevronRight strokeWidth={4} className="w-4 h-4" />}
+            <LayoutList className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tight">试卷清单</span>
           </button>
+          <button 
+            onClick={() => { setMobileTab('canvas'); setIsLeftOpen(false); setIsRightOpen(false); }}
+            className={cn(
+              "flex-1 min-w-[80px] py-2.5 rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 touch-manipulation",
+              mobileTab === 'canvas' ? "bg-slate-900 text-white shadow-lg shadow-slate-200" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Presentation className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tight">画板选区</span>
+          </button>
+          <button 
+            onClick={() => { setMobileTab('ref'); setIsLeftOpen(false); setIsRightOpen(true); }}
+            className={cn(
+              "flex-1 min-w-[80px] py-2.5 rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95 touch-manipulation",
+              mobileTab === 'ref' ? "bg-rose-500 text-white shadow-lg shadow-rose-200" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <ImageIcon className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tight">答案参考</span>
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 flex overflow-hidden">
+        <div 
+          className={cn(
+            "bg-white flex flex-col relative shrink-0 transition-all duration-300 ease-in-out z-[90]", 
+            isMobile ? "fixed inset-y-0 left-0 shadow-2xl" : "relative",
+            isMobile && !isLeftOpen && "pointer-events-none"
+          )} 
+          style={{ width: isLeftOpen ? (isMobile ? '85%' : sidebarWidth) : 0 }}
+        >
+          {/* 抽出把手悬浮按钮 (手机端隐藏，改用 Tab 切换) */}
+          {!isMobile && (
+            <button 
+              onClick={() => setIsLeftOpen(!isLeftOpen)}
+              className="absolute top-1/2 -right-4 -translate-y-1/2 w-5 h-24 bg-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.3)] flex items-center justify-center rounded-r-xl z-[60] text-white cursor-pointer hover:bg-black hover:w-6 transition-all group"
+            >
+              {isLeftOpen ? <ChevronLeft strokeWidth={4} className="w-4 h-4" /> : <ChevronRight strokeWidth={4} className="w-4 h-4" />}
+            </button>
+          )}
+
+          {/* 移动端点击遮罩 */}
+          {isMobile && isLeftOpen && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[-1]" onClick={() => { setIsLeftOpen(false); setMobileTab('canvas'); }} />
+          )}
 
           {/* 真实可见内容区域容器 */}
           <div className={cn("w-full h-full border-r overflow-hidden flex flex-col transition-opacity duration-300", !isLeftOpen && "opacity-0")} style={{ width: isLeftOpen ? '100%' : sidebarWidth }}>
@@ -484,8 +648,8 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
           </div>
           </div>
           
-          {/* Sidebar Resizer */}
-          {isLeftOpen && (
+          {/* Sidebar Resizer (移动端隐藏) */}
+          {!isMobile && isLeftOpen && (
             <div 
               className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors z-50"
               onPointerDown={() => interactionRef.current = 'resizing-sidebar'}
@@ -494,38 +658,58 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
         </div>
 
         {/* 中间：试卷主画布 */}
-        <div ref={examScrollRef} className="flex-1 overflow-auto bg-gray-100/30 p-8 scroll-smooth relative">
+        <div ref={examScrollRef} className={cn("flex-1 bg-gray-100/30 p-8 scroll-smooth relative overflow-x-auto", isInteracting ? "overflow-y-hidden" : "overflow-y-auto")}>
            <div className="mx-auto" style={{ width: `${zoom * 100}%` }}>
               <div 
                 ref={examContainerRef} 
-                className={cn("relative shadow-2xl bg-white flex flex-col origin-top overflow-hidden rounded-sm", isProcessing ? "opacity-40" : "cursor-crosshair")} 
+                className={cn("relative shadow-2xl bg-white flex flex-col origin-top overflow-hidden rounded-sm touch-pinch-zoom no-callout", isProcessing ? "opacity-40" : "cursor-crosshair")} 
                 onPointerDown={(e) => startDrawing(e, 'exam')}
               >
                 {examPages.map((page, idx) => (
-                  <img key={`img-exam-${idx}`} ref={el => { examImgRefs.current[idx] = el; }} src={page} className="block w-full select-none" onLoad={() => setImagesLoaded(prev => prev + 1)} />
+                  <img 
+                    key={`img-exam-${idx}`} 
+                    ref={el => { examImgRefs.current[idx] = el; }} 
+                    src={page} 
+                    className="block w-full select-none pointer-events-none touch-none no-callout" 
+                    draggable={false}
+                    onLoad={() => setImagesLoaded(prev => prev + 1)} 
+                  />
                 ))}
-                <RectsLayer rects={rects.filter(r => r.source === 'exam')} zoom={zoom} selectedId={selectedId} startMoving={startMoving} startResizing={startResizing} onRemove={(id: string) => setRects(p => p.filter(x => x.id !== id))} />
+                <RectsLayer rects={rects.filter(r => r.source === 'exam')} zoom={zoom} selectedId={selectedId} activeHandle={resizeHandle} startMoving={(e, id) => startMoving(e, id, 'exam')} startResizing={(e, id, h) => startResizing(e, id, h, 'exam')} onRemove={(id: string) => setRects(p => p.filter(x => x.id !== id))} />
                 {isDrawing && drawingRect?.source === 'exam' && <DrawingPreview rect={drawingRect} zoom={zoom} />}
               </div>
            </div>
         </div>
 
         {/* 右侧：答案池/参考库 (含可折叠侧边栏外壳) */}
-        <div className="flex flex-col relative shrink-0 transition-[width] duration-300 ease-in-out" style={{ width: isRightOpen ? refPoolWidth : 0 }}>
-          {/* 抽入把手悬浮按钮 (醒目重装修) */}
-          <button 
-            onClick={() => setIsRightOpen(!isRightOpen)}
-            className="absolute top-1/2 -left-4 -translate-y-1/2 w-5 h-24 bg-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.3)] flex items-center justify-center rounded-l-xl z-[60] text-white cursor-pointer hover:bg-black hover:-left-5 hover:w-6 transition-all group"
-          >
-            {isRightOpen ? <ChevronRight strokeWidth={4} className="w-4 h-4" /> : <ChevronLeft strokeWidth={4} className="w-4 h-4" />}
-          </button>
+        <div 
+          className={cn(
+            "flex flex-col relative shrink-0 transition-all duration-300 ease-in-out z-[90]",
+            isMobile ? "fixed inset-y-0 right-0 shadow-2xl" : "relative",
+            isMobile && !isRightOpen && "pointer-events-none"
+          )} 
+          style={{ width: isRightOpen ? (isMobile ? '85%' : refPoolWidth) : 0 }}
+        >
+          {/* 抽入把手悬浮按钮 (手机端隐藏) */}
+          {!isMobile && (
+            <button 
+              onClick={() => setIsRightOpen(!isRightOpen)}
+              className="absolute top-1/2 -left-4 -translate-y-1/2 w-5 h-24 bg-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.3)] flex items-center justify-center rounded-l-xl z-[60] text-white cursor-pointer hover:bg-black hover:-left-5 hover:w-6 transition-all group"
+            >
+              {isRightOpen ? <ChevronRight strokeWidth={4} className="w-4 h-4" /> : <ChevronLeft strokeWidth={4} className="w-4 h-4" />}
+            </button>
+          )}
+
+          {/* 移动端点击遮罩 */}
+          {isMobile && isRightOpen && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[-1]" onClick={() => { setIsRightOpen(false); setMobileTab('canvas'); }} />
+          )}
 
           {/* 真实可见内容容器 */}
           <div className={cn("w-full h-full bg-white border-l shadow-[-10px_0_30px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col transition-opacity duration-300", !isRightOpen && "opacity-0")} style={{ width: isRightOpen ? '100%' : refPoolWidth }}>
            <div className="px-4 py-4 bg-gray-50/50 border-b flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="px-2.5 py-1 bg-slate-900 text-white text-xs font-black rounded uppercase tracking-widest shadow-sm">Ref Pool</div>
                   <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">答案参考池</h4>
                 </div>
                 <div className="text-sm font-black text-rose-500">已选 {selectedRefPageIndices.size} 页</div>
@@ -591,7 +775,15 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                       >
                          {selectedRefPageIndices.has(idx) ? <CheckSquare className="w-6 h-6 fill-current" /> : <Square className="w-6 h-6" />}
                       </button>
-                      <img ref={el => { refImgRefs.current[idx] = el; }} src={page} className={cn("block w-full select-none mb-4 border-b last:border-0", selectedRefPageIndices.has(idx) && "opacity-80 mix-blend-multiply border-blue-500 border-2")} />
+                      <img 
+                        ref={el => { refImgRefs.current[idx] = el; }} 
+                        src={page} 
+                        className={cn(
+                          "block w-full select-none mb-4 border-b last:border-0 pointer-events-none touch-none no-callout", 
+                          selectedRefPageIndices.has(idx) && "opacity-80 mix-blend-multiply border-blue-500 border-2"
+                        )} 
+                        draggable={false}
+                      />
                       <button 
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); handlePageDelete(idx, 'reference'); }}
@@ -602,7 +794,15 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                       </button>
                     </div>
                   ))}
-                  <RectsLayer rects={rects.filter(r => r.source === 'reference')} zoom={1} selectedId={selectedId} startMoving={startMoving} startResizing={startResizing} onRemove={(id: string) => setRects(p => p.filter(x => x.id !== id))} />
+                  <RectsLayer 
+                    rects={rects.filter(r => r.source === 'reference')} 
+                    zoom={1} 
+                    selectedId={selectedId}
+                    activeHandle={resizeHandle}
+                    startMoving={(e, id) => startMoving(e, id, 'reference')} 
+                    startResizing={(e, id, h) => startResizing(e, id, h, 'reference')} 
+                    onRemove={(id: string) => setRects(p => p.filter(x => x.id !== id))} 
+                  />
                   {isDrawing && drawingRect?.source === 'reference' && <DrawingPreview rect={drawingRect} zoom={1} />}
                 </div>
                 {/* 答案页面追加 */}
@@ -613,8 +813,8 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
            </div>
           </div>
 
-          {/* 右侧：分栏调节条 (移入容器) */}
-          {isRightOpen && (
+          {/* 右侧：分栏调节条 (移动端隐藏) */}
+          {!isMobile && isRightOpen && (
             <div 
               className="absolute left-0 top-0 bottom-0 w-1.5 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors z-[60] shadow-[0_0_10px_rgba(0,0,0,0.05)]"
               onPointerDown={() => interactionRef.current = 'resizing-refpool'}

@@ -25,6 +25,10 @@ export default function Home() {
   } = useProjectStore();
   const hasQuestions = questions.length > 0;
 
+  // SSR 安全：等待客户端挂载完成后再渲染，防止 Zustand 持久化状态导致的 Hydration 不匹配
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   // 每次切回 upload 视图时递增 key，防止 AnimatePresence 的 key 冲突
   // 导致 framer-motion 将新进入的组件误判为正在退出的旧组件，从而禁用 pointer-events
   const uploadKeyRef = useRef(0);
@@ -33,6 +37,11 @@ export default function Home() {
       uploadKeyRef.current += 1;
     }
   }, [currentView]);
+
+  // 客户端挂载前显示空白骨架，避免 SSR/Client 状态差异
+  if (!mounted) {
+    return <main className="h-[100dvh] bg-[#F8FAFC]" />;
+  }
 
   return (
     <main className="h-[100dvh] bg-[#F8FAFC] overflow-hidden flex flex-col relative">
@@ -45,9 +54,9 @@ export default function Home() {
           <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/30">
             <Presentation className="text-white w-6 h-6" />
           </div>
-          <span className="text-xl font-black tracking-tight">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500">Ai</span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 ml-1.5">试题演稿制作</span>
+          <span className="text-xl font-black tracking-tight flex items-center gap-2">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">试题演稿制作</span>
+            <span className="px-2 py-0.5 text-[10px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white rounded-lg shadow-sm uppercase tracking-wider font-extrabold transform -skew-x-6">Pro</span>
           </span>
         </div>
         

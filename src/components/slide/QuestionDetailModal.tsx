@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Maximize2, Minimize2, BookOpen, CheckSquare, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -24,8 +25,73 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
   const [isDetailFullScreen, setIsDetailFullScreen] = useState(false);
   const [revealState, setRevealState] = useState<'hidden' | 'answer' | 'analysis'>('hidden');
   const [isEditingContent, setIsEditingContent] = useState(false);
+  const [mounted, setMounted] = useState(false); // SSR 安全：仅客户端渲染 Portal
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  
+  // 🛡️ iOS Safari 橡皮筋回弹拦截：当滚动到顶部/底部边界时，阻止触控默认行为
+  React.useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    
+    const handleTouchMove = (e: TouchEvent) => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const atTop = scrollTop <= 0;
+      const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+      
+      // 判断滑动方向
+      const touch = e.touches[0];
+      const startY = (el as any).__startY ?? touch.clientY;
+      const deltaY = touch.clientY - startY;
+      
+      // 在顶部继续往下拉 或 在底部继续往上推 → 拦截
+      if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+    
+    const handleTouchStart = (e: TouchEvent) => {
+      (el as any).__startY = e.touches[0].clientY;
+    };
+    
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, []);
+  
+  // 🏆 iOS Safari 专用：position:fixed 锁定背景滚动（overflow:hidden 在 iOS 上无效）
+  React.useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const html = document.documentElement;
+    
+    // 保存原始样式
+    const originalBodyStyle = body.style.cssText;
+    const originalHtmlStyle = html.style.cssText;
+    
+    // 强制锁定：将 body 钉死在当前位置
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
+    
+    return () => {
+      // 还原：恢复原始样式并跳回原来的滚动位置
+      body.style.cssText = originalBodyStyle;
+      html.style.cssText = originalHtmlStyle;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
 
-  if (!expandedQuestion) return null;
+  // SSR 安全检测：确保 document.body 存在后才渲染 Portal
+  React.useEffect(() => setMounted(true), []);
+
+  if (!expandedQuestion || !mounted) return null;
 
   const fullContent = expandedQuestion.content || '';
   // 健壮的分割逻辑：支持 【答案】 和 【解析】 的多级分割
@@ -51,19 +117,20 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
     analysisPart = `\n\n【解析】\n${expandedQuestion.analysis}`;
   }
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className={cn(
-        "fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-all duration-300",
-        isDetailFullScreen ? "p-0" : "p-8"
+        "fixed inset-0 z-[100] flex justify-center bg-black/60 backdrop-blur-sm transition-all duration-300 touch-none overscroll-none",
+        isDetailFullScreen ? "p-0 items-stretch" : "items-start pt-[max(env(safe-area-inset-top,0px),2.5rem)] px-2 md:items-center md:pt-0 md:p-8"
       )}
+      onTouchMove={(e) => e.preventDefault()}
       onClick={() => {
         setExpandedQuestion(null);
         setIsDetailFullScreen(false);
-      }} // 点击遮罩层关闭
+      }}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0, y: 20 }}
@@ -71,21 +138,21 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
         exit={{ scale: 0.95, opacity: 0, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
         className={cn(
-          "relative bg-white shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ease-in-out",
+          "relative bg-white shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ease-in-out touch-auto",
           isDetailFullScreen 
             ? "w-screen h-screen rounded-none" 
             : "max-w-5xl w-full max-h-[90vh] rounded-2xl"
         )}
-        style={isDetailFullScreen ? { paddingTop: 'max(56px, env(safe-area-inset-top, 56px))' } : undefined}
         onClick={(e) => {
           e.stopPropagation();
-          // 3-state cycle: hidden → answer → analysis → hidden
+          // 🛡️ 立即解除焦点，防止 iOS 键盘弹出
+          (document.activeElement as HTMLElement)?.blur();
           setRevealState(prev => prev === 'hidden' ? 'answer' : prev === 'answer' ? 'analysis' : 'hidden');
-        }} // 点击弹窗内部空白区，触发 3 阶段切换
+        }}
       >
         {/* 弹窗头部栏 */}
-        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-gray-50/50 gap-2">
-          <h3 className="text-base md:text-lg font-black text-gray-800 tracking-tight flex-1 truncate">
+        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-gray-100 bg-white gap-2 shrink-0 z-50">
+          <h3 className="text-base md:text-xl font-black text-slate-800 tracking-tight flex-1 truncate">
             题目详情：{expandedQuestion.title}
           </h3>
           <div className="flex items-center gap-2 shrink-0">
@@ -94,29 +161,27 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
                 e.stopPropagation();
                 setIsDetailFullScreen(!isDetailFullScreen);
               }}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-primary text-white rounded-xl font-black text-sm shadow-lg shadow-brand-primary/20 hover:bg-brand-primary/90 active:scale-95 transition-all"
+              className="flex items-center gap-2 min-h-[44px] px-4 bg-brand-primary text-white rounded-xl font-black text-sm shadow-lg shadow-brand-primary/20 hover:bg-brand-primary/90 active:scale-95 transition-all"
               title={isDetailFullScreen ? "还原窗口" : "全屏显示"}
             >
-              {isDetailFullScreen ? (
-                <><Minimize2 className="w-5 h-5" /> 缩小</>
-              ) : (
-                <><Maximize2 className="w-5 h-5" /> 全屏</>
-              )}
+              {isDetailFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+              <span className="hidden sm:inline">{isDetailFullScreen ? "还原" : "全屏"}</span>
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setExpandedQuestion(null);
               }}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl font-black text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 transition-all"
+              className="flex items-center gap-2 min-h-[44px] px-4 bg-red-500 text-white rounded-xl font-black text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 transition-all"
             >
-              <X className="w-5 h-5" /> 关闭
+              <X className="w-5 h-5" />
+              <span className="hidden sm:inline">关闭</span>
             </button>
           </div>
         </div>
         
-        {/* 图文混合展示区 (可滚动) */}
-        <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc]">
+        {/* 图文混合展示区 (可滚动 + 动能隔离) */}
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-6 bg-[#f8fafc] overscroll-contain">
           <div className="w-full flex flex-col gap-2">
             <div className="flex items-center justify-between ml-1 text-gray-500 text-sm font-semibold">
               <div className="flex items-center gap-2">
@@ -256,6 +321,7 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
           </div>
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body  // 🏆 Portal: 彻底脱离祖先滚动容器的 DOM 树
   );
 };
