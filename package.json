@@ -1,6 +1,6 @@
 {
   "name": "exam-ppt-app",
-  "version": "1.2.0-Aurora.20260406.2000",
+  "version": "1.2.1-Aurora.20260406.2100",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",

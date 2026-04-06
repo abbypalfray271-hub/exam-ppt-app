@@ -63,6 +63,9 @@ export const Editor = () => {
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   
+  // 伪全屏状态 (应用内的 CSS 放大与遮罩，为了兼容 iOS)
+  const [isCSSFullscreen, setIsCSSFullscreen] = useState(false);
+  
   // 监听浏览器原生全屏状态
   const [isFullscreen, setIsFullscreen] = useState(false);
   useEffect(() => {
@@ -296,7 +299,7 @@ export const Editor = () => {
               {/* 大尺寸、高对比度的全屏演示按钮 */}
               <button 
                 onClick={toggleFullscreen}
-                className="h-11 px-6 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-black text-sm uppercase tracking-widest shadow-[0_8px_20px_-6px_rgba(20,184,166,0.5)] hover:scale-105 transition-all active:scale-95 group flex items-center gap-2 ring-1 ring-white/20"
+                className="hidden lg:flex h-11 px-6 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-black text-sm uppercase tracking-widest shadow-[0_8px_20px_-6px_rgba(20,184,166,0.5)] hover:scale-105 transition-all active:scale-95 group items-center gap-2 ring-1 ring-white/20"
               >
                 {isFullscreen ? (
                   <Minimize className="w-5 h-5 group-hover:scale-110 transition-transform" />
@@ -317,7 +320,7 @@ export const Editor = () => {
               <button
                 onClick={() => setMathOptimized(!isMathOptimized)}
                 className={cn(
-                  "h-11 px-5 rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 active:scale-95 flex items-center gap-2 shadow-lg",
+                  "hidden lg:flex h-11 px-5 rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 active:scale-95 items-center gap-2 shadow-lg",
                   isMathOptimized ? "bg-blue-600 text-white shadow-blue-500/30" : "bg-slate-900 text-white"
                 )}
               >
@@ -350,6 +353,13 @@ export const Editor = () => {
                       className="absolute right-0 top-12 z-[101] w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 space-y-1"
                     >
                       <button 
+                        onClick={() => { setIsCSSFullscreen(true); setIsMoreMenuOpen(false); }}
+                        className="w-full px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black text-teal-700 hover:bg-teal-50 active:bg-teal-100 border-b border-slate-100"
+                      >
+                        <Maximize className="w-4 h-4 text-teal-500" />
+                        沉浸演示模式
+                      </button>
+                      <button 
                         onClick={() => { importProjectJSON(); setIsMoreMenuOpen(false); }}
                         className="w-full px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100"
                       >
@@ -376,8 +386,21 @@ export const Editor = () => {
           </div>
         </div>
 
-        {/* 主幻灯片显示区：完全占满剩余空间 */}
-        <div className="flex-1 w-full flex items-center justify-center px-4 overflow-hidden relative">
+        {/* 主幻灯片显示区：完全占满剩余空间 (含 CSS 应用级全屏覆写逻辑) */}
+        <div className={cn(
+          isCSSFullscreen
+            ? "fixed inset-0 z-[99999] bg-slate-950 p-3 pt-[env(safe-area-inset-top,40px)] pb-24 flex items-center justify-center transition-all"
+            : "flex-1 w-full flex items-center justify-center px-4 overflow-hidden relative"
+        )}>
+          {isCSSFullscreen && (
+            <button 
+              onClick={() => setIsCSSFullscreen(false)} 
+              className="absolute top-[env(safe-area-inset-top,16px)] right-4 z-[100000] w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white backdrop-blur-md transition-all active:scale-90"
+            >
+              <Minimize className="w-5 h-5" />
+            </button>
+          )}
+
           <AnimatePresence mode="wait">
             <motion.div
               key={currentSlideIdx}
@@ -402,9 +425,30 @@ export const Editor = () => {
               </div>
             </motion.div>
           </AnimatePresence>
+
+          {/* 全屏模式下的纯净底部导航 */}
+          {isCSSFullscreen && (
+            <div className="absolute bottom-[env(safe-area-inset-bottom,24px)] left-1/2 -translate-x-1/2 flex items-center gap-8 bg-white/10 backdrop-blur-2xl px-8 py-3 rounded-3xl border border-white/20 shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-[100000]">
+               <button
+                 onClick={() => setCurrentSlideIdx(prev => Math.max(0, prev - 1))}
+                 disabled={currentSlideIdx === 0}
+                 className="text-white disabled:opacity-20 active:scale-75 transition-all p-2 bg-white/5 rounded-full"
+               >
+                 <ChevronLeft className="w-6 h-6" />
+               </button>
+               <span className="text-white/90 font-black text-sm tracking-widest min-w-[3rem] text-center">{currentSlideIdx + 1} / {totalSlides}</span>
+               <button
+                 onClick={() => setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1))}
+                 disabled={currentSlideIdx >= totalSlides - 1}
+                 className="text-white disabled:opacity-20 active:scale-75 transition-all p-2 bg-white/5 rounded-full"
+               >
+                 <ChevronRight className="w-6 h-6" />
+               </button>
+            </div>
+          )}
         </div>
 
-        {/* 底部导航栏 */}
+        {/* 原生常规模式下的底部导航栏 */}
         <div className="w-full flex flex-col md:flex-row items-center justify-between px-2 md:px-4 py-2 md:py-3 gap-2 md:gap-0 shrink-0 mb-safe">
           <div className="hidden md:block md:w-[200px] shrink-0" />
           

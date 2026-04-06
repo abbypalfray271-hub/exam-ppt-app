@@ -49,7 +49,10 @@ export default function Home() {
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-brand-primary/5 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-brand-secondary/5 blur-[120px] rounded-full pointer-events-none" />
 
-      <nav className="relative z-10 px-8 py-6 flex justify-between items-center max-w-7xl mx-auto">
+      <nav 
+        inert={isCanvasOpen}
+        className="relative z-10 px-8 py-6 flex justify-between items-center max-w-7xl mx-auto"
+      >
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/30">
             <Presentation className="text-white w-6 h-6" />
@@ -64,7 +67,10 @@ export default function Home() {
 
       </nav>
 
-      <section className={cn("relative z-10 flex flex-col flex-1 min-h-0", currentView === 'upload' ? "pt-10 pb-10 flex items-center justify-center overflow-x-hidden" : "")}>
+      <section 
+        inert={isCanvasOpen}
+        className={cn("relative z-10 flex flex-col flex-1 min-h-0", currentView === 'upload' ? "pt-10 pb-10 flex items-center justify-center overflow-x-hidden" : "")}
+      >
         <AnimatePresence mode="wait">
           {currentView === 'upload' ? (
             <motion.div

@@ -117,7 +117,13 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
   };
   // =========================
 
-  const [expandedQuestion, setExpandedQuestion] = useState<Question | null>(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  
+  // 核心优化：实时从 Store 中获取最新的题目数据，确保脑图等修改能即时响应
+  const expandedQuestion = useMemo(() => 
+    selectedQuestionId ? questions.find(q => q.id === selectedQuestionId) || null : null
+  , [selectedQuestionId, questions]);
+
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [isMaterialExpanded, setIsMaterialExpanded] = useState(false);
   const [selectedQIds, setSelectedQIds] = useState<string[]>([]); // [NEW] 批量勾选的题目 ID
@@ -291,7 +297,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
               tabIndex={0}
               onClick={() => {
                 if (q.contentImage) {
-                  setExpandedQuestion(q);
+                  setSelectedQuestionId(q.id);
                 }
               }}
               className={cn(
@@ -479,7 +485,7 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
         {expandedQuestion && (
           <QuestionDetailModal
             expandedQuestion={expandedQuestion}
-            setExpandedQuestion={setExpandedQuestion}
+            setExpandedQuestion={(q) => setSelectedQuestionId(q ? q.id : null)}
             editable={editable}
             updateQuestion={updateQuestion}
             setZoomedImage={setZoomedImage}
