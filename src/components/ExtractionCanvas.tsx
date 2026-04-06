@@ -266,6 +266,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const startPosRef = useRef({ x: 0, y: 0 });
   const initialRectRef = useRef<ExtendedRect | null>(null);
   const drawingRectRef = useRef<(Partial<ExtendedRect> & { source: 'exam' | 'reference' }) | null>(null);
+  const liveSelectedRectRef = useRef<ExtendedRect | null>(null);
 
   // Ref 同步：让 useEffect 内部通过 Ref 读取最新值，避免高频依赖导致事件监听器反复重绑
   const rectsRef = useRef(rects);
@@ -319,35 +320,60 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
       }
 
       const source = drawingRectRef.current?.source || initialRectRef.current?.source;
+      const currentZoom = source === 'exam' ? zoom : 1;
       const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
       if (!container) return;
       const cr = container.getBoundingClientRect();
-      const dx = (e.clientX - startPosRef.current.x) / zoom;
-      const dy = (e.clientY - startPosRef.current.y) / zoom;
+      const dx = (e.clientX - startPosRef.current.x) / currentZoom;
+      const dy = (e.clientY - startPosRef.current.y) / currentZoom;
 
       if (interactionRef.current === 'drawing') {
-        const x = (e.clientX - cr.left) / zoom;
-        const y = (e.clientY - cr.top) / zoom;
-        setDrawingRect(prev => {
-          if (!prev || prev.x === undefined || prev.y === undefined) return prev;
-          const updated = { ...prev, width: x - prev.x, height: y - prev.y };
-          drawingRectRef.current = updated;
-          return updated;
-        });
+        const x = (e.clientX - cr.left) / currentZoom;
+        const y = (e.clientY - cr.top) / currentZoom;
+        if (!drawingRectRef.current || drawingRectRef.current.x === undefined) return;
+        
+        const prev = drawingRectRef.current;
+        const rawW = x - prev.x!;
+        const rawH = y - prev.y!;
+        
+        drawingRectRef.current = { ...prev, width: rawW, height: rawH };
+        
+        const el = document.getElementById('drawing-preview');
+        if (el) {
+           el.style.left = `${(rawW > 0 ? prev.x! : prev.x! + rawW) * currentZoom}px`;
+           el.style.top = `${(rawH > 0 ? prev.y! : prev.y! + rawH) * currentZoom}px`;
+           el.style.width = `${Math.abs(rawW) * currentZoom}px`;
+           el.style.height = `${Math.abs(rawH) * currentZoom}px`;
+        }
       } else if (interactionRef.current === 'moving' && selectedId && initialRectRef.current) {
         const initial = initialRectRef.current;
-        setRects(prev => prev.map(r => r.id === selectedId ? { ...r, x: initial.x + dx, y: initial.y + dy } : r));
+        const newX = initial.x + dx;
+        const newY = initial.y + dy;
+        
+        liveSelectedRectRef.current = { ...initial, x: newX, y: newY };
+        
+        const el = document.getElementById(`rect-${selectedId}`);
+        if (el) {
+           el.style.left = `${newX * currentZoom}px`;
+           el.style.top = `${newY * currentZoom}px`;
+        }
       } else if (interactionRef.current === 'resizing' && selectedId && initialRectRef.current && resizeHandle) {
         const initial = initialRectRef.current;
-        setRects(prev => prev.map(r => {
-          if (r.id !== selectedId) return r;
-          let { x, y, width: w, height: h } = initial;
-          if (resizeHandle.includes('e')) w += dx;
-          if (resizeHandle.includes('w')) { x += dx; w -= dx; }
-          if (resizeHandle.includes('s')) h += dy;
-          if (resizeHandle.includes('n')) { y += dy; h -= dy; }
-          return { ...r, x, y, width: w, height: h };
-        }));
+        let { x, y, width: w, height: h } = initial;
+        if (resizeHandle.includes('e')) w += dx;
+        if (resizeHandle.includes('w')) { x += dx; w -= dx; }
+        if (resizeHandle.includes('s')) h += dy;
+        if (resizeHandle.includes('n')) { y += dy; h -= dy; }
+        
+        liveSelectedRectRef.current = { ...initial, x, y, width: w, height: h };
+        
+        const el = document.getElementById(`rect-${selectedId}`);
+        if (el) {
+           el.style.left = `${x * currentZoom}px`;
+           el.style.top = `${y * currentZoom}px`;
+           el.style.width = `${Math.abs(w) * currentZoom}px`;
+           el.style.height = `${Math.abs(h) * currentZoom}px`;
+        }
       }
     };
 
@@ -374,10 +400,16 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
           setRects(prev => [...prev, finalRect]);
           setSelectedId(finalRect.id);
         }
+      } else if ((interactionRef.current === 'moving' || interactionRef.current === 'resizing') && liveSelectedRectRef.current) {
+        const finalId = liveSelectedRectRef.current.id;
+        const finalRect = liveSelectedRectRef.current;
+        setRects(prev => prev.map(r => r.id === finalId ? { ...r, ...finalRect } : r));
       }
+      
       interactionRef.current = 'none';
       setDrawingRect(null);
       drawingRectRef.current = null;
+      liveSelectedRectRef.current = null;
       setIsDrawing(false);
       setIsInteracting(false); // 解锁滚动
       setResizeHandle(null);

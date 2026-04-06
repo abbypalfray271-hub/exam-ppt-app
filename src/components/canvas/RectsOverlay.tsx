@@ -20,6 +20,7 @@ export const RectsLayer: React.FC<RectsLayerProps> = ({
     {rects.map((r) => (
       <div
         key={r.id}
+        id={`rect-${r.id}`}
         onPointerDown={(e) => startMoving(e, r.id, r.source as any)}
         style={{ left: r.x * zoom, top: r.y * zoom, width: r.width * zoom, height: r.height * zoom }}
         className={cn("absolute border-2 shadow-lg group transition-all duration-200", {
@@ -98,6 +99,7 @@ export interface DrawingPreviewProps {
 
 export const DrawingPreview: React.FC<DrawingPreviewProps> = ({ rect, zoom }) => (
   <div 
+    id="drawing-preview"
     className={cn("absolute border-2 border-dashed border-black/40 bg-black/5", {
       'border-blue-500 bg-blue-500/10': rect.type === 'question',
       'border-rose-500 bg-rose-500/10': rect.type === 'answer',
