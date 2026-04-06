@@ -23,7 +23,7 @@ export const RectsLayer: React.FC<RectsLayerProps> = ({
         id={`rect-${r.id}`}
         onPointerDown={(e) => startMoving(e, r.id, r.source as any)}
         style={{ left: r.x * zoom, top: r.y * zoom, width: r.width * zoom, height: r.height * zoom }}
-        className={cn("absolute border-2 shadow-lg group transition-all duration-200", {
+        className={cn("absolute border-2 shadow-lg group transition-colors transition-[box-shadow] duration-200", {
           'border-blue-500 bg-blue-500/10': r.type === 'question' || !r.type,
           'border-rose-500 bg-rose-500/10': r.type === 'answer',
           'border-fuchsia-500 bg-fuchsia-500/10': r.type === 'analysis',
