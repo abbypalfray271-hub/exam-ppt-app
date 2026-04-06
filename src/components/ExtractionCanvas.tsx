@@ -658,7 +658,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
         </div>
 
         {/* 中间：试卷主画布 */}
-        <div ref={examScrollRef} className={cn("flex-1 bg-gray-100/30 p-8 scroll-smooth relative overflow-x-auto", isInteracting ? "overflow-y-hidden" : "overflow-y-auto")}>
+        <div ref={examScrollRef} className="flex-1 bg-gray-100/30 p-8 scroll-smooth relative overflow-auto">
            <div className="mx-auto" style={{ width: `${zoom * 100}%` }}>
               <div 
                 ref={examContainerRef} 
