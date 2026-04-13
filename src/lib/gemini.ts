@@ -112,34 +112,26 @@ export const parseQuestion = async (
     }
   ]`;
 
-  const mindMapPrompt = `你是一个顶级的解题思维教练和逻辑学家。你的任务是根据提供的题目素材，生成一份全景式的交互思维导图。
-  
-  [核心使命]
-  你需要将复杂的题目拆解成一套逻辑严密、详细可读的 JSON 树结构。
-  
-  [内容规范]
-  1. 全景覆盖：导图必须包含：[题目核心目标] -> [解题关键件/已知条件] -> [精细化推导步骤] -> [知识点总结/最终结论]。
-  2. 详细文本：每个节点的 label 必须是完整的“教学语言”或“详细推导描述”，绝对禁止使用简短单词。例如使用“第一步：利用勾股定理计算出 AC 的长度为 10”而不是“求 AC”。
-  3. 逻辑分层：通常建议拆解为 2-4 层深度。
+  const mindMapExtension = `
+  【特别任务附加：全景思维导图生成】
+  你现在的另一个重要身份是顶级的解题思维教练。除了严格执行上述的所有基础解析、一比一极度还原、SVG生成等核心原则外，你还必须额外产出该问题的**交互式思维导图**（注入到 \`mindmap_tree\` 字段中）。
 
-  [输出格式锁定]
-  你必须仅输出一个 JSON 数组，其中包含一个对象，该对象必须包含 mindmap_tree 字段。
-  mindmap_tree 的结构如下：{ "label": "题目核心", "children": [ { "label": "子节点1", "children": [...] } ] }
+  [导图内容补充规范]
+  1. 全景覆盖：导图逻辑链必须包含：[题目核心目标] -> [已知条件与陷阱] -> [精细化推导步骤] -> [最终结论与考点]。
+  2. 教学级详尽文本：每个节点的 \`label\` 必须是完整的“教学口语描述”或具体推导成果。严禁输出干瘪单词（例如：必须写“第一步由图可知，直角三角形ABC的弦长为10”，坚决不能只写“求AC”）。
+  3. 逻辑分层：至少将知识拆解到 2-4 层深度的树状结构。
   
-  [示例]
-  [{
-    "order": 1,
-    "type": "essay",
-    "content": "...",
-    "mindmap_tree": {
-      "label": "题目全景解析",
-      "children": [
-        { "label": "考点：一元二次方程根的判别式", "children": [...] }
-      ]
-    }
-  }]`;
+  [导图结构示例]
+  字段名称必须是 \`mindmap_tree\`，如下所示结构填充：
+  "mindmap_tree": {
+    "label": "一元二次方程压轴题全景剖析",
+    "children": [
+      { "label": "第一落点：根据题意提取初始方程模型", "children": [] }
+    ]
+  }
+  `;
 
-  const selectedPrompt = action === 'generateMindMap' ? mindMapPrompt : prompt;
+  const selectedPrompt = action === 'generateMindMap' ? prompt + '\n' + mindMapExtension : prompt;
 
   // 构建多模态消息内容
   const messageContent: any[] = [];
@@ -168,6 +160,8 @@ export const parseQuestion = async (
     });
   });
 
+  const mindmapFormat = action === 'generateMindMap' ? '{ "label": "...", "children": [...] }' : 'null';
+
   // 2. 注入提示词
   messageContent.push({
     type: "text",
@@ -178,7 +172,7 @@ Output ONLY the raw JSON array.
 IMPORTANT: Every numbered sub-question in the image MUST be a separate element in the array. 
 DO NOT include any preamble or conversational filler.
 Return the result in this exact format:
-[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "", "mindmap_tree": null }]
+[{ "order": 1, "type": "essay", "content": "...", "_thought_process": "...", "analysis": "...", "answer": "...", "auxiliary_svg": "", "mindmap_tree": ${mindmapFormat} }]
 `
   });
 
