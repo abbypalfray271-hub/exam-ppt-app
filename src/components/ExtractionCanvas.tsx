@@ -460,22 +460,37 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                   onPointerDown={(e) => startDrawing(e, 'reference')}
                 >
                   {referencePages.map((page, idx) => (
-                    <div key={`img-ref-${idx}`} className="group/ref-item scroll-mt-4 relative">
-                      <button
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleRefPageSelection(idx);
-                        }}
-                        className={cn(
-                          "absolute top-4 left-4 w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-xl z-30 active:scale-90",
-                          selectedRefPageIndices.has(idx) 
-                            ? "bg-blue-600 text-white ring-4 ring-blue-500/20" 
-                            : "bg-white/90 text-gray-300 border border-white hover:text-blue-500"
-                        )}
-                      >
-                         {selectedRefPageIndices.has(idx) ? <CheckSquare className="w-6 h-6 fill-current" /> : <Square className="w-6 h-6" />}
-                      </button>
+                    <div key={`img-ref-${idx}`} className="group/ref-item scroll-mt-4 relative flex flex-col">
+                      {/* [NEW] 独立页眉工具栏 */}
+                      <div className="w-full flex items-center justify-between px-3 py-1.5 bg-[#f8fafc] border-b border-gray-200/60 sticky top-0 z-40">
+                        <span className="text-[10px] font-black tracking-widest text-slate-400">PAGE {idx + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); handlePageDelete(idx, 'reference'); }}
+                            className="p-1.5 rounded-lg bg-red-100/50 hover:bg-red-500 text-red-500 hover:text-white transition-all active:scale-95 flex items-center gap-1"
+                            title="删除此页"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onPointerDown={(e) => e.stopPropagation()} /* 阻止触发框选画笔 */
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleRefPageSelection(idx);
+                            }}
+                            className={cn(
+                              "flex items-center gap-1.5 px-2 py-1 rounded border transition-all text-xs active:scale-95",
+                              selectedRefPageIndices.has(idx) 
+                                ? "bg-blue-600 border-blue-600 text-white shadow-sm" 
+                                : "bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300"
+                            )}
+                          >
+                             {selectedRefPageIndices.has(idx) ? <CheckSquare className="w-3.5 h-3.5 fill-current" /> : <Square className="w-3.5 h-3.5" />}
+                             <span className="text-[10px] font-bold">{selectedRefPageIndices.has(idx) ? '已选' : '选择'}</span>
+                          </button>
+                        </div>
+                      </div>
                       <img 
                         ref={el => { refImgRefs.current[idx] = el; }} 
                         src={page} 
@@ -485,14 +500,6 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                         )} 
                         draggable={false}
                       />
-                      <button 
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); handlePageDelete(idx, 'reference'); }}
-                        className="absolute top-4 right-4 p-2 rounded-xl bg-red-500 text-white shadow-2xl opacity-0 group-hover/ref-item:opacity-100 transition-all hover:scale-110 active:scale-90 flex items-center gap-2 z-30"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span className="text-xs font-black">删除此页</span>
-                      </button>
                     </div>
                   ))}
                   <RectsLayer 

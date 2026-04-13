@@ -117,6 +117,7 @@ export function toQuestion(
     images: raw.images || [],
     contentImages: raw.contentImages || [],
     pageIndices: raw.pageIndices || [],
+    runId: overrides.runId, // [NEW] 透传运行批次
     ...overrides, // id, order, image, contentImage, diagrams 等由调用方提供
   };
 }

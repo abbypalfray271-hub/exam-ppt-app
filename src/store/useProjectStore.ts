@@ -38,6 +38,7 @@ export interface Question {
   materialImage?: string; // 裁剪后的素材图片 (Base64)
   contentImage?: string;  // 裁剪后的题目图片 (Base64)
   pageIndex?: number;     // 单页模式的残留（推荐废弃或作为第一个图的兜底索引）
+  runId?: string;         // [NEW] 标识独立提取批次，用于隔离独立输出的卡片
   
   // -- 新增：支持多页散落片段组装（瀑布流兼容） --
   images?: string[];         // 存储 1~N 个框选片段的高清原图 Base64 画廊

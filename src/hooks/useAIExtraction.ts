@@ -41,22 +41,24 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
     const targetRects = correctedRects || rects;
     const qRects = targetRects.filter(r => r.type === 'question' || !r.type);
     
+    const runId = Date.now().toString(); // [NEW] 独立执行批次签章
+
     // 情况 A: 全自动批量识别 (无手动框选题目)
     if (qRects.length === 0) {
       if (selectedPageIndices.size === 0) {
         alert('请先勾选需要全自动解析的页面。');
         return;
       }
-      await runFullAutoExtraction(Array.from(selectedPageIndices), isDeepThinking, action);
+      await runFullAutoExtraction(Array.from(selectedPageIndices), isDeepThinking, action, runId);
     } 
     // 情况 B: 手动/半自动框选识别
     else {
-      await runManualBoxExtraction(offsets, isDeepThinking, targetRects, action);
+      await runManualBoxExtraction(offsets, isDeepThinking, targetRects, action, runId);
     }
   }, [rects, isProcessing, pages]);
 
   // --- 全自动模式 ---
-  async function runFullAutoExtraction(pageIndices: number[], isDeepThinking: boolean, action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion') {
+  async function runFullAutoExtraction(pageIndices: number[], isDeepThinking: boolean, action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion', runId: string) {
     setProcessing(true);
     setParsingFailures([]);
     setTotalItems(pageIndices.length);
@@ -94,7 +96,8 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
                order: questions.length + allResults.length + 1,
                image: compressedPage,
                contentImage: contentImg,
-               pageIndex: pageIdx
+               pageIndex: pageIdx,
+               runId // [NEW] 植入运行批次
              });
           }));
           allResults.push(...processed);
@@ -112,7 +115,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
   }
 
   // --- 手动框选模式 (核心重构：基于颜色切片) ---
-  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: ExtendedRect[], action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion') {
+  async function runManualBoxExtraction(offsets: PageOffset[], isDeepThinking: boolean, targetRects: ExtendedRect[], action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion', runId: string) {
     setProcessing(true);
     setParsingFailures([]);
     
@@ -184,6 +187,7 @@ export function useAIExtraction({ pages, rects, onComplete }: UseAIExtractionPro
               contentImage: questionImages[0] || "",
               diagrams: examDiagrams,
               answerDiagrams: refDiagrams,
+              runId // [NEW] 植入运行批次
             });
           });
           allResults.push(...processed);

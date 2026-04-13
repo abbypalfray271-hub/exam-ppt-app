@@ -26,7 +26,8 @@ export function buildSlides(questions: Question[]): SlideData[] {
   // === 防御性去重：确保即使 store 中已有重复数据，也不会产生重复幻灯片 ===
   const seen = new Set<string>();
   const dedupedQuestions = questions.filter(q => {
-    const fp = (q.content || '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60);
+    // 引入 runId 防腐层：独立操作的题目互不受干扰
+    const fp = `${q.runId || 'legacy'}_${(q.content || '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 60)}`;
     if (seen.has(fp) && fp.length > 0) return false;
     seen.add(fp);
     return true;
@@ -43,7 +44,10 @@ export function buildSlides(questions: Question[]): SlideData[] {
     const sameMaterialImage = prevQ.materialImage === currQ.materialImage && !!prevQ.materialImage;
     const sameFullImage = prevQ.image === currQ.image && !!prevQ.image;
     
-    const sameMaterial = sameMaterialText || sameMaterialImage || sameFullImage;
+    // 只有相同批次(runId 匹配)才允许因同素材而物理聚合到一页。
+    // 旧数据兜底：都无 runId 时退化为全聚合。
+    const sameRun = prevQ.runId === currQ.runId;
+    const sameMaterial = (sameMaterialText || sameMaterialImage || sameFullImage) && sameRun;
     
     if (sameMaterial) {
       currentGroup.push(currQ);
