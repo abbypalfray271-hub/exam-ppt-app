@@ -36,7 +36,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
   
   let pdfjsLib;
   try {
-    // @ts-ignore
+    // @ts-expect-error
     const mod = await import('pdfjs-dist/legacy/build/pdf.min.mjs');
     pdfjsLib = mod.default || mod;
   } catch (err) {
@@ -83,7 +83,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
       await page.render({
         canvasContext: context,
         viewport: page.getViewport({ scale: width / (viewport.width / 1.5) }),
-        // @ts-ignore
+        // @ts-expect-error
         canvas: canvas
       }).promise;
 
