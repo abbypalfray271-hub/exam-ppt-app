@@ -83,7 +83,6 @@ export async function pdfToImages(file: File): Promise<string[]> {
       await page.render({
         canvasContext: context,
         viewport: page.getViewport({ scale: width / (viewport.width / 1.5) }),
-        // @ts-expect-error: canvas property needed for some legacy pdfjs internals
         canvas: canvas
       }).promise;
 
