@@ -129,6 +129,24 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     setRefPoolWidth(window.innerWidth / 3);
   }, []);
 
+  // 监听侧边栏拖拽调整大小
+  useEffect(() => {
+    if (isMobile) return;
+    
+    const handlePointerMove = (e: PointerEvent) => {
+      // 捕获拖拽事件实时更新宽度状态
+      if (interactionRef.current === 'resizing-sidebar') {
+        setSidebarWidth(Math.max(200, Math.min(e.clientX, 600)));
+      } else if (interactionRef.current === 'resizing-refpool') {
+        const newWidth = window.innerWidth - e.clientX;
+        setRefPoolWidth(Math.max(300, Math.min(newWidth, 800)));
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    return () => window.removeEventListener('pointermove', handlePointerMove);
+  }, [isMobile, interactionRef]);
+
   // === Hooks ===
   // AI 提取 Hook：我们将两站页面的合集传给它
   const allPages = useMemo(() => [...examPages, ...referencePages], [examPages, referencePages]);
@@ -348,8 +366,11 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
           {/* Sidebar Resizer (移动端隐藏) */}
           {!isMobile && isLeftOpen && (
             <div 
-              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors z-50"
-              onPointerDown={() => interactionRef.current = 'resizing-sidebar'}
+              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 transition-colors z-[60]"
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                interactionRef.current = 'resizing-sidebar';
+              }}
             />
           )}
         </div>
@@ -497,7 +518,10 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
           {!isMobile && isRightOpen && (
             <div 
               className="absolute left-0 top-0 bottom-0 w-1.5 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors z-[60] shadow-[0_0_10px_rgba(0,0,0,0.05)]"
-              onPointerDown={() => interactionRef.current = 'resizing-refpool'}
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                interactionRef.current = 'resizing-refpool';
+              }}
             />
           )}
         </div>
