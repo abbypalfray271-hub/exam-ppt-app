@@ -69,7 +69,10 @@ export async function cropRectFromCanvas(
       overlapping.push({ pageIdx: i, cropTop: cTop, cropHeight: cBottom - cTop, offset: offsets[i] });
     }
   }
-  if (overlapping.length === 0) throw new Error('Rect does not overlap any page');
+  if (overlapping.length === 0) {
+    console.warn('Rect does not overlap any page, returning empty slice.');
+    return { base64: '', yOffset: 0, height: 0 };
+  }
 
   const loaded = await Promise.all(
     overlapping.map(({ pageIdx }) =>

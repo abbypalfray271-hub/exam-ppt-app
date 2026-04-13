@@ -120,7 +120,7 @@ export const MaterialViewer: React.FC<MaterialViewerProps> = ({ firstQ, question
             e.preventDefault();
             setZoomState(prev => {
               const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-              let newScale = Math.min(Math.max(1, prev.scale * zoomFactor), 5.0);
+              const newScale = Math.min(Math.max(1, prev.scale * zoomFactor), 5.0);
               if (newScale === 1) return { scale: 1, x: 0, y: 0 };
               return { ...prev, scale: newScale };
             });

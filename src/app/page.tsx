@@ -38,9 +38,20 @@ export default function Home() {
     }
   }, [currentView]);
 
-  // 客户端挂载前显示空白骨架，避免 SSR/Client 状态差异
+  // 客户端挂载前显示品牌骨架屏，避免 SSR/Client 状态差异
   if (!mounted) {
-    return <main className="h-[100dvh] bg-[#F8FAFC]" />;
+    return (
+      <main className="h-[100dvh] bg-[#F8FAFC] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 animate-pulse">
+          <div className="w-16 h-16 bg-brand-primary rounded-2xl flex items-center justify-center shadow-lg shadow-brand-primary/30">
+            <Presentation className="text-white w-10 h-10" />
+          </div>
+          <span className="text-sm font-black text-slate-300 uppercase tracking-[0.3em]">
+            Loading...
+          </span>
+        </div>
+      </main>
+    );
   }
 
   return (

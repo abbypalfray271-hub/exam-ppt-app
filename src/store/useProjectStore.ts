@@ -59,6 +59,17 @@ export interface LayoutConfig {
   refPoolWidth: number;
 }
 
+export interface ConfirmDialogState {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  type: 'danger' | 'warning' | 'info';
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
 interface ProjectState {
   projectName: string;
   examImageUrl?: string;
@@ -107,6 +118,10 @@ interface ProjectState {
   resetUpload: () => void; // -- 新增：清除上传相关的旧数据 --
   removePage: (index: number, target: 'exam' | 'reference') => void; // [NEW] 删除单页
 
+  // -- Confirm Dialog Infrastructure --
+  dialogState: ConfirmDialogState;
+  showConfirm: (options: Omit<ConfirmDialogState, 'isOpen'>) => Promise<boolean>;
+  closeConfirm: () => void;
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -130,6 +145,14 @@ export const useProjectStore = create<ProjectState>()(
     isRightPanelOpen: true,
     sidebarWidth: 280,
     refPoolWidth: 400,
+  },
+  dialogState: {
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: '确认',
+    cancelText: '取消',
+    type: 'danger',
   },
 
   
@@ -173,10 +196,34 @@ export const useProjectStore = create<ProjectState>()(
   setReferencePages: (pages) => set({ referencePages: pages }), // [NEW]
   removePage: (index, target) => set((state) => {
     const key = target === 'exam' ? 'examPages' : 'referencePages';
-    const newPages = [...state[key]];
-    newPages.splice(index, 1);
-    return { [key]: newPages };
+    return {
+      [key]: state[key].filter((_, i) => i !== index)
+    };
   }),
+
+  showConfirm: (options) => {
+    return new Promise<boolean>((resolve) => {
+      set({
+        dialogState: {
+          ...options,
+          isOpen: true,
+          onConfirm: () => {
+            options.onConfirm?.();
+            resolve(true);
+            set((state) => ({ dialogState: { ...state.dialogState, isOpen: false } }));
+          },
+          onCancel: () => {
+            options.onCancel?.();
+            resolve(false);
+            set((state) => ({ dialogState: { ...state.dialogState, isOpen: false } }));
+          }
+        }
+      });
+    });
+  },
+
+  closeConfirm: () => set((state) => ({ dialogState: { ...state.dialogState, isOpen: false } })),
+
   resetUpload: () => set({ 
     examImageUrl: undefined, 
     examPages: [], 
@@ -192,9 +239,8 @@ export const useProjectStore = create<ProjectState>()(
   }),
     }),
     {
-      name: 'exam-ppt-storage',
+      name: 'project-storage',
       storage: createJSONStorage(() => idbStorage),
-      // 只序列化数据字段，排除 Action 函数，避免无用 IO 消耗
       partialize: (state) => ({
         projectName: state.projectName,
         examImageUrl: state.examImageUrl,
@@ -209,7 +255,7 @@ export const useProjectStore = create<ProjectState>()(
         fileType: state.fileType,
         isMathOptimized: state.isMathOptimized,
         layoutConfig: state.layoutConfig,
-        // 注意：isProcessing 故意排除，防止死锁
+        // 注意：isProcessing 和 dialogState 故意排除，防止死锁或跨会话残留
       }),
     }
   )

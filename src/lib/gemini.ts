@@ -5,6 +5,14 @@
  */
 import type { AIQuestionResult, AIClip } from '@/types/ai';
 
+// ============================================================
+// 安全防护：禁止此模块在浏览器端执行，防止 API Key 泄露
+// 该模块只应由 /api/ai-parse Server Route 调用
+// ============================================================
+if (typeof window !== 'undefined') {
+  throw new Error('[SECURITY] gemini.ts must NOT be imported in client-side code. Use /api/ai-parse instead.');
+}
+
 export const parseQuestion = async (
   clips: AIClip[],
   onStatus?: (status: string) => void,
@@ -256,6 +264,13 @@ Return the result in this exact format:
  * 强力 JSON 解析器：处理 AI 输出中常见的格式错误、转义失败和截断问题
  */
 function robustParseJson(raw: string): AIQuestionResult[] {
+  // 0. [安全护栏] 输入长度上限保护，防止异常超长响应导致 CPU 密集循环
+  const MAX_JSON_LENGTH = 500_000; // 500KB，正常 AI 输出不应超过此值
+  if (raw.length > MAX_JSON_LENGTH) {
+    console.warn(`[RobustParse] Input exceeds ${MAX_JSON_LENGTH} chars (actual: ${raw.length}), trimming...`);
+    raw = raw.substring(0, MAX_JSON_LENGTH);
+  }
+
   // 1. [精准定位起始符] 过滤所有非 JSON 的前缀杂质（如 [视觉盘点] 等描述性文字）
   const firstBrace = raw.indexOf('{');
   const firstBracket = raw.indexOf('[');
@@ -277,7 +292,19 @@ function robustParseJson(raw: string): AIQuestionResult[] {
   // 2. 基础清理 Markdown 代码块
   cleaned = cleaned.replace(/```json\s*/i, '').replace(/\s*```$/i, '');
 
-  // 3. 物理隔离非法的反斜杠（保护已被双转义的正确 LaTeX，拒绝将 \\alpha 破坏为 \\\alpha）
+  // 3. 专项拯救：当 AI 输出了单反斜杠的特定 LaTeX 命令（如 \frac, \text 等），它们恰好跟 JSON 的控制字符前缀相撞。
+  // 必须在这里将它们强制升级为双转义的 \\frac，否则原生 JSON.parse 会把 \f 当作换页符、\t 当作制表符销毁掉。
+  const latexRescues = [
+    'frac', 'text', 'begin', 'bf', 'bar', 'beta', 'backslash', 'bot', 'bullet', 'bmatrix', 'Bmatrix', 'big',
+    'forall', 'frown', 'flat',
+    'neq', 'nabla', 'nu', 'notin', 'ni', 'nRightarrow', 'nleftarrow', 'nLeftrightarrow', 'natural', 'neg', 'normalsize',
+    'rightarrow', 'rangle', 'rm', 'rho', 'right', 'Rightarrow', 'relbar', 'rVert',
+    'theta', 'tau', 'times', 'triangle', 'to', 'textbf', 'textit', 'texttt', 'tfrac'
+  ];
+  const rescueRegex = new RegExp(`(?<!\\\\)\\\\(${latexRescues.join('|')})(?![a-zA-Z])`, 'g');
+  cleaned = cleaned.replace(rescueRegex, '\\\\$1');
+
+  // 4. 物理隔离其他非法的反斜杠（保护已被双转义的正确 LaTeX，拒绝将 \\alpha 破坏为 \\\alpha）
   cleaned = cleaned.replace(/(?<!\\)\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
 
   // 4. 强力清除不可见的控制字符
@@ -327,7 +354,11 @@ function robustParseJson(raw: string): AIQuestionResult[] {
   try {
     return JSON.parse(cleaned);
   } catch (err: any) {
-    console.error("[RobustParse Critical Failure]:", err.message);
+    console.error(
+      "[RobustParse Critical Failure]:", err.message,
+      "\nInput length:", raw.length,
+      "\nInput preview:", raw.substring(0, 500)
+    );
     // 移除强破坏性的 desperateClean 盲区替换逻辑（保护 LaTeX 转义）
     // 让外层触发 API 级别的静默重试机制
     throw err;

@@ -1,0 +1,40 @@
+﻿
+> exam-ppt-app@0.1.0 build
+> next build
+
+鈻?Next.js 16.1.7 (Turbopack)
+- Environments: .env.local
+- Experiments (use with caution):
+  路 serverActions
+
+  Creating an optimized production build ...
+鉁?Compiled successfully in 5.0s
+  Running TypeScript ...
+node.exe : Failed to compile.
+所在位置 行:1 字符: 1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program
+ Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Fail 
+   ed to compile.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+./src/components/ExtractionCanvas.tsx:64:29
+Type error: 'prev.x' is possibly 'undefined'.
+
+[0m [90m 62 |[39m         [36mreturn[39m {
+ [90m 63 |[39m           [33m...[39mprev[33m,
+[39m
+[31m[1m>[22m[39m[90m 64 |[39m           widt
+h[33m:[39m boundedX [33m-[39m prev[33m.[39mx
+[33m,[39m
+ [90m    |[39m                             [31m
+[1m^[22m[39m
+ [90m 65 |[39m           height[33m:[39m bound
+edY [33m-[39m prev[33m.[39my[33m,[39m
+ [90m 66 |[39m         }[33m;[39m
+ [90m 67 |[39m       })[33m;[39m[0m
+Next.js build worker exited with code: 1 and signa
+l: null

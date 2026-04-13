@@ -13,7 +13,7 @@ export const cleanLatexSymbols = (text: string): string => {
   // === 第一步：如果文本包含 KaTeX 定界符 $，则跳过大部分清理，交给渲染器 ===
   // 但我们依然清理一些基础符号以便在不支持 KaTeX 的地方也能看
   
-  let safed = text
+  const safed = text
     // === 基础 LaTeX 符号映射 (由 LaTeX 语法保持) ===
     .replace(/\\triangle/g, '△')
     .replace(/\\angle/g, '∠')

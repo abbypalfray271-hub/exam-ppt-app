@@ -99,7 +99,7 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
   // 健壮的分割逻辑：支持 【答案】 和 【解析】 的多级分割
   const segments = fullContent.split(/([\r\n]*【(?:答案|参考答案|解析|详解|分析)】)/);
   
-  let questionPart = segments[0] || '';
+  const questionPart = segments[0] || '';
   let answerPart = '';
   let analysisPart = '';
 

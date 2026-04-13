@@ -3,6 +3,14 @@
  * PDF 转图片、图像压缩、坐标裁切
  */
 
+// ============================================================
+// 全局图像处理常量 (统一管理，单点修改)
+// ============================================================
+/** JPEG 压缩质量系数 (0.85 = 高清与体积的最佳平衡点) */
+const IMAGE_QUALITY = 0.85;
+/** 图像最大渲染/裁切宽度 (防止平板设备 OOM 崩溃) */
+const MAX_IMAGE_WIDTH = 1500;
+
 
 // 为较旧的浏览器环境 (如 iOS 16-, 微信内置浏览器等) 提供必须的 ES 最新特性 Polyfill，防止 pdf.js 崩溃
 if (typeof Promise.withResolvers === 'undefined') {
@@ -59,8 +67,8 @@ export async function pdfToImages(file: File): Promise<string[]> {
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Canvas context failed');
 
-      // 自动计算目标尺寸，限制最大宽度以节省内存并防止平板设备 OOM 崩溃 (防爆墙：2000 -> 1500)
-      const maxWidth = 1500;
+      // 自动计算目标尺寸，限制最大宽度以节省内存
+      const maxWidth = MAX_IMAGE_WIDTH;
       let width = viewport.width;
       let height = viewport.height;
       if (width > maxWidth) {
@@ -80,7 +88,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
       }).promise;
 
       // 直接输出中等质量 JPEG，省去二次加载 Image 对象的过程
-      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', 0.8);
+      imageUrls[pageNum - 1] = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
       
       page.cleanup();
       console.log(`Page ${pageNum} rendered and compressed`);
@@ -114,7 +122,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
  * 图像预压缩工具
  * 限制最大宽度并强制转换为低质量 JPEG
  */
-export async function compressImage(base64: string, maxWidth: number = 1600): Promise<string> {
+export async function compressImage(base64: string, maxWidth: number = MAX_IMAGE_WIDTH): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     // 防止图片加载失败时 Promise 永远悬挂
@@ -135,7 +143,7 @@ export async function compressImage(base64: string, maxWidth: number = 1600): Pr
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.85)); // 0.85 质量是高清与体积的最佳平衡点
+      resolve(canvas.toDataURL('image/jpeg', IMAGE_QUALITY));
     };
     img.src = base64;
   });
@@ -175,8 +183,8 @@ export async function cropImageByBox(base64Image: string, box?: [number, number,
       // 如果选区过小，忽略
       if (w <= 10 || h <= 10) return resolve('');
 
-      // 缩放，保证切出的图片质量，但不要过大 (防爆墙：2000 -> 1500)
-      const MAX_DIM = 1500;
+      // 缩放，保证切出的图片质量，但不要过大
+      const MAX_DIM = MAX_IMAGE_WIDTH;
       let targetW = w;
       let targetH = h;
       if (w > MAX_DIM || h > MAX_DIM) {
@@ -191,7 +199,7 @@ export async function cropImageByBox(base64Image: string, box?: [number, number,
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, x, y, w, h, 0, 0, targetW, targetH);
       
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      resolve(canvas.toDataURL('image/jpeg', IMAGE_QUALITY));
     };
     img.onerror = () => reject(new Error('底图加载失败'));
     img.src = base64Image;

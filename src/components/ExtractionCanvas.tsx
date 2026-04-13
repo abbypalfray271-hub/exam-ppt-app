@@ -29,6 +29,8 @@ import { SectionLabel, AddCard, Thumbnail } from './canvas/PageThumbnail';
 import { RectsLayer, DrawingPreview } from './canvas/RectsOverlay';
 import { ParsingFailurePanel } from '@/components/canvas/ParsingFailurePanel';
 import { useAIExtraction } from '@/hooks/useAIExtraction';
+import { useCanvasInteraction } from '@/hooks/useCanvasInteraction';
+import { usePageManager } from '@/hooks/usePageManager';
 import { ExtendedRect } from '@/types/ai';
 
 interface ExtractionCanvasProps {
@@ -52,27 +54,53 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   const refImgRefs = useRef<(HTMLImageElement | null)[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const lastPinchDistanceRef = useRef<number | null>(null); // 双指初始距离
 
-  // === State ===
-  const [rects, setRects] = useState<ExtendedRect[]>([]);
-  const [drawingRect, setDrawingRect] = useState<(Partial<ExtendedRect> & { source: 'exam' | 'reference' }) | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [isInteracting, setIsInteracting] = useState(false); // 交互锁定状态
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
-  
-  const [activeExamPageIdx, setActiveExamPageIdx] = useState(initialPageIndex);
+  // === 交互逻辑 Hook (绘图/拖拽/缩放/调整大小) ===
   const [activeDrawMode, setActiveDrawMode] = useState<'question' | 'answer' | 'diagram' | 'analysis' | null>(null);
+
+  const {
+    rects, setRects,
+    drawingRect,
+    isDrawing,
+    isInteracting,
+    selectedId, setSelectedId,
+    resizeHandle,
+    zoom, setZoom,
+    activeQIdx, setActiveQIdx,
+    interactionRef,
+    startDrawing,
+    startMoving,
+    startResizing,
+  } = useCanvasInteraction({
+    examContainerRef,
+    refContainerRef,
+    // isProcessing 通过 Hook 内部的 Ref 同步，初始 false 不影响运行时行为
+    // 实际值在 useAIExtraction 返回后通过 Ref 更新传递
+    isProcessing: false,
+    activeDrawMode,
+  });
+
+  // === 页面管理 Hook (选中/删除/添加) ===
+  const {
+    selectedPageIndices,
+    selectedRefPageIndices,
+    activeExamPageIdx, setActiveExamPageIdx,
+    togglePageSelection,
+    handleToggleAll,
+    handleDeleteSelected,
+    toggleRefPageSelection,
+    handleToggleAllRef,
+    handleDeleteSelectedRef,
+    handlePageDelete,
+    handleAddFiles,
+  } = usePageManager({ examPages, referencePages, initialPageIndex });
+
+  // === 其他 State ===
   const [imagesLoaded, setImagesLoaded] = useState(0);
-  const [zoom, setZoom] = useState(1); 
-  const [selectedPageIndices, setSelectedPageIndices] = useState<Set<number>>(new Set());
-  const [selectedRefPageIndices, setSelectedRefPageIndices] = useState<Set<number>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(280);
-  // SSR 安全：先使用默认值，客户端挂载后再同步为实际视口宽度（避免 SSR 阶段 window 不存在导致崩溃）
+  // SSR 安全：先使用默认值，客户端挂载后再同步为实际视口宽度
   const [refPoolWidth, setRefPoolWidth] = useState(400);
   const [isDeepThinking, setIsDeepThinking] = useState(false);
-  const [activeQIdx, setActiveQIdx] = useState(1);
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const [isRightOpen, setIsRightOpen] = useState(true);
   const [mobileTab, setMobileTab] = useState<'exam' | 'canvas' | 'ref'>('canvas');
@@ -117,7 +145,6 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
   });
 
   const { 
-    setProcessing,
     setExamPages, 
     setReferencePages,
     resetUpload 
@@ -134,8 +161,16 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
 
     return imgRefs.map((img) => {
       if (!img) return { top: 0, height: 0, imgWidth: 0, naturalWidth: 1, naturalHeight: 1 };
+      
+      // 对于参考页，img 被包裹在一个 relative 的 div 中，
+      // 导致 img.offsetTop 为 0，必须加上父元素的 offsetTop 才能得到相对于 container 的绝对偏移。
+      let absoluteTop = img.offsetTop;
+      if (source === 'reference' && img.offsetParent && img.offsetParent !== container) {
+        absoluteTop = (img.offsetParent as HTMLElement).offsetTop + img.offsetTop;
+      }
+
       return {
-        top: img.offsetTop / currentZoom,
+        top: absoluteTop / currentZoom,
         height: img.clientHeight / currentZoom,
         imgWidth: img.clientWidth / currentZoom,
         naturalWidth: img.naturalWidth || 1,
@@ -144,85 +179,17 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     });
   }, [zoom]);
 
-  const togglePageSelection = (idx: number) => {
-    setSelectedPageIndices(prev => {
-       const next = new Set(prev);
-       if (next.has(idx)) next.delete(idx);
-       else next.add(idx);
-       return next;
-    });
-  };
+  // === 页面管理逻辑已提取至 usePageManager Hook ===
 
-  const handlePageDelete = (idx: number, source: 'exam' | 'reference') => {
-    if (!confirm(`确定删除该 ${source === 'exam' ? '试卷' : '参考'} 页面吗？`)) return;
-    
-    if (source === 'exam') {
-      const newPages = examPages.filter((_, i) => i !== idx);
-      setExamPages(newPages);
-    } else {
-      const newPages = referencePages.filter((_, i) => i !== idx);
-      setReferencePages(newPages);
-    }
-    // 重置选中状态以防越界
-    setSelectedPageIndices(new Set());
-  };
-
-  const handleToggleAll = () => {
-    if (selectedPageIndices.size === examPages.length) {
-      setSelectedPageIndices(new Set());
-    } else {
-      const all = new Set<number>();
-      examPages.forEach((_, i) => all.add(i));
-      setSelectedPageIndices(all);
-    }
-  };
-
-  const handleDeleteSelected = () => {
-    if (selectedPageIndices.size === 0) return;
-    if (!confirm(`确定删除选中的 ${selectedPageIndices.size} 个页面吗？`)) return;
-    
-    const newPages = examPages.filter((_, i) => !selectedPageIndices.has(i));
-    setExamPages(newPages);
-    setSelectedPageIndices(new Set());
-    // 如果当前选中的页被删了，重置 activeIdx 到第一页
-    setActiveExamPageIdx(0);
-  };
-
-  const handleToggleAllRef = () => {
-    if (selectedRefPageIndices.size === referencePages.length) {
-      setSelectedRefPageIndices(new Set());
-    } else {
-      setSelectedRefPageIndices(new Set(referencePages.map((_, i) => i)));
-    }
-  };
-
-  const handleDeleteSelectedRef = () => {
-    if (selectedRefPageIndices.size === 0) return;
-    if (!confirm(`确定删除选中的 ${selectedRefPageIndices.size} 个答案页吗？`)) return;
-    const newPages = referencePages.filter((_, i) => !selectedRefPageIndices.has(i));
-    setReferencePages(newPages);
-    setSelectedRefPageIndices(new Set());
-  };
-
-  const toggleRefPageSelection = (idx: number) => {
-    const next = new Set(selectedRefPageIndices);
-    if (next.has(idx)) next.delete(idx);
-    else next.add(idx);
-    setSelectedRefPageIndices(next);
-  };
-
+  // handleConfirm 保留在组件内：它是 AI 提取的桥接逻辑，依赖 getPageOffsets/rects/startExtraction
   const handleConfirm = (action: 'parseQuestion' | 'generateMindMap' = 'parseQuestion') => {
-    // 关键点：我们在调用 startExtraction 前，需要将 rect 映射到 allPages 的绝对索引
     const examOffsets = getPageOffsets('exam');
     const refOffsets = getPageOffsets('reference');
     const examTotalHeight = examOffsets.reduce((acc, o) => acc + o.height, 0);
 
-    // 实际上，Hook 期望的是一个单一页池。我们需要构造一个虚拟的“长偏移量数组”给 Hook
-    // 修正：refOffsets 的 top 必须加上 examTotalHeight 才能在长条中对齐
     const correctedRefOffsets = refOffsets.map(o => ({ ...o, top: o.top + examTotalHeight }));
     const combinedOffsets = [...examOffsets, ...correctedRefOffsets];
 
-    // 重新修正 rects 的 Y 坐标，使其符合 combinedOffsets 的大长条布局
     const correctedRects = rects.map(r => {
       if (r.source === 'exam') return r;
       return { ...r, y: r.y + examTotalHeight };
@@ -237,306 +204,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
     );
   };
 
-  const handleAddFiles = async (files: FileList, source: 'exam' | 'reference') => {
-    if (isProcessing) return;
-    setProcessing(true);
-    try {
-      const newPages: string[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.type === 'application/pdf') {
-          const imgs = await pdfToImages(file);
-          newPages.push(...imgs);
-        } else {
-          const reader = new FileReader();
-          const base64 = await new Promise<string>((res) => {
-            reader.onload = (e) => res(e.target?.result as string);
-            reader.readAsDataURL(file);
-          });
-          const compressed = await compressImage(base64);
-          newPages.push(compressed);
-        }
-      }
-      if (source === 'exam') setExamPages([...examPages, ...newPages]);
-      else setReferencePages([...referencePages, ...newPages]);
-    } catch (error) {
-      console.error('Failed to add pages:', error);
-      alert('添加页面失败。');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  // === Interaction Logic ===
-  const interactionRef = useRef<'none' | 'drawing' | 'moving' | 'resizing' | 'resizing-sidebar' | 'resizing-refpool'>('none');
-  const startPosRef = useRef({ x: 0, y: 0 });
-  const initialRectRef = useRef<ExtendedRect | null>(null);
-  const drawingRectRef = useRef<(Partial<ExtendedRect> & { source: 'exam' | 'reference' }) | null>(null);
-  const liveSelectedRectRef = useRef<ExtendedRect | null>(null);
-
-  // Ref 同步：让 useEffect 内部通过 Ref 读取最新值，避免高频依赖导致事件监听器反复重绑
-  const rectsRef = useRef(rects);
-  rectsRef.current = rects;
-  const activeQIdxRef = useRef(activeQIdx);
-  activeQIdxRef.current = activeQIdx;
-
-  const startDrawing = (e: React.PointerEvent, source: 'exam' | 'reference') => {
-    if (isProcessing || !activeDrawMode) return;
-    const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
-    if (!container) return;
-
-    try { 
-      e.currentTarget.setPointerCapture(e.pointerId); 
-      // 阻止移动端默认行为（如下拉刷新、长按菜单）
-      if (e.pointerType === 'touch') {
-        (e.nativeEvent as any).preventDefault?.();
-      }
-    } catch(e) {}
-    
-    const cr = container.getBoundingClientRect();
-    const currentZoom = source === 'exam' ? zoom : 1;
-    const x = (e.clientX - cr.left) / currentZoom;
-    const y = (e.clientY - cr.top) / currentZoom;
-    
-    setSelectedId(null);
-    const newRect: Partial<ExtendedRect> & { source: 'exam' | 'reference' } = { 
-      id: Math.random().toString(36).substring(7), 
-      x, y, width: 0, height: 0, type: activeDrawMode, source 
-    };
-    setDrawingRect(newRect);
-    drawingRectRef.current = newRect;
-    setIsDrawing(true);
-    setIsInteracting(true); // 锁定滚动
-    interactionRef.current = 'drawing';
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: PointerEvent) => {
-      if (interactionRef.current === 'none') return;
-
-      if (interactionRef.current === 'resizing-refpool') {
-        const newWidth = window.innerWidth - e.clientX;
-        setRefPoolWidth(Math.max(200, Math.min(newWidth, window.innerWidth * 0.6)));
-        return;
-      }
-
-      if (interactionRef.current === 'resizing-sidebar') {
-        setSidebarWidth(Math.max(150, Math.min(e.clientX, 400)));
-        return;
-      }
-
-      const source = drawingRectRef.current?.source || initialRectRef.current?.source;
-      const currentZoom = source === 'exam' ? zoom : 1;
-      const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
-      if (!container) return;
-      const cr = container.getBoundingClientRect();
-      const dx = (e.clientX - startPosRef.current.x) / currentZoom;
-      const dy = (e.clientY - startPosRef.current.y) / currentZoom;
-
-      if (interactionRef.current === 'drawing') {
-        const x = (e.clientX - cr.left) / currentZoom;
-        const y = (e.clientY - cr.top) / currentZoom;
-        if (!drawingRectRef.current || drawingRectRef.current.x === undefined) return;
-        
-        const prev = drawingRectRef.current;
-        const rawW = x - prev.x!;
-        const rawH = y - prev.y!;
-        
-        drawingRectRef.current = { ...prev, width: rawW, height: rawH };
-        
-        const el = document.getElementById('drawing-preview');
-        if (el) {
-           el.style.left = `${(rawW > 0 ? prev.x! : prev.x! + rawW) * currentZoom}px`;
-           el.style.top = `${(rawH > 0 ? prev.y! : prev.y! + rawH) * currentZoom}px`;
-           el.style.width = `${Math.abs(rawW) * currentZoom}px`;
-           el.style.height = `${Math.abs(rawH) * currentZoom}px`;
-        }
-      } else if (interactionRef.current === 'moving' && selectedId && initialRectRef.current) {
-        const initial = initialRectRef.current;
-        const newX = initial.x + dx;
-        const newY = initial.y + dy;
-        
-        liveSelectedRectRef.current = { ...initial, x: newX, y: newY };
-        
-        const el = document.getElementById(`rect-${selectedId}`);
-        if (el) {
-           el.style.left = `${newX * currentZoom}px`;
-           el.style.top = `${newY * currentZoom}px`;
-        }
-      } else if (interactionRef.current === 'resizing' && selectedId && initialRectRef.current && resizeHandle) {
-        const initial = initialRectRef.current;
-        let { x, y, width: w, height: h } = initial;
-        if (resizeHandle.includes('e')) w += dx;
-        if (resizeHandle.includes('w')) { x += dx; w -= dx; }
-        if (resizeHandle.includes('s')) h += dy;
-        if (resizeHandle.includes('n')) { y += dy; h -= dy; }
-        
-        liveSelectedRectRef.current = { ...initial, x, y, width: w, height: h };
-        
-        const el = document.getElementById(`rect-${selectedId}`);
-        if (el) {
-           el.style.left = `${x * currentZoom}px`;
-           el.style.top = `${y * currentZoom}px`;
-           el.style.width = `${Math.abs(w) * currentZoom}px`;
-           el.style.height = `${Math.abs(h) * currentZoom}px`;
-        }
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (interactionRef.current === 'drawing' && drawingRectRef.current) {
-        const r = drawingRectRef.current;
-        if (Math.abs(r.width || 0) > 10 && Math.abs(r.height || 0) > 10) {
-          let targetQIdx = activeQIdxRef.current;
-          const isQuestion = r.type === 'question' || !r.type;
-          if (isQuestion && rectsRef.current.some(exist => exist.qIdx === targetQIdx && (exist.type === 'question' || !exist.type))) {
-             targetQIdx = targetQIdx + 1;
-             setActiveQIdx(targetQIdx);
-          }
-          const finalRect: ExtendedRect = {
-            id: r.id!,
-            x: r.width! > 0 ? r.x! : r.x! + r.width!,
-            y: r.height! > 0 ? r.y! : r.y! + r.height!,
-            width: Math.abs(r.width!),
-            height: Math.abs(r.height!),
-            type: r.type as any,
-            qIdx: targetQIdx,
-            source: r.source
-          };
-          setRects(prev => [...prev, finalRect]);
-          setSelectedId(finalRect.id);
-        }
-      } else if ((interactionRef.current === 'moving' || interactionRef.current === 'resizing') && liveSelectedRectRef.current) {
-        const finalId = liveSelectedRectRef.current.id;
-        const finalRect = liveSelectedRectRef.current;
-        setRects(prev => prev.map(r => r.id === finalId ? { ...r, ...finalRect } : r));
-      }
-      
-      interactionRef.current = 'none';
-      setDrawingRect(null);
-      drawingRectRef.current = null;
-      liveSelectedRectRef.current = null;
-      setIsDrawing(false);
-      setIsInteracting(false); // 解锁滚动
-      setResizeHandle(null);
-    };
-
-    window.addEventListener('pointermove', handleMouseMove);
-    window.addEventListener('pointerup', handleMouseUp);
-
-    // 🏆 \双重锁定：原生事件拦截「被动监听」，确保 e.preventDefault 生效
-    const preventScroll = (e: TouchEvent) => {
-      // 🦄 自研双指缩放核心算法
-      if (e.touches.length === 2) {
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-
-        if (lastPinchDistanceRef.current === null) {
-          lastPinchDistanceRef.current = dist;
-        } else {
-          const delta = dist - lastPinchDistanceRef.current;
-          // 灵敏度系数：0.005 是移动端手感较为平滑的比例
-          const sens = 0.005;
-          setZoom(prev => Math.max(0.5, Math.min(prev + delta * sens, 2.5)));
-          lastPinchDistanceRef.current = dist;
-        }
-
-        // 进入缩放行为后，强制中断正在产生的绘图/移动
-        if (interactionRef.current !== 'none') {
-            interactionRef.current = 'none';
-            setDrawingRect(null);
-            setIsDrawing(false);
-            setIsInteracting(false);
-        }
-        
-        if (e.cancelable) e.preventDefault();
-        return;
-      }
-
-      // 单指逻辑重置缓存
-      if (e.touches.length < 2) {
-        lastPinchDistanceRef.current = null;
-        
-        // 🚀 核心优化：如果没有选中绘图工具且没有正在进行的拉伸/移动，放行单指滑动
-        if (!activeDrawMode && interactionRef.current === 'none') {
-            return; 
-        }
-      }
-
-      if (interactionRef.current !== 'none') {
-        if (e.cancelable) e.preventDefault();
-      }
-    };
-
-    const examContainer = examContainerRef.current;
-    const refContainer = refContainerRef.current;
-
-    if (examContainer) {
-      examContainer.addEventListener('touchstart', preventScroll as any, { passive: false });
-      examContainer.addEventListener('touchmove', preventScroll as any, { passive: false });
-    }
-    if (refContainer) {
-      refContainer.addEventListener('touchstart', preventScroll as any, { passive: false });
-      refContainer.addEventListener('touchmove', preventScroll as any, { passive: false });
-    }
-
-    return () => {
-      window.removeEventListener('pointermove', handleMouseMove);
-      window.removeEventListener('pointerup', handleMouseUp);
-      if (examContainer) {
-        examContainer.removeEventListener('touchstart', preventScroll as any);
-        examContainer.removeEventListener('touchmove', preventScroll as any);
-      }
-      if (refContainer) {
-        refContainer.removeEventListener('touchstart', preventScroll as any);
-        refContainer.removeEventListener('touchmove', preventScroll as any);
-      }
-    };
-  // 依赖项精简：rects/activeQIdx 通过 Ref 读取，initialRectRef 是稳定 Ref 对象
-  }, [zoom, selectedId, resizeHandle]);
-
-  const startMoving = (e: React.PointerEvent, id: string, source: 'exam' | 'reference') => {
-    e.stopPropagation();
-    if (isProcessing) return;
-    const rect = rects.find(r => r.id === id);
-    if (!rect) return;
-    
-    // 核心修复：捕获指针至主容器，并禁用系统手势干扰
-    const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
-    try { 
-      if (container) container.setPointerCapture(e.pointerId); 
-      if (e.pointerType === 'touch') (e.nativeEvent as any).preventDefault?.();
-    } catch(ex) {}
-
-    setSelectedId(id);
-    if (rect.qIdx) setActiveQIdx(rect.qIdx);
-    interactionRef.current = 'moving';
-    setIsInteracting(true); // 锁定滚动
-    startPosRef.current = { x: e.clientX, y: e.clientY };
-    initialRectRef.current = { ...rect, source };
-  };
-
-  const startResizing = (e: React.PointerEvent, id: string, handle: string, source: 'exam' | 'reference') => {
-    e.stopPropagation();
-    if (isProcessing) return;
-    const rect = rects.find(r => r.id === id);
-    if (!rect) return;
-
-    // 核心修复：捕获指针至主容器，并禁用系统手势干扰
-    const container = source === 'exam' ? examContainerRef.current : refContainerRef.current;
-    try { 
-      if (container) container.setPointerCapture(e.pointerId); 
-      if (e.pointerType === 'touch') (e.nativeEvent as any).preventDefault?.();
-    } catch(ex) {}
-
-    setSelectedId(id);
-    setResizeHandle(handle);
-    interactionRef.current = 'resizing';
-    setIsInteracting(true); // 锁定滚动
-    startPosRef.current = { x: e.clientX, y: e.clientY };
-    initialRectRef.current = { ...rect, source };
-  };
+  // === 交互逻辑已提取至 useCanvasInteraction Hook ===
 
 
 
@@ -632,16 +300,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
               </div>
               <div className="flex items-center gap-2">
                  <button 
-                  onClick={() => {
-                    if (selectedPageIndices.size === 0) return;
-                    if (confirm(`确定删除选中的 ${selectedPageIndices.size} 页吗？`)) {
-                      const indices = Array.from(selectedPageIndices).sort((a, b) => b - a);
-                      const newPages = [...examPages];
-                      indices.forEach(idx => newPages.splice(idx, 1));
-                      setExamPages(newPages);
-                      setSelectedPageIndices(new Set());
-                    }
-                  }}
+                  onClick={handleDeleteSelected}
                   disabled={selectedPageIndices.size === 0}
                   className="w-8 h-8 rounded-lg bg-rose-500 text-white flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 disabled:grayscale disabled:opacity-30 transition-all"
                   title="删除选中"
@@ -755,25 +414,13 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
               
               <div className="flex items-center gap-2 justify-end">
                   <button 
-                    onClick={() => {
-                      if (selectedRefPageIndices.size === 0) return;
-                      if (confirm(`确定删除选中的 ${selectedRefPageIndices.size} 页吗？`)) {
-                        const indices = Array.from(selectedRefPageIndices).sort((a, b) => b - a);
-                        const newPages = [...referencePages];
-                        indices.forEach(idx => newPages.splice(idx, 1));
-                        setReferencePages(newPages);
-                        setSelectedRefPageIndices(new Set());
-                      }
-                    }} 
+                    onClick={handleDeleteSelectedRef}
                     className="w-8 h-8 rounded-lg bg-rose-500 text-white flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 disabled:grayscale disabled:opacity-30 transition-all"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                   <button 
-                    onClick={() => {
-                      if (selectedRefPageIndices.size === referencePages.length) setSelectedRefPageIndices(new Set());
-                      else setSelectedRefPageIndices(new Set(referencePages.keys()));
-                    }}
+                    onClick={handleToggleAllRef}
                     className={cn(
                       "h-8 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95 shadow-md",
                       selectedRefPageIndices.size === referencePages.length ? "bg-slate-900 text-white" : "bg-blue-600 text-white"
@@ -797,12 +444,7 @@ export const ExtractionCanvas = ({ examPages, referencePages, initialPageIndex =
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedRefPageIndices(prev => {
-                            const next = new Set(prev);
-                            if (next.has(idx)) next.delete(idx);
-                            else next.add(idx);
-                            return next;
-                          });
+                          toggleRefPageSelection(idx);
                         }}
                         className={cn(
                           "absolute top-4 left-4 w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-xl z-30 active:scale-90",

@@ -369,18 +369,22 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
                 
                 {/* 内容摘要 - 缩略图模式下大幅缩小字体并显示更多行 */}
                 {q.content && (
-                  <p className={cn(
+                  <div className={cn(
                     "w-full text-center text-[#1e293b] font-black leading-tight tracking-tight px-4",
                     forceMask 
                       ? "text-[12px] line-clamp-6 mt-2 opacity-80" 
                       : "text-xl md:text-3xl line-clamp-2 md:line-clamp-3 mt-6"
                   )}>
-                    {cleanLatexSymbols(q.content.replace(/\{\{.*?\}\}/g, ' ________ '))
-                      .replace(/\n/g, ' ')
-                      .replace(/【答案】.*/g, '')
-                      .replace(/【解析】.*/g, '')
-                    }
-                  </p>
+                    <RichExamContent 
+                      content={q.content
+                        .replace(/\{\{.*?\}\}/g, ' ________ ')
+                        .replace(/\n/g, ' ')
+                        .replace(/【答案】.*/g, '')
+                        .replace(/【解析】.*/g, '')
+                      }
+                      showClozeAnswers={false}
+                    />
+                  </div>
                 )}
 
                 {/* 切片大图 - 显著放大且居中 */}
@@ -428,9 +432,9 @@ export const UnifiedSlide: React.FC<UnifiedSlideProps> = ({ questions, editable 
             )}
             {!q.contentImage && !editable && q.content && (
                <div className="ml-10 mt-1 pl-3 border-l-2 border-gray-200">
-                  <p className="text-[0.7em] text-gray-500 leading-relaxed max-h-20 overflow-hidden line-clamp-3">
-                    {q.content}
-                  </p>
+                  <div className="text-[0.7em] text-gray-500 leading-relaxed max-h-20 overflow-hidden line-clamp-3">
+                    <RichExamContent content={q.content} showClozeAnswers={false} />
+                  </div>
                </div>
             )}
           </div>

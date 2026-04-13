@@ -22,6 +22,7 @@ import { useProjectStore } from '@/store/useProjectStore';
 import { cn } from '@/lib/utils';
 import { exportToPpt } from '@/lib/exportPpt';
 import { exportProjectJSON, importProjectJSON } from '@/lib/projectIO';
+import { useShortcuts } from '@/hooks/useShortcuts';
 import { 
   buildSlides, 
   SlideData, 
@@ -51,6 +52,34 @@ const MemoizedThumbnailContent = React.memo(({ slide }: { slide: SlideData }) =>
   return true;
 });
 MemoizedThumbnailContent.displayName = 'MemoizedThumbnailContent';
+
+// ============================================================
+// 缩略图懒渲染容器：使用 IntersectionObserver 实现可视区域检测
+// 离屏缩略图仅显示骨架占位，进入视口后才渲染完整组件树
+// ============================================================
+const LazyThumbnail = ({ children }: { children: React.ReactNode }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
+      { rootMargin: '200px' } // 提前 200px 开始渲染，减少滚动时的闪烁
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref}>
+      {isVisible ? children : (
+        <div className="w-full aspect-[16/9] bg-gray-100 animate-pulse rounded-lg" />
+      )}
+    </div>
+  );
+};
 
 export const Editor = () => {
   const { 
@@ -119,17 +148,28 @@ export const Editor = () => {
     });
   }, [currentSlideIdx]);
 
-  // 快捷键：左右箭头切换幻灯片
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // 如果焦点在 input/textarea 中则不拦截
-      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
-      if (e.key === 'ArrowLeft') setCurrentSlideIdx(prev => Math.max(0, prev - 1));
-      if (e.key === 'ArrowRight') setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1));
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [totalSlides]);
+  // ============================================================
+  // 全局快捷键调度
+  // ============================================================
+  useShortcuts(useMemo(() => ({
+    'ArrowLeft': () => setCurrentSlideIdx(prev => Math.max(0, prev - 1)),
+    'ArrowRight': () => setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1)),
+    ' ': (e) => {
+      // 在全屏模式下，空格键等于下一页
+      if (document.fullscreenElement) {
+        e.preventDefault(); // 阻止页面默认滚动
+        setCurrentSlideIdx(prev => Math.min(totalSlides - 1, prev + 1));
+      }
+    },
+    'f': (e) => {
+      e.preventDefault();
+      toggleFullscreen();
+    },
+    'Escape': () => {
+      // 各种退出逻辑聚合，虽然浏览器自带全屏 Esc 退出，但这兜个底
+      if (isMoreMenuOpen) setIsMoreMenuOpen(false);
+    }
+  }), [totalSlides, isMoreMenuOpen]), true);
 
   // --- 移动端手单滑动切页逻辑 ---
   const handleSwipe = (direction: number) => {
@@ -246,10 +286,12 @@ export const Editor = () => {
                         <Zap className="w-3 h-3 text-white fill-current" />
                       </div>
                     )}
-                    {/* 缩略图强制打码：使用 React.memo 缓存避免无关状态变更触发的全量重绘 */}
-                    <div className="pointer-events-none select-none">
-                      <MemoizedThumbnailContent slide={slide} />
-                    </div>
+                    {/* 缩略图强制打码：使用 React.memo 缓存 + LazyThumbnail 懒渲染 */}
+                    <LazyThumbnail>
+                      <div className="pointer-events-none select-none">
+                        <MemoizedThumbnailContent slide={slide} />
+                      </div>
+                    </LazyThumbnail>
                   </SlideFrame>
                 </div>
               ))}
